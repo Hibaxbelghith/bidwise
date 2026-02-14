@@ -1,11 +1,5 @@
 # 🎉 SPRINT 1 — Gestion de l'inscription & authentification — BACKEND COMPLÉTÉ
 
-## 📅 Dates
-**Début :** 6 février 2026  
-**Fin :** 6 février 2026  
-**Durée :** 1 journée (backend uniquement)
-
----
 
 ## 🎯 Objectif du Sprint 1
 
@@ -336,10 +330,10 @@ Permettre à un utilisateur ou une organisation de créer un compte et se connec
 
 ## 🚀 PROCHAINES ÉTAPES
 
-### SPRINT 2 — Frontend Web (Authentification)
+### SPRINT 1 Frontend — Frontend Web (Authentification) + Mobile
 **Durée estimée :** 1-2 semaines
 
-**Technologies :** React/Vue/Angular + Axios/Fetch
+**Technologies :** React + Axios/Fetch
 
 **Tâches :**
 1. Page d'inscription (formulaire avec account_type)
@@ -356,49 +350,7 @@ Permettre à un utilisateur ou une organisation de créer un compte et se connec
 - `GET /api/profile/me/`
 - `PUT /api/profile/me/`
 
----
 
-### SPRINT 3 — Opportunités & Candidatures (Backend + Web)
-**Backend :**
-- CRUD opportunités (ORGANISATION seulement)
-- Candidatures (CANDIDAT seulement)
-- Filtres & pagination
-- Matching AI (scoring candidat/opportunité)
-
-**Frontend Web :**
-- Liste des opportunités
-- Détail opportunité
-- Créer opportunité (ORG)
-- Postuler (CANDIDAT)
-
----
-
-### SPRINT 4 — Mobile (Flutter/React Native)
-**Tâches :**
-- Écrans inscription/login
-- Navigation
-- Stockage tokens (SharedPreferences/AsyncStorage)
-- Consommation API (http/dio)
-- Liste opportunités
-- Profil utilisateur
-
-**Endpoints consommés :** Les mêmes que Web ✅
-
----
-
-### SPRINT 5 — Notifications & Tests
-- Notifications email + push
-- Tests unitaires (pytest backend)
-- Tests e2e (Cypress/Selenium)
-- CI/CD (GitHub Actions)
-
----
-
-## 👥 ÉQUIPE
-
-**Développeur Backend :** PFE Student  
-**Assistant IA :** GitHub Copilot (Claude Sonnet 4.5)  
-**Date :** 6 février 2026
 
 ---
 
@@ -417,7 +369,7 @@ Permettre à un utilisateur ou une organisation de créer un compte et se connec
 Le backend BidWise dispose maintenant d'un système d'authentification **sécurisé, complet et documenté**.
 
 ✅ **Prêt pour l'intégration :**
-- 🌐 Application Web (React/Vue/Angular)
-- 📱 Application Mobile (Flutter/React Native)
+- 🌐 Application Web (React)
+- 📱 Application Mobile (React Native)
 
-🚀 **Prochaine étape :** SPRINT 2 — Frontend Web (authentification)
+🚀 **Prochaine étape :** Frontend Web (authentification)

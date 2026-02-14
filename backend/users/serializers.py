@@ -103,11 +103,16 @@ class ProfilSerializer(serializers.ModelSerializer):
 
 class UtilisateurSerializer(serializers.ModelSerializer):
     profil = ProfilSerializer(read_only=True)
+    account_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Utilisateur
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_active', 'date_joined', 'profil']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_active', 'date_joined', 'profil', 'account_type']
         read_only_fields = ['id', 'date_joined']
+
+    def get_account_type(self, obj):
+        group = obj.groups.first()
+        return group.name if group else None
 
 
 class ProfilUpdateSerializer(serializers.ModelSerializer):

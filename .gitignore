@@ -11,6 +11,10 @@ db.sqlite3
 media/
 staticfiles/
 
+# Node.js
+node_modules/
+package-lock.json
+
 # IDE
 .vscode/
 .idea/

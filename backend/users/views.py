@@ -96,14 +96,15 @@ def profile_detail(request):
         )
 
     if request.method == 'GET':
-        serializer = ProfilUpdateSerializer(profil)
+        serializer = UtilisateurSerializer(request.user)
         return Response(serializer.data)
 
     elif request.method == 'PUT':
         serializer = ProfilUpdateSerializer(profil, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            user_serializer = UtilisateurSerializer(request.user)
+            return Response(user_serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])

@@ -28,6 +28,14 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# CORS configuration
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # Vite dev server
+    "http://127.0.0.1:5173",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
 
 # Application definition
 
@@ -44,6 +52,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'django_filters',
+    'corsheaders',
 
     # Apps métier BidWise
     'users',
@@ -58,6 +67,7 @@ AUTH_USER_MODEL = 'users.Utilisateur'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
