@@ -62,11 +62,17 @@ export const removeTokens = () => {
 
 /**
  * Vérifier si l'utilisateur est authentifié
- * @returns {boolean} true si un token d'accès existe
+ * @returns {boolean} true si a non-expired access token OR a refresh token exists
  */
 export const isAuthenticated = () => {
-  const token = getAccessToken();
-  return !!token; // Double négation pour convertir en booléen
+  const accessToken = getAccessToken();
+  if (accessToken && !isTokenExpired(accessToken)) {
+    return true;
+  }
+  // Access token missing or expired — still "authenticated" if refresh token exists,
+  // because the Axios interceptor will silently refresh on the next API call.
+  const refreshToken = getRefreshToken();
+  return !!refreshToken;
 };
 
 /**

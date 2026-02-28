@@ -1,10 +1,22 @@
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.jsx';
-import { Bell, Briefcase, Building2, Search, User } from 'lucide-react';
+import { Bell, Briefcase, Building2, LogOut, Search, User } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 const AppLayout = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated, user, logout } = useAuth();
   const isHome = location.pathname === '/';
+
+  const userRole = user?.account_type;
+  const isOrganisation = userRole === 'ORGANISATION' || userRole === 'ADMIN';
+  const dashboardPath = userRole === 'ORGANISATION' ? '/organization/dashboard' : '/dashboard';
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -27,37 +39,59 @@ const AppLayout = () => {
                   <Search className="h-4 w-4" />
                   Browse Opportunities
                 </Link>
-                <Link
-                  to="/dashboard"
-                  className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
-                >
-                  <User className="h-4 w-4" />
-                  My Dashboard
-                </Link>
-                <Link to="/profile" className="text-neutral-700 hover:text-neutral-900">
-                  Profile
-                </Link>
-                <Link
-                  to="/organization/dashboard"
-                  className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
-                >
-                  <Building2 className="h-4 w-4" />
-                  Organization
-                </Link>
+                {isAuthenticated && (
+                  <>
+                    <Link
+                      to={dashboardPath}
+                      className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
+                    >
+                      <User className="h-4 w-4" />
+                      My Dashboard
+                    </Link>
+                    <Link to="/profile" className="text-neutral-700 hover:text-neutral-900">
+                      Profile
+                    </Link>
+                    {userRole === 'ADMIN' && (
+                      <Link
+                        to="/organization/dashboard"
+                        className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
+                      >
+                        <Building2 className="h-4 w-4" />
+                        Organization
+                      </Link>
+                    )}
+                  </>
+                )}
               </nav>
             )}
 
             <div className="flex items-center gap-3">
               {!isHome && (
                 <>
-                  <Button variant="ghost" size="icon" className="relative">
-                    <Bell className="h-5 w-5" />
-                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <Link to="/login">Sign In</Link>
-                  </Button>
-                  <Button>Get Started</Button>
+                  {isAuthenticated ? (
+                    <>
+                      <Button variant="ghost" size="icon" className="relative">
+                        <Bell className="h-5 w-5" />
+                        <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
+                      </Button>
+                      <span className="hidden text-sm text-neutral-700 lg:inline">
+                        {user?.first_name || user?.profil?.prenom || user?.email}
+                      </span>
+                      <Button variant="outline" onClick={handleLogout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Logout
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" asChild>
+                        <Link to="/login">Sign In</Link>
+                      </Button>
+                      <Button asChild>
+                        <Link to="/register">Get Started</Link>
+                      </Button>
+                    </>
+                  )}
                 </>
               )}
             </div>

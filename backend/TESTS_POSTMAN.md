@@ -279,7 +279,7 @@ Content-Type: application/json
 
 {
   "uid": "MQ",  // Depuis l'email
-  "token": "d3ks1a-f2c50dd48972073e3ed89141ec3dec70",  // Depuis l'email
+  "token": "d4ohzo-44a36174df34a0c41d6e0071834e7188",  // Depuis l'email
   "new_password": "NewSecurePass456",
   "new_password2": "NewSecurePass456"
 }

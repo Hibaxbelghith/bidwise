@@ -1,5 +1,1 @@
-.app-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem 1rem;
-}
+/* App-level styles — layout handled by Tailwind */

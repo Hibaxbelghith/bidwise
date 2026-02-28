@@ -5,7 +5,7 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 import * as authService from '../services/authService';
-import { isAuthenticated as checkAuth, removeTokens } from '../utils/tokenManager';
+import { isAuthenticated as checkAuth, removeTokens, getAccessToken, isTokenExpired } from '../utils/tokenManager';
 
 // Créer le contexte
 const AuthContext = createContext(null);
@@ -38,16 +38,22 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        // Vérifier si un token existe
-        if (checkAuth()) {
-          // Récupérer les données utilisateur
-          const userData = await authService.getCurrentUser();
-          setUser(userData);
-          setIsAuthenticated(true);
+        if (!checkAuth()) return;
+
+        // If access token is expired, attempt a silent refresh first.
+        // The Axios interceptor handles this automatically on API calls,
+        // but we trigger it explicitly here so getCurrentUser() succeeds
+        // on the first try without an extra 401 round-trip.
+        const accessToken = getAccessToken();
+        if (!accessToken || isTokenExpired(accessToken)) {
+          await authService.refreshAccessToken();
         }
+
+        const userData = await authService.getCurrentUser();
+        setUser(userData);
+        setIsAuthenticated(true);
       } catch (err) {
         console.error('Erreur lors du chargement de l\'utilisateur:', err);
-        // Token invalide ou expiré, nettoyer
         removeTokens();
         setUser(null);
         setIsAuthenticated(false);
@@ -58,6 +64,33 @@ export const AuthProvider = ({ children }) => {
 
     loadUser();
   }, []);
+
+  /**
+   * Periodic token validity check.
+   * Detects token expiry mid-session and either silently refreshes
+   * or logs the user out — keeps ProtectedRoute in sync without
+   * waiting for a page reload.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const interval = setInterval(async () => {
+      const token = getAccessToken();
+      if (token && !isTokenExpired(token)) return; // still valid
+
+      // Access token expired or missing — attempt silent refresh
+      try {
+        await authService.refreshAccessToken();
+      } catch {
+        // Refresh failed — session is over
+        setUser(null);
+        setIsAuthenticated(false);
+        removeTokens();
+      }
+    }, 15_000); // check every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   /**
    * Inscription d'un nouvel utilisateur
@@ -168,5 +201,3 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
-
-export default AuthContext;

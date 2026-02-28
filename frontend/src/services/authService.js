@@ -181,14 +181,3 @@ export const confirmPasswordReset = async (uid, token, newPassword, newPassword2
     throw new Error(errorMessage);
   }
 };
-
-export default {
-  register,
-  login,
-  logout,
-  getCurrentUser,
-  updateProfile,
-  refreshAccessToken,
-  requestPasswordReset,
-  confirmPasswordReset
-};

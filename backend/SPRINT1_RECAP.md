@@ -328,27 +328,189 @@ Permettre à un utilisateur ou une organisation de créer un compte et se connec
 
 ---
 
+## 🌐 SPRINT 1 FRONTEND — Couche de sécurité Web (COMPLÉTÉ)
+
+### 🟩 ÉTAPE F1 — Authentification frontend ✅
+**Technologies :** React 18 + Vite + Tailwind v4 + Axios + React Router v6
+
+**Pages implémentées :**
+- ✅ Page d'inscription (`pages/Login.jsx`) — email + password, validation côté client
+- ✅ Page de login (`pages/Register.jsx`) — choix CANDIDAT/ORGANISATION, validation forte
+- ✅ Page profil (`pages/Profile.jsx`) — GET/PUT `/api/profile/me/`
+- ✅ Page mot de passe oublié (`pages/ForgotPassword.jsx`) — envoi email reset
+- ✅ Dashboard candidat (`pages/Dashboard.jsx`) — protégé par token
+- ✅ Dashboard organisation (`pages/OrganizationDashboard.jsx`) — protégé par rôle
+
+### 🟩 ÉTAPE F2 — Silent Token Refresh (Intercepteur Axios) ✅
+**Fichier :** `frontend/src/services/api.js`
+
+**Problème résolu :** L'access token expire après 15 minutes. Sans mécanisme de refresh, l'utilisateur est déconnecté à chaque expiration.
+
+**Implémentation — pattern refresh-and-retry :**
+1. Sur réception d'un 401, l'intercepteur vérifie si la requête est un endpoint d'auth (`/auth/refresh/`, `/auth/login/`) → si oui, ne pas retenter
+2. Si un refresh est déjà en cours → la requête est mise en file d'attente (pattern `failedQueue`)
+3. Sinon → appel `POST /api/auth/refresh/` avec le refresh token via `axios` brut (pas via l'instance `api` pour éviter boucle infinie)
+4. Succès → nouveau access token sauvegardé, toutes les requêtes en attente relancées automatiquement
+5. Échec → tokens supprimés, redirection vers `/login`
+
+**Gestion des requêtes concurrentes :**
+- Variable `isRefreshing` (module-level) → un seul refresh à la fois
+- Tableau `failedQueue` → toutes les requêtes 401 concurrentes sont mises en attente et relancées après le refresh
+
+**Cycle de vie JWT complet :**
+```
+Login → access token (15 min) + refresh token (24h)
+  ↓
+API call → 200 OK (token valide)
+  ↓
+API call → 401 (token expiré)
+  ↓
+Intercepteur → POST /auth/refresh/ (automatique, transparent)
+  ↓
+Nouveau access token → requête originale relancée → 200 OK
+  ↓
+Refresh token expiré → tokens supprimés → redirection /login
+```
+
+### 🟩 ÉTAPE F3 — Route Guards (ProtectedRoute avec rôles) ✅
+**Fichier :** `frontend/src/components/ProtectedRoute.jsx`
+
+**Fonctionnalités :**
+- ✅ Prop `allowedRoles` optionnel (ex: `['ORGANISATION']`)
+- ✅ Sans `allowedRoles` → vérifie uniquement l'authentification (rétrocompatible)
+- ✅ Avec `allowedRoles` → vérifie `user.account_type` contre la liste
+- ✅ `ADMIN` bypass automatique → accès à toutes les routes protégées
+- ✅ Utilisateur non authentifié → redirigé vers `/login`
+- ✅ Utilisateur authentifié mais mauvais rôle → redirigé vers `/dashboard`
+
+**Configuration des routes (`App.jsx`) :**
+```jsx
+// Routes publiques
+<Route path="/" element={<Home />} />
+<Route path="/opportunities" element={<OpportunitiesBrowse />} />
+
+// Routes authentifiées (tout rôle)
+<Route element={<ProtectedRoute />}>
+  <Route path="/dashboard" element={<Dashboard />} />
+  <Route path="/profile" element={<Profile />} />
+</Route>
+
+// Routes organisation uniquement
+<Route element={<ProtectedRoute allowedRoles={['ORGANISATION']} />}>
+  <Route path="/organization/dashboard" element={<OrganizationDashboard />} />
+  <Route path="/organization/post" element={<PostOpportunity />} />
+</Route>
+```
+
+### 🟩 ÉTAPE F4 — Vérification d'expiration token ✅
+**Fichier :** `frontend/src/utils/tokenManager.js`
+
+**Amélioration :** La fonction `isAuthenticated()` vérifie désormais l'expiration réelle du token JWT (champ `exp` du payload) au lieu de simplement vérifier l'existence du token.
+
+**Logique :**
+- Access token valide → `true`
+- Access token expiré MAIS refresh token existe → `true` (l'intercepteur récupérera)
+- Aucun token → `false`
+
+**Complémentaire :** `AuthContext.loadUser()` tente un refresh proactif au montage si l'access token est expiré, évitant un aller-retour 401 inutile.
+
+### 🟩 ÉTAPE F5 — Navbar auth-aware ✅
+**Fichier :** `frontend/src/components/Layout/AppLayout.jsx`
+
+**Comportement :**
+| État | Navbar affichée |
+|------|----------------|
+| Non authentifié | "Browse Opportunities" + "Sign In" + "Get Started" |
+| CANDIDAT | "Browse Opportunities" + "My Dashboard" + "Profile" + nom utilisateur + "Logout" |
+| ORGANISATION | Tout ci-dessus + "Organization" link |
+| ADMIN | Tout (comme ORGANISATION) |
+
+### 🟩 ÉTAPE F6 — Nettoyage code mort ✅
+**Fichiers supprimés :**
+- `components/Auth/LoginForm.jsx` — remplacé par `pages/Login.jsx`
+- `components/Auth/RegisterForm.jsx` — remplacé par `pages/Register.jsx`
+- `components/Auth/AuthForms.css` — styles inutilisés
+- `components/common/Alert.jsx` — remplacé par `components/ui/alert.jsx`
+- `components/common/Alert.css` — styles inutilisés
+
+**Exports morts supprimés :**
+- `authService.js` → export default (objet) supprimé (seuls les named exports sont utilisés)
+- `AuthContext.jsx` → `export default AuthContext` supprimé (seuls `useAuth` et `AuthProvider` sont utilisés)
+
+---
+
+## 🧪 PLAN DE TESTS MANUELS — Validation complète Sprint 1
+
+### A. Flux d'authentification
+| # | Test | Action | Résultat attendu |
+|---|------|--------|-----------------|
+| 1 | Inscription CANDIDAT | POST `/api/auth/register/` avec `account_type: CANDIDAT` | 201, profil auto-créé |
+| 2 | Inscription ORGANISATION | POST `/api/auth/register/` avec `account_type: ORGANISATION` | 201, profil auto-créé |
+| 3 | Inscription email dupliqué | Même email que #1 | 400, message erreur |
+| 4 | Login CANDIDAT (frontend) | Remplir formulaire login, soumettre | Redirection vers `/opportunities`, tokens en localStorage |
+| 5 | Login ORGANISATION (frontend) | Remplir formulaire login, soumettre | Redirection vers `/opportunities`, tokens en localStorage |
+| 6 | Logout | Cliquer bouton "Logout" dans navbar | Tokens supprimés, redirection vers `/`, navbar affiche "Sign In" |
+
+### B. Contrôle d'accès par rôle
+| # | Test | Action | Résultat attendu |
+|---|------|--------|-----------------|
+| 7 | CANDIDAT → `/dashboard` | Naviguer vers `/dashboard` | ✅ Accès autorisé |
+| 8 | CANDIDAT → `/profile` | Naviguer vers `/profile` | ✅ Accès autorisé |
+| 9 | CANDIDAT → `/organization/dashboard` | Naviguer vers `/organization/dashboard` | ❌ Redirigé vers `/dashboard` |
+| 10 | CANDIDAT → `/organization/post` | Naviguer vers `/organization/post` | ❌ Redirigé vers `/dashboard` |
+| 11 | ORGANISATION → `/organization/dashboard` | Naviguer vers `/organization/dashboard` | ✅ Accès autorisé |
+| 12 | ORGANISATION → `/organization/post` | Naviguer vers `/organization/post` | ✅ Accès autorisé |
+| 13 | Non authentifié → `/dashboard` | Naviguer vers `/dashboard` | ❌ Redirigé vers `/login` |
+| 14 | Non authentifié → `/organization/dashboard` | Naviguer vers `/organization/dashboard` | ❌ Redirigé vers `/login` |
+
+### C. Navbar conditionnelle
+| # | Test | Action | Résultat attendu |
+|---|------|--------|-----------------|
+| 15 | Navbar non authentifié | Visiter `/opportunities` sans login | "Sign In" + "Get Started" visibles, pas de Dashboard/Profile |
+| 16 | Navbar CANDIDAT | Login CANDIDAT, visiter `/opportunities` | Dashboard + Profile + nom + Logout visibles, PAS de "Organization" |
+| 17 | Navbar ORGANISATION | Login ORGANISATION, visiter `/opportunities` | Tout + "Organization" link visible |
+
+### D. Token expiration & silent refresh
+| # | Test | Action | Résultat attendu |
+|---|------|--------|-----------------|
+| 18 | Access token expiré | Dans DevTools, modifier `bidwise_access_token` → valeur invalide, naviguer vers `/profile` | App refresh silencieusement le token, profil chargé sans redirection |
+| 19 | Refresh token expiré | Supprimer les deux tokens, rafraîchir la page | Redirection vers `/login` |
+| 20 | Requêtes concurrentes | Ouvrir Network tab, observer 2+ appels API simultanés après expiration | Un seul appel `/auth/refresh/`, toutes les requêtes réussies |
+| 21 | Reload page avec session | Login, fermer onglet, rouvrir | Session restaurée (profil chargé automatiquement) |
+| 22 | Reload page avec token expiré mais refresh valide | Attendre >15 min (ou modifier token manuellement) puis recharger | Refresh automatique au montage, session restaurée |
+
+### E. Edge cases
+| # | Test | Action | Résultat attendu |
+|---|------|--------|-----------------|
+| 23 | URL directe protégée sans auth | Taper `/profile` dans la barre d'adresse sans être connecté | Redirection vers `/login` |
+| 24 | URL directe organisation sans rôle | Login CANDIDAT, taper `/organization/dashboard` dans la barre | Redirection vers `/dashboard` |
+| 25 | Double-click submit login | Cliquer 2x rapidement sur "Log in" | Une seule requête, pas d'erreur |
+| 26 | Page 404 | Visiter `/nonexistent` | Page 404 affichée |
+
+---
+
 ## 🚀 PROCHAINES ÉTAPES
 
-### SPRINT 1 Frontend — Frontend Web (Authentification) + Mobile
-**Durée estimée :** 1-2 semaines
+### SPRINT 2 — Profils & Opportunités
+**Durée estimée :** 2 semaines
 
-**Technologies :** React + Axios/Fetch
+**Backend :**
+- Intégration API opportunités avec données réelles (remplacer mock data)
+- Endpoints candidatures
+- Filtres et pagination
 
-**Tâches :**
-1. Page d'inscription (formulaire avec account_type)
-2. Page de login (email + password)
-3. Gestion des tokens (localStorage)
-4. Route protégée (vérification token)
-5. Page profil utilisateur
-6. Password reset UI
+**Frontend :**
+- Connecter Opportunities page à `GET /api/opportunites/`
+- Connecter PostOpportunity à `POST /api/opportunites/`
+- Connecter Dashboard aux données réelles
+- Page de confirmation reset password
 
-**Endpoints consommés :**
-- `POST /api/auth/register/`
-- `POST /api/auth/login/`
-- `POST /api/auth/refresh/`
-- `GET /api/profile/me/`
-- `PUT /api/profile/me/`
+**Endpoints à connecter :**
+- `GET /api/opportunites/` (liste paginée)
+- `GET /api/opportunites/:id/` (détail)
+- `POST /api/opportunites/` (création, ORGANISATION)
+- `POST /api/candidatures/` (postuler, CANDIDAT)
+- `GET /api/candidatures/` (mes candidatures)
 
 
 
@@ -361,15 +523,19 @@ Permettre à un utilisateur ou une organisation de créer un compte et se connec
 - Les tests Postman couvrent **100% des endpoints d'authentification**
 - Le code suit les **best practices Django** (signals, permissions, serializers)
 - **Architecture API-First** : Une seule API, deux clients (Web + Mobile)
+- Le frontend React implémente un **silent token refresh** conforme aux standards JWT
+- Les routes sont protégées par **rôle** (CANDIDAT, ORGANISATION, ADMIN)
+- La navbar s'adapte dynamiquement à l'état d'authentification et au rôle utilisateur
+- **26 tests manuels documentés** couvrant auth, RBAC, token lifecycle et edge cases
+- **Code mort nettoyé** : 5 fichiers supprimés, exports inutilisés retirés
 
 ---
 
-**🎉 SPRINT 1 BACKEND : SUCCÈS TOTAL ! 🎉**
+**🎉 SPRINT 1 : BACKEND + FRONTEND AUTH — COMPLÉTÉ ! 🎉**
 
-Le backend BidWise dispose maintenant d'un système d'authentification **sécurisé, complet et documenté**.
+Le système BidWise dispose maintenant d'une authentification **sécurisée, complète et documentée**, côté backend ET frontend.
 
-✅ **Prêt pour l'intégration :**
-- 🌐 Application Web (React)
-- 📱 Application Mobile (React Native)
+✅ **Backend :** API REST, JWT, rôles, permissions, 14 tests Postman
+✅ **Frontend :** Login, register, profil, silent refresh, route guards, navbar auth-aware
 
-🚀 **Prochaine étape :** Frontend Web (authentification)
+🚀 **Prochaine étape :** Sprint 2 — Profils & Opportunités (intégration données réelles)

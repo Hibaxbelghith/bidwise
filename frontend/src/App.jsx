@@ -21,13 +21,16 @@ const App = () => (
         <Route path="/" element={<Home />} />
         <Route path="/opportunities" element={<OpportunitiesBrowse />} />
         <Route path="/opportunities/:id" element={<OpportunityDetail />} />
-        <Route path="/organization/dashboard" element={<OrganizationDashboard />} />
-        <Route path="/organization/post" element={<PostOpportunity />} />
         <Route path="/password-reset" element={<ForgotPassword />} />
         
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
+        </Route>
+
+        <Route element={<ProtectedRoute allowedRoles={['ORGANISATION']} />}>
+          <Route path="/organization/dashboard" element={<OrganizationDashboard />} />
+          <Route path="/organization/post" element={<PostOpportunity />} />
         </Route>
       </Route>
 
