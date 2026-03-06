@@ -17,16 +17,18 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
-from users.views import register, CustomTokenObtainPairView, password_reset, password_reset_confirm
+from users.views import request_otp, verify_otp
+from users.google_auth import google_authenticate
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/auth/register/', register, name='register'),
-    path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    # Passwordless OTP authentication
+    path('api/auth/passwordless/request/', request_otp, name='otp_request'),
+    path('api/auth/passwordless/verify/', verify_otp, name='otp_verify'),
+    # Google OAuth2
+    path('api/auth/google/', google_authenticate, name='google_auth'),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/auth/password-reset/', password_reset, name='password_reset'),
-    path('api/auth/password-reset-confirm/', password_reset_confirm, name='password_reset_confirm'),
     path('api/profile/', include('users.urls')),
     path('api/', include('opportunities.urls')),
     path('api/', include('applications.urls')),

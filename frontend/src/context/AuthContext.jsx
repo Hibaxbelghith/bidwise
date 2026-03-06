@@ -139,6 +139,86 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ── Passwordless OTP ────────────────────────────────────
+
+  /**
+   * Request an OTP code for the given email.
+   * @param {string} email
+   * @returns {Promise<{ success: boolean, error?: string }>}
+   */
+  const requestOTP = async (email) => {
+    try {
+      setError(null);
+      await authService.requestOTP(email);
+      return { success: true };
+    } catch (err) {
+      setError(err.message);
+      return { success: false, error: err.message };
+    }
+  };
+
+  /**
+   * Verify OTP, store tokens, load user profile.
+   * @param {string} email
+   * @param {string} otp - 6-digit code
+   * @returns {Promise<{ success: boolean, is_new_user?: boolean, error?: string }>}
+   */
+  const verifyOTP = async (email, otp) => {
+    try {
+      setError(null);
+      setLoading(true);
+
+      const response = await authService.verifyOTP(email, otp);
+
+      // Tokens are already saved by authService.verifyOTP.
+      // Now load the full user profile.
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
+      setIsAuthenticated(true);
+
+      return { success: true, is_new_user: response.is_new_user };
+    } catch (err) {
+      setError(err.message);
+      setUser(null);
+      setIsAuthenticated(false);
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Google OAuth2 ───────────────────────────────────────
+
+  /**
+   * Authenticate with a Google id_token, store tokens, load profile.
+   * @param {string} idToken - credential from Google Identity Services
+   * @returns {Promise<{ success: boolean, is_new_user?: boolean, error?: string }>}
+   */
+  const loginWithGoogle = async (idToken) => {
+    try {
+      setError(null);
+      setLoading(true);
+
+      const response = await authService.googleLogin(idToken);
+
+      // Tokens already saved by authService.googleLogin.
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
+      setIsAuthenticated(true);
+
+      return { success: true, is_new_user: response.is_new_user };
+    } catch (err) {
+      setError(err.message);
+      setUser(null);
+      setIsAuthenticated(false);
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Legacy (kept until Phase 2 page cleanup) ───────────
+
   /**
    * Déconnexion de l'utilisateur
    */
@@ -189,6 +269,9 @@ export const AuthProvider = ({ children }) => {
     error,
     register,
     login,
+    requestOTP,
+    verifyOTP,
+    loginWithGoogle,
     logout,
     updateUserProfile,
     refreshUser,

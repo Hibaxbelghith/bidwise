@@ -57,6 +57,74 @@ export const login = async (username, password) => {
   }
 };
 
+// ── Passwordless OTP ──────────────────────────────────────
+
+/**
+ * Request a one-time password for the given email.
+ * Backend sends a 6-digit code; the response is always 200 to
+ * prevent user-enumeration.
+ * @param {string} email
+ * @returns {Promise<object>} { message }
+ */
+export const requestOTP = async (email) => {
+  try {
+    const response = await api.post('/auth/passwordless/request/', { email });
+    return response.data;
+  } catch (error) {
+    const errorMessage =
+      error.response?.data?.detail ||
+      error.response?.data?.email?.[0] ||
+      'Erreur lors de l\'envoi du code';
+    throw new Error(errorMessage);
+  }
+};
+
+/**
+ * Verify a 6-digit OTP and obtain JWT tokens.
+ * Also stores tokens in localStorage via saveTokens().
+ * @param {string} email
+ * @param {string} otp - 6-digit code
+ * @returns {Promise<object>} { access, refresh, is_new_user }
+ */
+export const verifyOTP = async (email, otp) => {
+  try {
+    const response = await api.post('/auth/passwordless/verify/', { email, otp });
+    const { access, refresh } = response.data;
+    saveTokens(access, refresh);
+    return response.data;
+  } catch (error) {
+    const errorMessage =
+      error.response?.data?.detail ||
+      error.response?.data?.error ||
+      'Code invalide ou expiré';
+    throw new Error(errorMessage);
+  }
+};
+
+// ── Google OAuth2 ─────────────────────────────────────────
+
+/**
+ * Exchange a Google id_token for BidWise JWT tokens.
+ * @param {string} idToken - The credential returned by Google Identity Services
+ * @returns {Promise<object>} { access, refresh, is_new_user }
+ */
+export const googleLogin = async (idToken) => {
+  try {
+    const response = await api.post('/auth/google/', { id_token: idToken });
+    const { access, refresh } = response.data;
+    saveTokens(access, refresh);
+    return response.data;
+  } catch (error) {
+    const errorMessage =
+      error.response?.data?.detail ||
+      error.response?.data?.error ||
+      'Google authentication failed';
+    throw new Error(errorMessage);
+  }
+};
+
+// ── Legacy (kept until Phase 2 page cleanup) ─────────────
+
 /**
  * Déconnecter l'utilisateur
  * (Supprime les tokens localement - logout est stateless côté backend)

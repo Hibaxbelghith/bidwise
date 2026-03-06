@@ -5,13 +5,6 @@ from .serializers import CandidatureSerializer
 from .permissions import IsOwnerCandidature
 
 
-from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
-from .models import Candidature
-from .serializers import CandidatureSerializer
-from .permissions import IsOwnerCandidature
-
-
 class CandidatureViewSet(viewsets.ModelViewSet):
     serializer_class = CandidatureSerializer
     permission_classes = [IsAuthenticated, IsOwnerCandidature]

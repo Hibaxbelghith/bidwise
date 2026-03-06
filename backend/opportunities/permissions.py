@@ -1,32 +1,22 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from users.utils import user_in_group
 
-class IsOrganisationOrReadOnly(BasePermission):
+
+class IsAuthenticatedOrReadOnly(BasePermission):
     """
-    Une ORGANISATION peut créer/modifier des opportunités.
-    Les autres ne peuvent que les voir (READ).
+    Any authenticated user can create/modify opportunities.
+    Read access requires authentication too.
     """
     def has_permission(self, request, view):
-        if request.method in SAFE_METHODS:
-            return request.user.is_authenticated
-
-        return (
-            request.user.is_authenticated and (
-                user_in_group(request.user, "ORGANISATION") or
-                user_in_group(request.user, "ADMIN")
-            )
-        )
+        return request.user and request.user.is_authenticated
 
 
-class IsOrganisationOwner(BasePermission):
+class IsOwnerOrReadOnly(BasePermission):
     """
-    Seule l'ORGANISATION qui a créé l'opportunité peut la modifier.
+    Object-level: only the creator can modify an opportunity.
+    Everyone else gets read-only access.
     """
     def has_object_permission(self, request, view, obj):
         if request.method in SAFE_METHODS:
             return True
-        return (
-            obj.organisation == request.user or 
-            user_in_group(request.user, "ADMIN")
-        )
+        return obj.organisation == request.user
 

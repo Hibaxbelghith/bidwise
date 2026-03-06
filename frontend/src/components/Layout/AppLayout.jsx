@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.jsx';
-import { Bell, Briefcase, Building2, LogOut, Search, User } from 'lucide-react';
+import { Bell, Briefcase, LogOut, Search, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 
 const AppLayout = () => {
@@ -8,10 +8,6 @@ const AppLayout = () => {
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuth();
   const isHome = location.pathname === '/';
-
-  const userRole = user?.account_type;
-  const isOrganisation = userRole === 'ORGANISATION' || userRole === 'ADMIN';
-  const dashboardPath = userRole === 'ORGANISATION' ? '/organization/dashboard' : '/dashboard';
 
   const handleLogout = () => {
     logout();
@@ -42,7 +38,7 @@ const AppLayout = () => {
                 {isAuthenticated && (
                   <>
                     <Link
-                      to={dashboardPath}
+                      to="/dashboard"
                       className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
                     >
                       <User className="h-4 w-4" />
@@ -51,15 +47,6 @@ const AppLayout = () => {
                     <Link to="/profile" className="text-neutral-700 hover:text-neutral-900">
                       Profile
                     </Link>
-                    {userRole === 'ADMIN' && (
-                      <Link
-                        to="/organization/dashboard"
-                        className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
-                      >
-                        <Building2 className="h-4 w-4" />
-                        Organization
-                      </Link>
-                    )}
                   </>
                 )}
               </nav>
@@ -83,14 +70,9 @@ const AppLayout = () => {
                       </Button>
                     </>
                   ) : (
-                    <>
-                      <Button variant="outline" asChild>
-                        <Link to="/login">Sign In</Link>
-                      </Button>
-                      <Button asChild>
-                        <Link to="/register">Get Started</Link>
-                      </Button>
-                    </>
+                    <Button variant="outline" asChild>
+                      <Link to="/login">Sign In</Link>
+                    </Button>
                   )}
                 </>
               )}
@@ -105,7 +87,7 @@ const AppLayout = () => {
 
       <footer className="mt-20 border-t border-neutral-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             <div>
               <div className="mb-4 flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
@@ -118,7 +100,7 @@ const AppLayout = () => {
               </p>
             </div>
             <div>
-              <h3 className="mb-3 font-medium text-neutral-900">For Candidates</h3>
+              <h3 className="mb-3 font-medium text-neutral-900">Platform</h3>
               <ul className="space-y-2 text-sm text-neutral-600">
                 <li>
                   <Link to="/opportunities" className="hover:text-neutral-900">
@@ -126,34 +108,14 @@ const AppLayout = () => {
                   </Link>
                 </li>
                 <li>
-                  <Link to="/candidate/dashboard" className="hover:text-neutral-900">
+                  <Link to="/dashboard" className="hover:text-neutral-900">
                     My Dashboard
                   </Link>
                 </li>
                 <li>
-                  <a href="#" className="hover:text-neutral-900">
-                    Saved Searches
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="mb-3 font-medium text-neutral-900">For Organizations</h3>
-              <ul className="space-y-2 text-sm text-neutral-600">
-                <li>
-                  <Link to="/organization/post" className="hover:text-neutral-900">
-                    Post Opportunity
+                  <Link to="/profile" className="hover:text-neutral-900">
+                    My Profile
                   </Link>
-                </li>
-                <li>
-                  <Link to="/organization/dashboard" className="hover:text-neutral-900">
-                    Manage Listings
-                  </Link>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-neutral-900">
-                    API Documentation
-                  </a>
                 </li>
               </ul>
             </div>

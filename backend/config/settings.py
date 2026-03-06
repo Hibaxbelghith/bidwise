@@ -194,5 +194,23 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
-# Email Configuration (Console backend pour développement)
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# Email Configuration
+# Strategy: try Gmail SMTP → Console fallback
+_GMAIL_APP_PASSWORD = os.getenv('GMAIL_APP_PASSWORD', '')
+_GMAIL_ADDRESS = os.getenv('GMAIL_ADDRESS', '')
+
+if  _GMAIL_APP_PASSWORD and _GMAIL_ADDRESS:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_HOST_USER = _GMAIL_ADDRESS
+    EMAIL_HOST_PASSWORD = _GMAIL_APP_PASSWORD
+    DEFAULT_FROM_EMAIL = f'BidWise <{_GMAIL_ADDRESS}>'
+else:
+    # Option C: Console (local development)
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    DEFAULT_FROM_EMAIL = 'noreply@bidwise.com'
+
+# Google OAuth2
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
