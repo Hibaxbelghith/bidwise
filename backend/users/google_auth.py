@@ -121,3 +121,4 @@ def google_authenticate(request):
         },
         status=status.HTTP_200_OK,
     )
+

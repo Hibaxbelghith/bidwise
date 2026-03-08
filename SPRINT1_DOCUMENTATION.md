@@ -12,7 +12,7 @@
 
 ### Objectif du Sprint
 
-L'objectif du Sprint 1 était de mettre en place un **système d'authentification moderne et sécurisé** ainsi qu'une **expérience d'onboarding structurée** pour les candidats sur la plateforme web BidWise.
+L'objectif du Sprint 1 était de mettre en place un **système d'authentification moderne et sécurisé** ainsi qu'une **expérience d'onboarding structurée** pour les candidats sur la plateforme web et mobile BidWise.
 
 ### Durée
 
@@ -227,7 +227,7 @@ Les éléments suivants font partie de la vision produit globale mais n'étaient
 
 | Fonctionnalité | Raison du report | Sprint estimé |
 |---------------|-----------------|---------------|
-| **Authentification mobile (React Native)** | Priorité donnée à la plateforme web | Sprint 3–4 |
+| **Authentification mobile (React Native)** | ✅ **Livrée dans le Sprint 1** — OTP + Google fonctionnels | ✅ Done |
 | **Constructeur de CV (CV Builder)** | Fonctionnalité avancée, dépend du profil de base | Sprint 3 |
 | **Générateur de CV par IA** | Nécessite intégration IA, complexité élevée | Sprint 4–5 |
 | **Tableau de bord organisation** | Report du rôle organisation | Sprint 3 |
@@ -235,6 +235,50 @@ Les éléments suivants font partie de la vision produit globale mais n'étaient
 | **Changement d'email / paramètres de compte** | Fonctionnalité secondaire pour le MVP | Sprint 2–3 |
 
 Ces fonctionnalités restent dans le **Product Backlog** et seront planifiées lors des prochains Sprint Plannings.
+
+---
+
+## 7 bis. Version mobile (Expo / React Native)
+
+### Contexte
+
+En complément de la plateforme web, une **application mobile** a été développée lors du Sprint 1 afin de démontrer la capacité multi-plateforme de BidWise. L'application mobile consomme la **même API backend** que l'application web, validant ainsi l'architecture API-First du projet.
+
+### Technologie
+
+L'application mobile est construite avec **Expo (React Native)**, un framework permettant de développer une application native pour iOS et Android à partir d'une base de code unique en TypeScript.
+
+### Fonctionnalités mobile implémentées
+
+| Fonctionnalité | Description | Statut |
+|----------------|-------------|--------|
+| **Connexion OTP** | Saisie de l'email, réception du code à 6 chiffres, vérification et accès à la plateforme | ✅ Terminé |
+| **Connexion Google** | Authentification via Google OAuth, envoi du jeton au backend, session sécurisée | ✅ Terminé |
+| **Stockage sécurisé des jetons** | Les jetons JWT sont stockés dans le coffre-fort sécurisé du téléphone (SecureStore) | ✅ Terminé |
+| **Renouvellement automatique de session** | Le jeton d'accès est rafraîchi automatiquement en arrière-plan | ✅ Terminé |
+| **Navigation vers onboarding / tableau de bord** | Un nouvel utilisateur est dirigé vers l'onboarding, un utilisateur existant vers son tableau de bord | ✅ Terminé |
+| **Déconnexion sécurisée** | Suppression des jetons et retour à l'écran de connexion | ✅ Terminé |
+| **Interface d'onboarding** | Parcours 6 étapes avec barre de progression et navigation | ✅ Terminé |
+
+### Architecture
+
+L'application mobile partage exactement les mêmes endpoints que l'application web :
+
+- `POST /api/auth/passwordless/request/` — Demande de code OTP
+- `POST /api/auth/passwordless/verify/` — Vérification du code et obtention des jetons
+- `POST /api/auth/google/` — Authentification Google
+- `POST /api/auth/refresh/` — Renouvellement de jeton
+- `GET /api/profile/me/` — Profil utilisateur
+
+Cette approche démontre la **réutilisabilité** de l'API et valide le choix architectural d'un backend unique pour plusieurs clients.
+
+### Validation
+
+- ✅ L'application mobile a été testée sur un appareil physique via Expo Go
+- ✅ L'envoi de code OTP et la vérification fonctionnent correctement
+- ✅ La connexion Google OAuth redirige vers le navigateur, authentifie et revient dans l'application
+- ✅ La navigation conditionnelle (nouvel utilisateur → onboarding, utilisateur existant → dashboard) est opérationnelle
+- ✅ La déconnexion fonctionne et protège les routes
 
 ---
 
@@ -268,9 +312,11 @@ L'ensemble des fonctionnalités livrées dans le Sprint 1 ont été **validées 
 
 ### Stabilité du système
 
-- ✅ L'application frontend compile sans erreur (1669 modules)
+- ✅ L'application web frontend compile sans erreur (1669 modules)
+- ✅ L'application mobile compile sans erreur (TypeScript 0 erreurs)
 - ✅ Le backend démarre correctement dans l'environnement Docker
 - ✅ La base de données PostgreSQL est opérationnelle avec toutes les migrations appliquées
+- ✅ L'application mobile a été testée sur appareil physique (Expo Go)
 - ✅ Le système est **stable et prêt pour le Sprint 2**
 
 ---
@@ -280,12 +326,13 @@ L'ensemble des fonctionnalités livrées dans le Sprint 1 ont été **validées 
 Le Sprint 1 est considéré comme **terminé** car les conditions suivantes sont toutes réunies :
 
 - ✅ Toutes les user stories d'authentification planifiées ont été implémentées (US-01 à US-09)
-- ✅ Le système d'authentification sans mot de passe est fonctionnel (OTP + Google)
+- ✅ Le système d'authentification sans mot de passe est fonctionnel (OTP + Google) sur web et mobile
 - ✅ Les exigences de sécurité sont satisfaites (expiration OTP, limitation de tentatives, chiffrement, jetons JWT)
 - ✅ Le parcours d'onboarding en 6 étapes est complet et fonctionnel
 - ✅ La validation fonctionnelle a été réalisée pour chaque user story
 - ✅ Les emails transactionnels sont envoyés avec un template professionnel
-- ✅ L'application est stable en environnement de développement et Docker
+- ✅ L'application web et l'application mobile sont stables en environnement de développement
+- ✅ L'architecture API-First est validée : un seul backend, deux clients (web + mobile)
 - ✅ La documentation du sprint est rédigée et à jour
 - ✅ Le code est versionné et un tag de stabilité a été posé (`sprint-1-stable`)
 
@@ -293,7 +340,9 @@ Le Sprint 1 est considéré comme **terminé** car les conditions suivantes sont
 
 ## Conclusion — Transition vers le Sprint 2
 
-Le Sprint 1 a permis de poser les **fondations solides** de la plateforme BidWise : un système d'authentification moderne et sécurisé, une expérience d'inscription fluide et un parcours d'onboarding structuré.
+Le Sprint 1 a permis de poser les **fondations solides** de la plateforme BidWise : un système d'authentification moderne et sécurisé, une expérience d'inscription fluide et un parcours d'onboarding structuré, le tout déployé à la fois sur **web et mobile**.
+
+La livraison de l'application mobile dès le Sprint 1 valide l'**architecture API-First** du projet : un seul backend consommé par deux clients distincts. Cette approche confirme la scalabilité et la réutilisabilité de la solution.
 
 Ces fondations permettent désormais d'aborder le Sprint 2 avec confiance. Les prochaines itérations se concentreront sur l'**enrichissement de l'expérience candidat** : consultation et recherche d'opportunités, gestion du profil détaillé, et début du système de candidature. Chaque sprint suivant s'appuiera sur le socle technique et fonctionnel validé lors de ce premier sprint.
 

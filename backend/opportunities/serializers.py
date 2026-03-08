@@ -11,6 +11,9 @@ class SourceOpportuniteSerializer(serializers.ModelSerializer):
 
 class OpportuniteSerializer(serializers.ModelSerializer):
     source = SourceOpportuniteSerializer(read_only=True)
+    source_id = serializers.PrimaryKeyRelatedField(
+        queryset=SourceOpportunite.objects.all(), source='source', write_only=True
+    )
 
     class Meta:
         model = Opportunite
