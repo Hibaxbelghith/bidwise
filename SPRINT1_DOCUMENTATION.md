@@ -316,8 +316,28 @@ L'ensemble des fonctionnalités livrées dans le Sprint 1 ont été **validées 
 - ✅ L'application mobile compile sans erreur (TypeScript 0 erreurs)
 - ✅ Le backend démarre correctement dans l'environnement Docker
 - ✅ La base de données PostgreSQL est opérationnelle avec toutes les migrations appliquées
-- ✅ L'application mobile a été testée sur appareil physique (Expo Go)
+- ✅ L'application mobile a été testée sur appareil physique (APK via EAS Build)
+- ✅ **154 tests automatisés backend passent avec succès** (détail ci-dessous)
 - ✅ Le système est **stable et prêt pour le Sprint 2**
+
+### Tests automatisés (Backend)
+
+Le Sprint 1 inclut une suite complète de **154 tests automatisés** couvrant l'ensemble des composants backend :
+
+| Module | Tests | Lignes de code | Couverture |
+|--------|-------|----------------|------------|
+| **users** | 65 tests | 583 lignes | Modèles (Utilisateur, Profil, OTP), Sérialiseurs, Vues (OTP, Google Auth, Profil, Token Refresh), Permissions, Signaux |
+| **opportunities** | 52 tests | 466 lignes | Modèles (Opportunite, SourceOpportunite), Sérialiseurs (validation dates), Vues (CRUD, filtres, tri, pagination), Permissions |
+| **applications** | 37 tests | 382 lignes | Modèles (Candidature, Document), Sérialiseurs, Vues (CRUD, propriété, duplication), Permissions |
+| **Total** | **154 tests** | **1 431 lignes** | **Tous passent ✅** |
+
+Les tests couvrent :
+- **Modèles** : Création, valeurs par défaut, contraintes, relations, cascade de suppression
+- **Sérialiseurs** : Sérialisation/désérialisation, champs read-only, validation métier
+- **Vues/API** : Authentification, autorisation, CRUD complet, filtrage, pagination, tri
+- **Permissions** : Propriétaire, lecture seule, accès non authentifié
+- **Signaux** : Création automatique de profil à la création d'utilisateur
+- **Google OAuth** : Mocking de `google.oauth2.id_token.verify_oauth2_token`, gestion des erreurs réseau, tokens invalides, audience incorrecte
 
 ---
 
@@ -333,8 +353,10 @@ Le Sprint 1 est considéré comme **terminé** car les conditions suivantes sont
 - ✅ Les emails transactionnels sont envoyés avec un template professionnel
 - ✅ L'application web et l'application mobile sont stables en environnement de développement
 - ✅ L'architecture API-First est validée : un seul backend, deux clients (web + mobile)
+- ✅ **Validation mobile sur APK réel** : Application testée via EAS Build (APK) sur appareil Android physique, pas seulement Expo Go
+- ✅ **154 tests automatisés passent** : Suite de tests complète couvrant modèles, sérialiseurs, vues, permissions et signaux
 - ✅ La documentation du sprint est rédigée et à jour
-- ✅ Le code est versionné et un tag de stabilité a été posé (`sprint-1-stable`)
+- ✅ Le code est versionné et un tag de stabilité a été posé (`v1.0.0-sprint1`)
 
 ---
 
