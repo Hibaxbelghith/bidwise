@@ -1,5 +1,5 @@
 import { Briefcase, GraduationCap, BookOpen, TrendingUp } from 'lucide-react';
-import { Badge } from '../ui/badge.jsx';
+import { Badge } from '../../../components/ui/badge.jsx';
 
 const OPTIONS = [
 	{ value: 'JOB', label: 'Jobs', description: 'Full-time, part-time, and contract positions', icon: Briefcase, enabled: true },

@@ -15,6 +15,9 @@ staticfiles/
 node_modules/
 package-lock.json
 
+# Build output
+dist/
+
 # IDE
 .vscode/
 .idea/

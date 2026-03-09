@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Button } from '../components/ui/button.jsx';
-import { Badge } from '../components/ui/badge.jsx';
-import { Separator } from '../components/ui/separator.jsx';
+import { Button } from '../../components/ui/button.jsx';
+import { Badge } from '../../components/ui/badge.jsx';
+import { Separator } from '../../components/ui/separator.jsx';
 import {
   ArrowLeft,
   Bookmark,

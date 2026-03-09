@@ -1,12 +1,12 @@
-import { Input } from '../ui/input.jsx';
-import { Label } from '../ui/label.jsx';
+import { Input } from '../../../components/ui/input.jsx';
+import { Label } from '../../../components/ui/label.jsx';
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from '../ui/select.jsx';
+} from '../../../components/ui/select.jsx';
 
 const PERIOD_OPTIONS = [
 	{ value: 'YEARLY', label: 'per year' },

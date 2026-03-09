@@ -6,6 +6,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     host: 'localhost',
-    port: 5173
-  }
+    port: 5173,
+    hmr: {
+      host: 'localhost',
+      port: 5173,
+    },
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
+  },
 });

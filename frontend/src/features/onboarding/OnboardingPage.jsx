@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext.jsx';
-import { Button } from '../components/ui/button.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { Button } from '../../components/ui/button.jsx';
 import { Briefcase, Loader2, ArrowLeft, ArrowRight, Check } from 'lucide-react';
 
-import StepOpportunityIntent from '../components/onboarding/StepOpportunityIntent.jsx';
-import StepLocation from '../components/onboarding/StepLocation.jsx';
-import StepSalary from '../components/onboarding/StepSalary.jsx';
-import StepEmploymentType from '../components/onboarding/StepEmploymentType.jsx';
-import StepTargetRoles from '../components/onboarding/StepTargetRoles.jsx';
-import StepVisibility from '../components/onboarding/StepVisibility.jsx';
+import StepOpportunityIntent from './steps/StepOpportunityIntent.jsx';
+import StepLocation from './steps/StepLocation.jsx';
+import StepSalary from './steps/StepSalary.jsx';
+import StepEmploymentType from './steps/StepEmploymentType.jsx';
+import StepTargetRoles from './steps/StepTargetRoles.jsx';
+import StepVisibility from './steps/StepVisibility.jsx';
 
 const TOTAL_STEPS = 6;
 const STORAGE_KEY = 'bidwise_onboarding';

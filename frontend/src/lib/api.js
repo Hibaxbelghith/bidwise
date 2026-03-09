@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getAccessToken, getRefreshToken, saveTokens, removeTokens } from '../utils/tokenManager.js';
+import { getAccessToken, getRefreshToken, saveTokens, removeTokens } from './tokenManager.js';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 
@@ -71,7 +71,7 @@ api.interceptors.response.use(
         isRefreshing = false;
         processQueue(error, null);
         removeTokens();
-        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+        if (window.location.pathname !== '/login') {
           window.location.href = '/login';
         }
         return Promise.reject(error);
@@ -95,7 +95,7 @@ api.interceptors.response.use(
         // Refresh failed — clear everything and redirect
         processQueue(refreshError, null);
         removeTokens();
-        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+        if (window.location.pathname !== '/login') {
           window.location.href = '/login';
         }
         return Promise.reject(refreshError);

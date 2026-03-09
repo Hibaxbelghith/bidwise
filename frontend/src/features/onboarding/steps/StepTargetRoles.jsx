@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Input } from '../ui/input.jsx';
-import { Label } from '../ui/label.jsx';
-import { Badge } from '../ui/badge.jsx';
-import { Button } from '../ui/button.jsx';
+import { Input } from '../../../components/ui/input.jsx';
+import { Label } from '../../../components/ui/label.jsx';
+import { Badge } from '../../../components/ui/badge.jsx';
+import { Button } from '../../../components/ui/button.jsx';
 import { Plus, X } from 'lucide-react';
 
 const MAX_ROLES = 5;

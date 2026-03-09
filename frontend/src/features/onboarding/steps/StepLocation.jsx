@@ -1,5 +1,5 @@
-import { Input } from '../ui/input.jsx';
-import { Label } from '../ui/label.jsx';
+import { Input } from '../../../components/ui/input.jsx';
+import { Label } from '../../../components/ui/label.jsx';
 import { MapPin, Building2, Wifi, ArrowLeftRight } from 'lucide-react';
 
 const REMOTE_OPTIONS = [

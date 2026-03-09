@@ -1,61 +1,9 @@
 /**
- * Service d'authentification
- * Centralise toutes les requêtes liées à l'authentification
+ * Auth service — passwordless authentication (OTP + Google OAuth2).
  */
 
-import api from './api';
-import { saveTokens, removeTokens, getRefreshToken } from '../utils/tokenManager';
-
-/**
- * Inscrire un nouvel utilisateur
- * @param {object} userData - Données d'inscription
- *   - email: string (requis, unique)
- *   - username: string (requis, unique)
- *   - password: string (requis)
- *   - password2: string (confirmation, requis)
- *   - first_name: string (requis)
- *   - last_name: string (requis)
- *   - account_type: string (CANDIDAT ou ORGANISATION, requis)
- * @returns {Promise<object>} Réponse backend avec user data
- * @throws {Error} Erreur d'inscription
- */
-export const register = async (userData) => {
-  try {
-    const response = await api.post('/auth/register/', userData);
-    return response.data;
-  } catch (error) {
-    const errorMessage = error.response?.data?.detail || 
-                        error.response?.data?.email?.[0] ||
-                        error.response?.data?.username?.[0] ||
-                        error.response?.data?.password?.[0] ||
-                        'Erreur lors de l\'inscription';
-    throw new Error(errorMessage);
-  }
-};
-
-/**
- * Connecter un utilisateur
- * @param {string} username - Email ou username
- * @param {string} password - Mot de passe
- * @returns {Promise<object>} User data après connexion
- * @throws {Error} Erreur de connexion
- */
-export const login = async (username, password) => {
-  try {
-    const response = await api.post('/auth/login/', { username, password });
-    
-    // Sauvegarder les tokens
-    const { access, refresh } = response.data;
-    saveTokens(access, refresh);
-    
-    // Retourner les données utilisateur
-    return response.data;
-  } catch (error) {
-    const errorMessage = error.response?.data?.detail || 
-                        'Identifiants invalides';
-    throw new Error(errorMessage);
-  }
-};
+import api from '../../lib/api';
+import { saveTokens, removeTokens, getRefreshToken } from '../../lib/tokenManager';
 
 // ── Passwordless OTP ──────────────────────────────────────
 
@@ -123,7 +71,7 @@ export const googleLogin = async (idToken) => {
   }
 };
 
-// ── Legacy (kept until Phase 2 page cleanup) ─────────────
+// ── Session management ───────────────────────────────────
 
 /**
  * Déconnecter l'utilisateur

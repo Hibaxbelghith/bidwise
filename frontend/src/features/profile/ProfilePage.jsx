@@ -1,27 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from '../components/ui/button.jsx';
-import { Input } from '../components/ui/input.jsx';
-import { Label } from '../components/ui/label.jsx';
-import { Textarea } from '../components/ui/textarea.jsx';
+import { Button } from '../../components/ui/button.jsx';
+import { Input } from '../../components/ui/input.jsx';
+import { Label } from '../../components/ui/label.jsx';
+import { Textarea } from '../../components/ui/textarea.jsx';
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from '../components/ui/select.jsx';
-import { Badge } from '../components/ui/badge.jsx';
+} from '../../components/ui/select.jsx';
+import { Badge } from '../../components/ui/badge.jsx';
 import {
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
 	CardTitle,
-} from '../components/ui/card.jsx';
-import { Alert, AlertDescription } from '../components/ui/alert.jsx';
+} from '../../components/ui/card.jsx';
+import { Alert, AlertDescription } from '../../components/ui/alert.jsx';
 import { ArrowLeft, CheckCircle2, Loader2, Plus, X } from 'lucide-react';
-import { useAuth } from '../context/AuthContext.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 const EXPERIENCE_OPTIONS = [
 	{ value: 'DEBUTANT', label: 'Débutant (0–1 an)' },

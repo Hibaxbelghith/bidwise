@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button } from '../components/ui/button.jsx';
-import { Input } from '../components/ui/input.jsx';
-import { Label } from '../components/ui/label.jsx';
-import { Alert, AlertDescription } from '../components/ui/alert.jsx';
+import { Button } from '../../components/ui/button.jsx';
+import { Input } from '../../components/ui/input.jsx';
+import { Label } from '../../components/ui/label.jsx';
+import { Alert, AlertDescription } from '../../components/ui/alert.jsx';
 import { Briefcase, Loader2, ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext.jsx';
-import { useGoogleIdentity } from '../hooks/useGoogleIdentity.js';
+import { useAuth } from './AuthContext.jsx';
+import { useGoogleIdentity } from './useGoogleIdentity.js';
 
 const COOLDOWN_SECONDS = 60;
 const VITE_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;

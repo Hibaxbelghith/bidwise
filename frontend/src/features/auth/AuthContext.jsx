@@ -4,15 +4,15 @@
  */
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import * as authService from '../services/authService';
-import { isAuthenticated as checkAuth, removeTokens, getAccessToken, isTokenExpired } from '../utils/tokenManager';
+import * as authService from './authService';
+import { isAuthenticated as checkAuth, removeTokens, getAccessToken, isTokenExpired } from '../../lib/tokenManager';
 
 // Créer le contexte
 const AuthContext = createContext(null);
 
 /**
  * Hook personnalisé pour utiliser le contexte d'authentification
- * Utilisation: const { user, login, logout } = useAuth();
+ * Utilisation: const { user, loginWithGoogle, logout } = useAuth();
  */
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -91,53 +91,6 @@ export const AuthProvider = ({ children }) => {
 
     return () => clearInterval(interval);
   }, [isAuthenticated]);
-
-  /**
-   * Inscription d'un nouvel utilisateur
-   * @param {object} userData - Données d'inscription
-   * @returns {Promise} Résultat de l'inscription
-   */
-  const register = async (userData) => {
-    try {
-      setError(null);
-      const response = await authService.register(userData);
-      return { success: true, data: response };
-    } catch (err) {
-      setError(err.message);
-      return { success: false, error: err.message };
-    }
-  };
-
-  /**
-   * Connexion d'un utilisateur
-   * @param {string} username - Email ou username
-   * @param {string} password - Mot de passe
-   * @returns {Promise} Résultat de la connexion
-   */
-  const login = async (username, password) => {
-    try {
-      setError(null);
-      setLoading(true);
-      
-      // Appeler le service de login
-      const response = await authService.login(username, password);
-      
-      // Récupérer le profil complet
-      const userData = await authService.getCurrentUser();
-      
-      setUser(userData);
-      setIsAuthenticated(true);
-      
-      return { success: true, data: response };
-    } catch (err) {
-      setError(err.message);
-      setUser(null);
-      setIsAuthenticated(false);
-      return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // ── Passwordless OTP ────────────────────────────────────
 
@@ -267,8 +220,6 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     loading,
     error,
-    register,
-    login,
     requestOTP,
     verifyOTP,
     loginWithGoogle,

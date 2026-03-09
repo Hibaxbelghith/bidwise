@@ -54,7 +54,7 @@ export function useGoogleIdentity(onSuccess, onError) {
 				theme: 'outline',
 				size: 'large',
 				text: 'continue_with',
-				width: '100%',
+				width: 400,
 				logo_alignment: 'left',
 			});
 		},

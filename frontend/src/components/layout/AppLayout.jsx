@@ -1,7 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.jsx';
 import { Bell, Briefcase, LogOut, Search, User } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../features/auth/AuthContext.jsx';
 
 const AppLayout = () => {
   const location = useLocation();
