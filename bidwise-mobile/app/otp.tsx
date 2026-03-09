@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Clipboard,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -32,6 +33,25 @@ export default function OTPScreen() {
   const mutedColor = useThemeColor({}, 'muted');
   const tintColor = useThemeColor({}, 'tint');
   const borderColor = useThemeColor({}, 'border');
+
+  // Auto-focus on mount
+  useEffect(() => {
+    const timer = setTimeout(() => inputRef.current?.focus(), 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Auto-submit when 6 digits are entered (e.g. from paste or autofill)
+  useEffect(() => {
+    if (code.length === CODE_LENGTH && !verifying) {
+      handleVerify();
+    }
+  }, [code]);
+
+  const handleCodeChange = (text: string) => {
+    const cleaned = text.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH);
+    setCode(cleaned);
+    setError('');
+  };
 
   const handleVerify = async () => {
     if (code.length !== CODE_LENGTH || !email) return;
@@ -83,19 +103,30 @@ export default function OTPScreen() {
 
         {/* Error */}
         {error ? (
-          <Text style={[styles.errorText, { color: '#ef4444' }]}>{error}</Text>
+          <Text
+            style={[styles.errorText, { color: '#ef4444' }]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+          >
+            {error}
+          </Text>
         ) : null}
 
-        {/* Hidden input for keyboard */}
+        {/* Hidden input — OTP autofill enabled */}
         <TextInput
           ref={inputRef}
           style={styles.hiddenInput}
           value={code}
-          onChangeText={(text) => { setCode(text.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH)); setError(''); }}
+          onChangeText={handleCodeChange}
           keyboardType="number-pad"
           maxLength={CODE_LENGTH}
           autoFocus
           editable={!verifying}
+          textContentType="oneTimeCode"
+          autoComplete="sms-otp"
+          importantForAutofill="yes"
+          accessibilityLabel="6-digit verification code"
+          accessibilityHint="Enter the 6-digit code sent to your email"
         />
 
         {/* Visual digit boxes */}
@@ -103,6 +134,7 @@ export default function OTPScreen() {
           style={styles.codeRow}
           activeOpacity={1}
           onPress={() => inputRef.current?.focus()}
+          accessible={false}
         >
           {digits.map((digit, index) => (
             <View
@@ -114,6 +146,7 @@ export default function OTPScreen() {
                   borderWidth: index === code.length ? 2 : 1,
                 },
               ]}
+              accessibilityLabel={digit ? `Digit ${index + 1} of ${CODE_LENGTH}: ${digit}` : `Digit ${index + 1} of ${CODE_LENGTH}: empty`}
             >
               <Text style={[styles.digitText, { color: textColor }]}>{digit}</Text>
             </View>

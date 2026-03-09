@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Utilisateur, Profil, OTPChallenge
+from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
 
 @admin.register(Utilisateur)
 class UtilisateurAdmin(admin.ModelAdmin):
@@ -16,3 +16,11 @@ class OTPChallengeAdmin(admin.ModelAdmin):
     list_filter = ("is_used",)
     search_fields = ("email",)
     readonly_fields = ("otp_hash", "created_at")
+
+
+@admin.register(LoginEvent)
+class LoginEventAdmin(admin.ModelAdmin):
+    list_display = ("user", "ip_address", "device_type", "created_at")
+    list_filter = ("device_type",)
+    search_fields = ("user__email", "ip_address")
+    readonly_fields = ("created_at",)

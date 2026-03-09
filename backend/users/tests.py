@@ -705,3 +705,204 @@ class TokenRefreshViewTests(APITestCase):
     def test_refresh_invalid_token(self):
         response = self.client.post(self.url, {"refresh": "invalidtoken"})
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ═══════════════════════════════════════════════════════════
+# SPRINT 1.1 — TOKEN REVOCATION (LOGOUT) TESTS
+# ═══════════════════════════════════════════════════════════
+
+
+class LogoutViewTests(APITestCase):
+    """Tests for POST /api/auth/logout/ (token blacklist)."""
+
+    def setUp(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        self.url = "/api/auth/logout/"
+        self.user = Utilisateur.objects.create_user(
+            username="logoutuser", email="logout@test.com", password="pass1234"
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.refresh = RefreshToken.for_user(self.user)
+
+    def test_logout_blacklists_token(self):
+        response = self.client.post(self.url, {"refresh": str(self.refresh)})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["detail"], "Successfully logged out.")
+
+    def test_blacklisted_token_cannot_refresh(self):
+        """After logout, the refresh token can no longer obtain a new access token."""
+        self.client.post(self.url, {"refresh": str(self.refresh)})
+        response = self.client.post("/api/auth/refresh/", {"refresh": str(self.refresh)})
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_logout_already_blacklisted_token(self):
+        self.client.post(self.url, {"refresh": str(self.refresh)})
+        response = self.client.post(self.url, {"refresh": str(self.refresh)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_logout_missing_refresh_token(self):
+        response = self.client.post(self.url, {})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
+
+    def test_logout_invalid_refresh_token(self):
+        response = self.client.post(self.url, {"refresh": "not-a-real-token"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_logout_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(self.url, {"refresh": str(self.refresh)})
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ═══════════════════════════════════════════════════════════
+# SPRINT 1.1 — LOGIN EVENT MODEL TESTS
+# ═══════════════════════════════════════════════════════════
+
+
+class LoginEventModelTests(TestCase):
+    """Tests for the LoginEvent model."""
+
+    def setUp(self):
+        self.user = Utilisateur.objects.create_user(
+            username="eventuser", email="event@test.com", password="pass1234"
+        )
+
+    def test_str(self):
+        from .models import LoginEvent
+        event = LoginEvent.objects.create(
+            user=self.user, ip_address="1.2.3.4", user_agent="Test Agent"
+        )
+        self.assertIn("event@test.com", str(event))
+        self.assertIn("1.2.3.4", str(event))
+
+    def test_parse_device_type_desktop(self):
+        from .models import LoginEvent
+        self.assertEqual(LoginEvent._parse_device_type("Mozilla/5.0 Windows NT"), "Desktop")
+
+    def test_parse_device_type_mobile(self):
+        from .models import LoginEvent
+        self.assertEqual(LoginEvent._parse_device_type("Mozilla/5.0 iPhone"), "Mobile")
+        self.assertEqual(LoginEvent._parse_device_type("Mozilla/5.0 Android"), "Mobile")
+
+    def test_parse_device_type_tablet(self):
+        from .models import LoginEvent
+        self.assertEqual(LoginEvent._parse_device_type("Mozilla/5.0 iPad"), "Tablet")
+
+    def test_get_client_ip_remote_addr(self):
+        from .models import LoginEvent
+        request = MagicMock()
+        request.META = {"REMOTE_ADDR": "192.168.1.1"}
+        self.assertEqual(LoginEvent._get_client_ip(request), "192.168.1.1")
+
+    def test_get_client_ip_forwarded(self):
+        from .models import LoginEvent
+        request = MagicMock()
+        request.META = {"HTTP_X_FORWARDED_FOR": "10.0.0.1, 10.0.0.2", "REMOTE_ADDR": "127.0.0.1"}
+        self.assertEqual(LoginEvent._get_client_ip(request), "10.0.0.1")
+
+
+# ═══════════════════════════════════════════════════════════
+# SPRINT 1.1 — SUSPICIOUS LOGIN DETECTION TESTS
+# ═══════════════════════════════════════════════════════════
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="test@bidwise.com",
+)
+class SuspiciousLoginDetectionTests(TestCase):
+    """Tests for LoginEvent.is_suspicious() and LoginEvent.record()."""
+
+    def setUp(self):
+        from .models import LoginEvent
+        self.LoginEvent = LoginEvent
+        self.user = Utilisateur.objects.create_user(
+            username="suspuser", email="susp@test.com", password="pass1234"
+        )
+
+    def test_first_login_not_suspicious(self):
+        """Very first login for a user is never flagged as suspicious."""
+        result = self.LoginEvent.is_suspicious(self.user, "1.2.3.4", "AgentA")
+        self.assertFalse(result)
+
+    def test_same_ip_same_ua_not_suspicious(self):
+        """Login from same IP + same UA is not suspicious."""
+        self.LoginEvent.objects.create(
+            user=self.user, ip_address="1.2.3.4", user_agent="AgentA"
+        )
+        result = self.LoginEvent.is_suspicious(self.user, "1.2.3.4", "AgentA")
+        self.assertFalse(result)
+
+    def test_new_ip_is_suspicious(self):
+        """Login from a new IP triggers suspicious."""
+        self.LoginEvent.objects.create(
+            user=self.user, ip_address="1.2.3.4", user_agent="AgentA"
+        )
+        result = self.LoginEvent.is_suspicious(self.user, "5.6.7.8", "AgentA")
+        self.assertTrue(result)
+
+    def test_new_ua_is_suspicious(self):
+        """Login from a new user agent triggers suspicious."""
+        self.LoginEvent.objects.create(
+            user=self.user, ip_address="1.2.3.4", user_agent="AgentA"
+        )
+        result = self.LoginEvent.is_suspicious(self.user, "1.2.3.4", "AgentB")
+        self.assertTrue(result)
+
+    def test_record_creates_event(self):
+        """record() creates a LoginEvent in the DB."""
+        request = MagicMock()
+        request.META = {"REMOTE_ADDR": "10.0.0.1", "HTTP_USER_AGENT": "TestBrowser"}
+        event = self.LoginEvent.record(self.user, request)
+        self.assertEqual(event.ip_address, "10.0.0.1")
+        self.assertEqual(event.user_agent, "TestBrowser")
+        self.assertEqual(event.device_type, "Desktop")
+        self.assertEqual(self.LoginEvent.objects.filter(user=self.user).count(), 1)
+
+    @patch("users.models.LoginEvent._send_suspicious_email")
+    def test_record_sends_email_on_suspicious(self, mock_email):
+        """record() sends a suspicious-login email when the device/IP is new."""
+        # First login — not suspicious
+        request1 = MagicMock()
+        request1.META = {"REMOTE_ADDR": "10.0.0.1", "HTTP_USER_AGENT": "BrowserA"}
+        self.LoginEvent.record(self.user, request1)
+        mock_email.assert_not_called()
+
+        # Second login from new IP — suspicious
+        request2 = MagicMock()
+        request2.META = {"REMOTE_ADDR": "99.99.99.99", "HTTP_USER_AGENT": "BrowserA"}
+        self.LoginEvent.record(self.user, request2)
+        mock_email.assert_called_once()
+
+    @patch("users.models.LoginEvent._send_suspicious_email")
+    def test_record_no_email_on_known_device(self, mock_email):
+        """record() does not send email when logging from a known device."""
+        request = MagicMock()
+        request.META = {"REMOTE_ADDR": "10.0.0.1", "HTTP_USER_AGENT": "BrowserA"}
+        self.LoginEvent.record(self.user, request)
+        self.LoginEvent.record(self.user, request)
+        mock_email.assert_not_called()
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="test@bidwise.com",
+)
+class VerifyOTPLoginEventIntegrationTests(APITestCase):
+    """Tests that verify_otp creates a LoginEvent."""
+
+    def test_login_event_created_on_verify(self):
+        from .models import LoginEvent
+
+        email = "evt@example.com"
+        _challenge, plaintext = OTPChallenge.create_for_email(email)
+        response = self.client.post(
+            "/api/auth/passwordless/verify/",
+            {"email": email, "otp": plaintext},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user = Utilisateur.objects.get(email=email)
+        self.assertEqual(LoginEvent.objects.filter(user=user).count(), 1)

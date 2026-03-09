@@ -18,7 +18,7 @@ from django.conf import settings
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 
-from .models import Utilisateur
+from .models import Utilisateur, LoginEvent
 
 # ── Generic error — intentionally vague to prevent information leakage ──
 _INVALID_TOKEN_ERROR = "Invalid Google token."
@@ -110,6 +110,9 @@ def google_authenticate(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Record login event and detect suspicious activity
+    LoginEvent.record(user, request)
+
     # ── Issue JWT (same mechanism as OTP verify) ─────────
     refresh = RefreshToken.for_user(user)
 
@@ -121,4 +124,4 @@ def google_authenticate(request):
         },
         status=status.HTTP_200_OK,
     )
-
+

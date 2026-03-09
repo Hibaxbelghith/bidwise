@@ -210,3 +210,102 @@ class OTPChallenge(models.Model):
         """True if a fresh OTP was created within the cooldown window."""
         cutoff = timezone.now() - timezone.timedelta(seconds=cls.COOLDOWN_SECONDS)
         return cls.objects.filter(email=email, created_at__gte=cutoff, is_used=False).exists()
+
+
+class LoginEvent(models.Model):
+    """
+    Records every successful login.
+    Used to detect suspicious logins from new devices or IP addresses.
+    """
+    user = models.ForeignKey(
+        Utilisateur,
+        on_delete=models.CASCADE,
+        related_name='login_events',
+    )
+    ip_address = models.GenericIPAddressField()
+    user_agent = models.TextField(blank=True, default='')
+    device_type = models.CharField(max_length=50, blank=True, default='')
+    location = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"LoginEvent({self.user.email}, {self.ip_address}, {self.created_at})"
+
+    @classmethod
+    def is_suspicious(cls, user, ip_address: str, user_agent: str) -> bool:
+        """
+        Return True if this IP or user-agent has never been seen before
+        for this user (i.e. it's a new device or new location).
+        """
+        past_events = cls.objects.filter(user=user)
+        if not past_events.exists():
+            # Very first login — not suspicious
+            return False
+        known_ip = past_events.filter(ip_address=ip_address).exists()
+        known_ua = past_events.filter(user_agent=user_agent).exists()
+        return not known_ip or not known_ua
+
+    @classmethod
+    def record(cls, user, request):
+        """
+        Create a LoginEvent from the current request and send a
+        suspicious-login email if the device/IP is new.
+        """
+        ip = cls._get_client_ip(request)
+        ua = request.META.get('HTTP_USER_AGENT', '')
+        device = cls._parse_device_type(ua)
+
+        suspicious = cls.is_suspicious(user, ip, ua)
+
+        event = cls.objects.create(
+            user=user,
+            ip_address=ip,
+            user_agent=ua,
+            device_type=device,
+        )
+
+        if suspicious:
+            cls._send_suspicious_email(user, event)
+
+        return event
+
+    @staticmethod
+    def _get_client_ip(request) -> str:
+        forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+        if forwarded:
+            return forwarded.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+    @staticmethod
+    def _parse_device_type(user_agent: str) -> str:
+        ua_lower = user_agent.lower()
+        if 'mobile' in ua_lower or 'android' in ua_lower or 'iphone' in ua_lower:
+            return 'Mobile'
+        if 'tablet' in ua_lower or 'ipad' in ua_lower:
+            return 'Tablet'
+        return 'Desktop'
+
+    @staticmethod
+    def _send_suspicious_email(user, event):
+        from django.core.mail import send_mail
+        from django.conf import settings
+
+        send_mail(
+            subject='New login detected on your BidWise account',
+            message=(
+                f"A new login was detected.\n\n"
+                f"Device: {event.device_type}\n"
+                f"IP Address: {event.ip_address}\n"
+                f"Time: {event.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+                f"If this wasn't you, please contact support immediately."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=True,
+        )

@@ -175,8 +175,8 @@ export const AuthProvider = ({ children }) => {
   /**
    * Déconnexion de l'utilisateur
    */
-  const logout = () => {
-    authService.logout();
+  const logout = async () => {
+    await authService.logout();
     setUser(null);
     setIsAuthenticated(false);
     setError(null);

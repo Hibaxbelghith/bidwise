@@ -74,14 +74,19 @@ export const googleLogin = async (idToken) => {
 // ── Session management ───────────────────────────────────
 
 /**
- * Déconnecter l'utilisateur
- * (Supprime les tokens localement - logout est stateless côté backend)
+ * Déconnecter l'utilisateur.
+ * Blacklists the refresh token server-side, then removes tokens locally.
  */
-export const logout = () => {
+export const logout = async () => {
   try {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      await api.post('/auth/logout/', { refresh: refreshToken });
+    }
+  } catch {
+    // Best-effort: even if backend call fails, clear tokens locally
+  } finally {
     removeTokens();
-  } catch (error) {
-    console.error('Erreur lors de la déconnexion:', error);
   }
 };
 

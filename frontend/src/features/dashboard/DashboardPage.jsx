@@ -68,16 +68,16 @@ const Dashboard = () => {
 	];
 
 	return (
-		<div className="bg-neutral-50">
+		<section className="bg-neutral-50" aria-labelledby="dashboard-heading">
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
 				{/* Header */}
 				<div className="mb-8">
-					<h1 className="text-3xl font-bold text-neutral-900 mb-2">My Dashboard</h1>
+					<h1 id="dashboard-heading" className="text-3xl font-bold text-neutral-900 mb-2">My Dashboard</h1>
 					<p className="text-neutral-600">Track and manage your opportunities</p>
 				</div>
 
 				{/* Stats Cards */}
-				<div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+				<div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" role="region" aria-label="Dashboard statistics">
 					<Card>
 						<CardHeader className="pb-3">
 							<CardTitle className="text-sm font-medium text-neutral-600">Saved</CardTitle>
@@ -85,7 +85,7 @@ const Dashboard = () => {
 						<CardContent>
 							<div className="flex items-center justify-between">
 								<p className="text-3xl font-bold text-neutral-900">{savedOpportunities.length}</p>
-								<Bookmark className="w-8 h-8 text-blue-600" />
+								<Bookmark className="w-8 h-8 text-blue-600" aria-hidden="true" />
 							</div>
 						</CardContent>
 					</Card>
@@ -97,7 +97,7 @@ const Dashboard = () => {
 						<CardContent>
 							<div className="flex items-center justify-between">
 								<p className="text-3xl font-bold text-neutral-900">{appliedOpportunities.length}</p>
-								<Briefcase className="w-8 h-8 text-blue-600" />
+								<Briefcase className="w-8 h-8 text-blue-600" aria-hidden="true" />
 							</div>
 						</CardContent>
 					</Card>
@@ -109,7 +109,7 @@ const Dashboard = () => {
 						<CardContent>
 							<div className="flex items-center justify-between">
 								<p className="text-3xl font-bold text-neutral-900">1</p>
-								<Calendar className="w-8 h-8 text-blue-600" />
+								<Calendar className="w-8 h-8 text-blue-600" aria-hidden="true" />
 							</div>
 						</CardContent>
 					</Card>
@@ -121,7 +121,7 @@ const Dashboard = () => {
 						<CardContent>
 							<div className="flex items-center justify-between">
 								<p className="text-3xl font-bold text-neutral-900">24</p>
-								<TrendingUp className="w-8 h-8 text-blue-600" />
+								<TrendingUp className="w-8 h-8 text-blue-600" aria-hidden="true" />
 							</div>
 						</CardContent>
 					</Card>
@@ -129,7 +129,7 @@ const Dashboard = () => {
 
 				{/* Main Content */}
 				<Tabs defaultValue="saved" className="space-y-6">
-					<TabsList>
+					<TabsList aria-label="Opportunity categories">
 						<TabsTrigger value="saved">Saved Opportunities</TabsTrigger>
 						<TabsTrigger value="applied">Applications</TabsTrigger>
 						<TabsTrigger value="recommended">Recommended</TabsTrigger>
@@ -140,7 +140,7 @@ const Dashboard = () => {
 						{savedOpportunities.length === 0 ? (
 							<Card>
 								<CardContent className="py-12 text-center">
-									<Bookmark className="w-12 h-12 text-neutral-300 mx-auto mb-4" />
+									<Bookmark className="w-12 h-12 text-neutral-300 mx-auto mb-4" aria-hidden="true" />
 									<p className="text-neutral-600 mb-4">No saved opportunities yet</p>
 									<Button asChild>
 										<Link to="/opportunities">Browse Opportunities</Link>
@@ -208,7 +208,7 @@ const Dashboard = () => {
 						{appliedOpportunities.length === 0 ? (
 							<Card>
 								<CardContent className="py-12 text-center">
-									<Briefcase className="w-12 h-12 text-neutral-300 mx-auto mb-4" />
+									<Briefcase className="w-12 h-12 text-neutral-300 mx-auto mb-4" aria-hidden="true" />
 									<p className="text-neutral-600 mb-4">No applications yet</p>
 									<Button asChild>
 										<Link to="/opportunities">Start Applying</Link>
@@ -244,7 +244,7 @@ const Dashboard = () => {
 												<div className="flex items-center gap-4 text-sm text-neutral-500">
 													<span>Applied: {opportunity.appliedDate}</span>
 													<span className="flex items-center gap-1">
-														<Clock className="w-4 h-4" />
+														<Clock className="w-4 h-4" aria-hidden="true" />
 														Updated {opportunity.lastUpdate}
 													</span>
 												</div>
@@ -283,7 +283,7 @@ const Dashboard = () => {
 					</TabsContent>
 				</Tabs>
 			</div>
-		</div>
+		</section>
 	);
 };
 

@@ -3,9 +3,10 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
-from .models import Utilisateur, Profil, OTPChallenge
+from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
 from .serializers import (
     UtilisateurSerializer,
     ProfilUpdateSerializer,
@@ -177,6 +178,9 @@ def verify_otp(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Record login event and detect suspicious activity
+    LoginEvent.record(user, request)
+
     refresh = RefreshToken.for_user(user)
 
     return Response(
@@ -187,3 +191,33 @@ def verify_otp(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
+# ══════════════════════════════════════════════════════════
+# Logout (token blacklist)
+# ══════════════════════════════════════════════════════════
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    """
+    POST /api/auth/logout/
+    Blacklist the provided refresh token so it can no longer be used.
+    """
+    refresh_token = request.data.get('refresh')
+    if not refresh_token:
+        return Response(
+            {"error": "Refresh token is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        token = RefreshToken(refresh_token)
+        token.blacklist()
+    except TokenError:
+        return Response(
+            {"error": "Token is invalid or already blacklisted."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)

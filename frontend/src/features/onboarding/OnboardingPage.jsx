@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { Button } from '../../components/ui/button.jsx';
@@ -89,6 +89,7 @@ const Onboarding = () => {
 	const [data, setData] = useState(saved?.data ?? { ...initialData });
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
+	const headingRef = useRef(null);
 
 	// Already onboarded → redirect to dashboard
 	useEffect(() => {
@@ -96,6 +97,11 @@ const Onboarding = () => {
 			navigate('/dashboard', { replace: true });
 		}
 	}, [user, loading, navigate]);
+
+	// Focus heading when step changes for screen readers
+	useEffect(() => {
+		if (headingRef.current) headingRef.current.focus();
+	}, [currentStep]);
 
 	// Persist to sessionStorage on every change
 	useEffect(() => {
@@ -180,13 +186,13 @@ const Onboarding = () => {
 	const isLastStep = currentStep === TOTAL_STEPS - 1;
 
 	return (
-		<div className="flex min-h-screen items-start justify-center bg-neutral-50 px-4 py-12">
+		<section className="flex min-h-screen items-start justify-center bg-neutral-50 px-4 py-12" aria-labelledby="onboarding-heading">
 			<div className="w-full max-w-xl">
 				{/* Logo */}
 				<div className="mb-8 text-center">
-					<Link to="/" className="inline-flex items-center gap-2">
+					<Link to="/" className="inline-flex items-center gap-2" aria-label="BidWise home">
 						<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-							<Briefcase className="h-6 w-6 text-white" />
+							<Briefcase className="h-6 w-6 text-white" aria-hidden="true" />
 						</div>
 						<span className="text-xl font-semibold text-neutral-900">
 							BidWise
@@ -204,7 +210,7 @@ const Onboarding = () => {
 							</span>
 							<span>{progress}%</span>
 						</div>
-						<div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+						<div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Onboarding progress: ${progress}%`}>
 							<div
 								className="h-full rounded-full bg-blue-600 transition-all duration-300"
 								style={{ width: `${progress}%` }}
@@ -214,7 +220,7 @@ const Onboarding = () => {
 
 					{/* Step header */}
 					<div className="px-8 pt-6">
-						<h1 className="text-xl font-semibold text-neutral-900">
+						<h1 id="onboarding-heading" ref={headingRef} tabIndex={-1} className="text-xl font-semibold text-neutral-900">
 							{meta.title}
 						</h1>
 						<p className="mt-1 text-sm text-neutral-500">
@@ -229,7 +235,7 @@ const Onboarding = () => {
 
 					{/* Error */}
 					{error && (
-						<div className="px-8 pb-2">
+						<div className="px-8 pb-2" role="alert" aria-live="assertive">
 							<p className="text-sm text-red-600">{error}</p>
 						</div>
 					)}
@@ -243,7 +249,7 @@ const Onboarding = () => {
 									onClick={handleBack}
 									disabled={isSubmitting}
 								>
-									<ArrowLeft className="mr-1 h-4 w-4" />
+								<ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
 									Back
 								</Button>
 							)}
@@ -262,18 +268,18 @@ const Onboarding = () => {
 							<Button onClick={handleNext} disabled={isSubmitting}>
 								{isSubmitting ? (
 									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 										Saving…
 									</>
 								) : isLastStep ? (
 									<>
-										<Check className="mr-1 h-4 w-4" />
+										<Check className="mr-1 h-4 w-4" aria-hidden="true" />
 										Finish
 									</>
 								) : (
 									<>
 										Next
-										<ArrowRight className="ml-1 h-4 w-4" />
+										<ArrowRight className="ml-1 h-4 w-4" aria-hidden="true" />
 									</>
 								)}
 							</Button>
@@ -281,7 +287,7 @@ const Onboarding = () => {
 					</div>
 				</div>
 			</div>
-		</div>
+		</section>
 	);
 };
 

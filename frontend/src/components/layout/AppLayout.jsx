@@ -9,14 +9,19 @@ const AppLayout = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const isHome = location.pathname === '/';
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/');
   };
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white">
+      {/* H. Skip navigation link */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
+      <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white" role="banner">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <Link to="/" className="flex items-center gap-2">
@@ -27,7 +32,7 @@ const AppLayout = () => {
             </Link>
 
             {!isHome && (
-              <nav className="hidden items-center gap-8 md:flex">
+              <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">
                 <Link
                   to="/opportunities"
                   className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
@@ -57,8 +62,8 @@ const AppLayout = () => {
                 <>
                   {isAuthenticated ? (
                     <>
-                      <Button variant="ghost" size="icon" className="relative">
-                        <Bell className="h-5 w-5" />
+                      <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+                        <Bell className="h-5 w-5" aria-hidden="true" />
                         <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
                       </Button>
                       <span className="hidden text-sm text-neutral-700 lg:inline">
@@ -81,11 +86,11 @@ const AppLayout = () => {
         </div>
       </header>
 
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <Outlet />
       </main>
 
-      <footer className="mt-20 border-t border-neutral-200 bg-white">
+      <footer className="mt-20 border-t border-neutral-200 bg-white" role="contentinfo">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             <div>

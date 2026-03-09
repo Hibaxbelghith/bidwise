@@ -33,6 +33,13 @@ export async function refreshToken(refresh: string) {
 }
 
 /**
+ * Blacklist a refresh token server-side.
+ */
+export async function logoutServer(refresh: string) {
+  await api.post('/auth/logout/', { refresh });
+}
+
+/**
  * Fetch the current user profile.
  */
 export async function getProfile() {

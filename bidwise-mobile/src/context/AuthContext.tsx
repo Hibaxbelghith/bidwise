@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
-import { verifyOTP as verifyOTPService, googleLogin as googleLoginService, getProfile } from '@/src/services/auth';
-import { setTokens, clearTokens, getAccessToken } from '@/src/services/tokenStorage';
+import { verifyOTP as verifyOTPService, googleLogin as googleLoginService, getProfile, logoutServer } from '@/src/services/auth';
+import { setTokens, clearTokens, getAccessToken, getRefreshToken } from '@/src/services/tokenStorage';
 
 interface User {
   email: string;
@@ -69,8 +69,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await clearTokens();
-    setUser(null);
+    try {
+      const refresh = await getRefreshToken();
+      if (refresh) {
+        await logoutServer(refresh);
+      }
+    } catch {
+      // Best-effort: clear tokens locally even if server call fails
+    } finally {
+      await clearTokens();
+      setUser(null);
+    }
   }, []);
 
   const value: AuthContextType = {

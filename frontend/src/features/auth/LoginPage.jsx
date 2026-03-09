@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/button.jsx';
 import { Input } from '../../components/ui/input.jsx';
@@ -14,6 +14,7 @@ const VITE_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const OTPLogin = () => {
 	const { requestOTP, verifyOTP, loginWithGoogle, error: authError, isAuthenticated } = useAuth();
 	const navigate = useNavigate();
+	const headingRef = useRef(null);
 
 	// Google login
 	const [googleError, setGoogleError] = useState('');
@@ -73,6 +74,11 @@ const OTPLogin = () => {
 		}, 1000);
 		return () => clearInterval(timer);
 	}, [cooldown]);
+
+	// F. Focus management — move focus to heading on step change
+	useEffect(() => {
+		headingRef.current?.focus();
+	}, [step]);
 
 	// ── Step 1: Request OTP ─────────────────────────────────
 
@@ -175,25 +181,25 @@ const OTPLogin = () => {
 	// ── Render ──────────────────────────────────────────────
 
 	return (
-		<div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-12">
+		<section className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-12" aria-labelledby="login-heading">
 			<div className="w-full max-w-md">
 				{/* Header */}
 				<div className="mb-8 text-center">
-					<Link to="/" className="mb-4 inline-flex items-center gap-2">
+					<Link to="/" className="mb-4 inline-flex items-center gap-2" aria-label="BidWise home">
 						<div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600">
-							<Briefcase className="h-7 w-7 text-white" />
+							<Briefcase className="h-7 w-7 text-white" aria-hidden="true" />
 						</div>
 					</Link>
 					{step === 1 ? (
 						<>
-							<h1 className="mb-2 text-2xl font-bold text-neutral-900">Sign in to BidWise</h1>
+							<h1 id="login-heading" ref={headingRef} tabIndex={-1} className="mb-2 text-2xl font-bold text-neutral-900 outline-none">Sign in to BidWise</h1>
 							<p className="text-neutral-600">
 								Enter your email to receive a login code
 							</p>
 						</>
 					) : (
 						<>
-							<h1 className="mb-2 text-2xl font-bold text-neutral-900">Enter your code</h1>
+							<h1 id="login-heading" ref={headingRef} tabIndex={-1} className="mb-2 text-2xl font-bold text-neutral-900 outline-none">Enter your code</h1>
 							<p className="text-neutral-600">
 								We sent a 6-digit code to{' '}
 								<span className="font-medium text-neutral-900">{email}</span>
@@ -206,11 +212,13 @@ const OTPLogin = () => {
 				<div className="rounded-lg border border-neutral-200 bg-white p-8">
 					{/* ── Step 1: Email ── */}
 					{step === 1 && (
-						<form onSubmit={handleRequestOTP} className="space-y-6">
+						<form onSubmit={handleRequestOTP} className="space-y-6" aria-label="Sign in with email">
 							{(formError || authError || googleError) && (
-								<Alert variant="destructive">
-									<AlertDescription>{formError || authError || googleError}</AlertDescription>
-								</Alert>
+								<div role="alert" aria-live="assertive">
+									<Alert variant="destructive">
+										<AlertDescription>{formError || authError || googleError}</AlertDescription>
+									</Alert>
+								</div>
 							)}
 
 							{/* Google button */}
@@ -246,6 +254,8 @@ const OTPLogin = () => {
 									disabled={isLoading}
 									autoComplete="email"
 									autoFocus
+									aria-label="Email address"
+									aria-required="true"
 									aria-invalid={emailError ? 'true' : 'false'}
 									aria-describedby={emailError ? 'email-error' : undefined}
 								/>
@@ -274,17 +284,19 @@ const OTPLogin = () => {
 
 					{/* ── Step 2: OTP ── */}
 					{step === 2 && (
-						<form onSubmit={handleVerifyOTP} className="space-y-6">
+						<form onSubmit={handleVerifyOTP} className="space-y-6" aria-label="Verify OTP code">
 							{/* Success banner */}
-							<div className="flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-800">
-								<CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
+							<div className="flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-800" role="status">
+								<CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" aria-hidden="true" />
 								Code sent to your email
 							</div>
 
 							{(formError || authError) && (
-								<Alert variant="destructive">
-									<AlertDescription>{formError || authError}</AlertDescription>
-								</Alert>
+								<div role="alert" aria-live="assertive">
+									<Alert variant="destructive">
+										<AlertDescription>{formError || authError}</AlertDescription>
+									</Alert>
+								</div>
 							)}
 
 							<div className="space-y-2">
@@ -306,6 +318,8 @@ const OTPLogin = () => {
 									autoComplete="one-time-code"
 									autoFocus
 									className="text-center text-2xl tracking-[0.5em]"
+									aria-label="6-digit verification code"
+									aria-required="true"
 									aria-invalid={otpError ? 'true' : 'false'}
 									aria-describedby={otpError ? 'otp-error' : undefined}
 								/>
@@ -362,7 +376,7 @@ const OTPLogin = () => {
 					No password needed — we'll email you a login code every time.
 				</p>
 			</div>
-		</div>
+		</section>
 	);
 };
 
