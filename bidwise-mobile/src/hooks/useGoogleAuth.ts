@@ -1,18 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  isSuccessResponse,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
+import { useCallback, useState } from 'react';
+import { NativeModules } from 'react-native';
+
+const googleAvailable = !!NativeModules.RNGoogleSignin;
 
 // Web client ID — the native SDK uses it to request an id_token
 const WEB_CLIENT_ID =
   '149784459020-aknnq7m4rlur7pj32cd1elkf68cpbblt.apps.googleusercontent.com';
 
-GoogleSignin.configure({
-  webClientId: WEB_CLIENT_ID,
-});
+function getGoogleModule() {
+  // Only require when we know the native module exists
+  const mod = require('@react-native-google-signin/google-signin');
+  return mod;
+}
+
+if (googleAvailable) {
+  const { GoogleSignin } = getGoogleModule();
+  GoogleSignin.configure({ webClientId: WEB_CLIENT_ID });
+}
 
 export function useGoogleAuth() {
   const [idToken, setIdToken] = useState<string | null>(null);
@@ -20,9 +24,15 @@ export function useGoogleAuth() {
   const [error, setError] = useState<string | null>(null);
 
   const promptGoogle = useCallback(async () => {
+    if (!googleAvailable) {
+      setError('Google Sign-In is not available in Expo Go. Use a development build.');
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
+
+      const { GoogleSignin, isSuccessResponse, isErrorWithCode, statusCodes } = getGoogleModule();
 
       await GoogleSignin.hasPlayServices();
       // Sign out first to always show account picker
@@ -40,6 +50,7 @@ export function useGoogleAuth() {
         setError('Google sign-in was cancelled');
       }
     } catch (e: any) {
+      const { isErrorWithCode, statusCodes } = getGoogleModule();
       if (isErrorWithCode(e)) {
         switch (e.code) {
           case statusCodes.SIGN_IN_CANCELLED:

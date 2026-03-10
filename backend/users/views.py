@@ -85,7 +85,12 @@ def request_otp(request):
     # Housekeeping — delete expired/used rows globally
     OTPChallenge.purge_expired()
 
-    # Per-email cooldown
+    # Ensure verified OTPs for this email are cleared so they
+    # never block the cooldown check (e.g. user already logged in
+    # on another device and wants a new OTP immediately).
+    OTPChallenge.objects.filter(email=email, is_used=True).delete()
+
+    # Per-email cooldown (only if an unused, non-expired OTP exists)
     if OTPChallenge.is_on_cooldown(email):
         return Response({"message": _OTP_SENT_MSG}, status=status.HTTP_200_OK)
 

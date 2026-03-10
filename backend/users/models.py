@@ -1,5 +1,7 @@
+import logging
 import secrets
 
+import requests
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.hashers import make_password, check_password
@@ -207,9 +209,18 @@ class OTPChallenge(models.Model):
 
     @classmethod
     def is_on_cooldown(cls, email: str) -> bool:
-        """True if a fresh OTP was created within the cooldown window."""
+        """
+        True only if a recent, unused, non-expired OTP exists.
+        Once the user verifies an OTP (e.g. logs in on one device),
+        they can immediately request a new one for another device.
+        """
         cutoff = timezone.now() - timezone.timedelta(seconds=cls.COOLDOWN_SECONDS)
-        return cls.objects.filter(email=email, created_at__gte=cutoff, is_used=False).exists()
+        return cls.objects.filter(
+            email=email,
+            created_at__gte=cutoff,
+            is_used=False,
+            expires_at__gt=timezone.now(),
+        ).exists()
 
 
 class LoginEvent(models.Model):
@@ -292,20 +303,109 @@ class LoginEvent(models.Model):
         return 'Desktop'
 
     @staticmethod
+    def _get_ip_location(ip_address: str) -> str:
+        """Resolve IP to a human-readable location using ip-api.com (free)."""
+        try:
+            resp = requests.get(
+                f'http://ip-api.com/json/{ip_address}',
+                params={'fields': 'status,city,regionName,country'},
+                timeout=3,
+            )
+            data = resp.json()
+            if data.get('status') == 'success':
+                parts = [p for p in [data.get('city'), data.get('regionName'), data.get('country')] if p]
+                return ', '.join(parts) if parts else 'Unknown'
+        except Exception:
+            logging.getLogger(__name__).debug('IP geolocation failed for %s', ip_address)
+        return 'Unknown'
+
+    @staticmethod
     def _send_suspicious_email(user, event):
-        from django.core.mail import send_mail
+        from django.core.mail import EmailMultiAlternatives
         from django.conf import settings
 
-        send_mail(
-            subject='New login detected on your BidWise account',
-            message=(
-                f"A new login was detected.\n\n"
-                f"Device: {event.device_type}\n"
-                f"IP Address: {event.ip_address}\n"
-                f"Time: {event.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
-                f"If this wasn't you, please contact support immediately."
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=True,
+        display_name = user.first_name or user.email
+        time_str = event.created_at.strftime('%B %d, %Y at %I:%M %p UTC')
+        location = LoginEvent._get_ip_location(event.ip_address)
+
+        location_text = f"  Location:    {location}\n" if location != 'Unknown' else ""
+        text_content = (
+            f"Hi {display_name},\n\n"
+            f"We detected a new sign-in to your BidWise account from "
+            f"a device or location we don't recognize.\n\n"
+            f"  Device:      {event.device_type}\n"
+            f"  IP Address:  {event.ip_address}\n"
+            f"{location_text}"
+            f"  Date & Time: {time_str}\n\n"
+            f"If this was you, no action is needed.\n\n"
+            f"If you did NOT sign in, we recommend you:\n"
+            f"  1. Log out of all sessions immediately\n"
+            f"  2. Contact our support team at support@bidwise.com\n\n"
+            f"Stay safe,\n"
+            f"The BidWise Security Team"
         )
+
+        location_row = ""
+        if location != 'Unknown':
+            location_row = f"""
+                    <tr>
+                        <td style="padding: 12px 16px; color: #6b7280; font-size: 14px; border-bottom: 1px solid #e5e7eb;">&#x1f4cd; Location</td>
+                        <td style="padding: 12px 16px; color: #111827; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">{location}</td>
+                    </tr>"""
+
+        html_content = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
+            <div style="background-color: #1e40af; padding: 24px 32px; border-radius: 8px 8px 0 0;">
+                <h1 style="color: #ffffff; font-size: 20px; margin: 0;">&#x1f6e1;&#xfe0f; Security Alert</h1>
+            </div>
+            <div style="background-color: #ffffff; padding: 32px; border: 1px solid #e5e7eb; border-top: none;">
+                <p style="color: #111827; font-size: 16px; margin-top: 0;">
+                    Hi <strong>{display_name}</strong>,
+                </p>
+                <p style="color: #374151; font-size: 15px; line-height: 1.6;">
+                    We detected a new sign-in to your BidWise account from a device
+                    or location we don&rsquo;t recognize.
+                </p>
+                <table style="width: 100%; border-collapse: collapse; margin: 24px 0; background-color: #f9fafb; border-radius: 8px;">
+                    <tr>
+                        <td style="padding: 12px 16px; color: #6b7280; font-size: 14px; border-bottom: 1px solid #e5e7eb;">Device</td>
+                        <td style="padding: 12px 16px; color: #111827; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">{event.device_type}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 12px 16px; color: #6b7280; font-size: 14px; border-bottom: 1px solid #e5e7eb;">IP Address</td>
+                        <td style="padding: 12px 16px; color: #111827; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">{event.ip_address}</td>
+                    </tr>{location_row}
+                    <tr>
+                        <td style="padding: 12px 16px; color: #6b7280; font-size: 14px;">Date &amp; Time</td>
+                        <td style="padding: 12px 16px; color: #111827; font-size: 14px; font-weight: 600;">{time_str}</td>
+                    </tr>
+                </table>
+                <p style="color: #374151; font-size: 15px; line-height: 1.6;">
+                    If this was you, no action is needed.
+                </p>
+                <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; border-radius: 4px; margin: 24px 0;">
+                    <p style="color: #991b1b; font-size: 14px; margin: 0; font-weight: 600;">
+                        If you did NOT sign in:
+                    </p>
+                    <ol style="color: #991b1b; font-size: 14px; margin: 8px 0 0 0; padding-left: 20px;">
+                        <li>Log out of all sessions immediately</li>
+                        <li>Contact our support team at <a href="mailto:support@bidwise.com" style="color: #1e40af;">support@bidwise.com</a></li>
+                    </ol>
+                </div>
+            </div>
+            <div style="background-color: #f9fafb; padding: 16px 32px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; text-align: center;">
+                <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                    &copy; BidWise &mdash; This is an automated security notification.
+                </p>
+            </div>
+        </div>
+        """
+
+        msg = EmailMultiAlternatives(
+            subject='\U0001f6a8 New login detected on your BidWise account',
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user.email],
+        )
+        msg.attach_alternative(html_content, "text/html")
+        msg.send(fail_silently=True)
