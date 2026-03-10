@@ -20,7 +20,8 @@ import {
 	CardTitle,
 } from '../../components/ui/card.jsx';
 import { Alert, AlertDescription } from '../../components/ui/alert.jsx';
-import { ArrowLeft, CheckCircle2, Loader2, Plus, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Plus, X } from 'lucide-react';
+import { Spinner } from '../../components/ui/spinner.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 const EXPERIENCE_OPTIONS = [
@@ -349,7 +350,7 @@ const Profile = () => {
 						<Button type="submit" disabled={isLoading}>
 							{isLoading ? (
 								<>
-									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+									   <Spinner size={18} className="mr-2" />
 									Saving...
 								</>
 							) : (

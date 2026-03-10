@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { Button } from '../../components/ui/button.jsx';
-import { Briefcase, Loader2, ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { Briefcase, ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { Spinner } from '../../components/ui/spinner.jsx';
 
 import StepOpportunityIntent from './steps/StepOpportunityIntent.jsx';
 import StepLocation from './steps/StepLocation.jsx';
@@ -175,7 +176,7 @@ const Onboarding = () => {
 	if (loading) {
 		return (
 			<div className="flex min-h-screen items-center justify-center bg-neutral-50">
-				<Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+				   <Spinner size={32} color="#2563eb" />
 			</div>
 		);
 	}
@@ -268,7 +269,7 @@ const Onboarding = () => {
 							<Button onClick={handleNext} disabled={isSubmitting}>
 								{isSubmitting ? (
 									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+										   <Spinner size={18} className="mr-2" />
 										Saving…
 									</>
 								) : isLastStep ? (

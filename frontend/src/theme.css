@@ -185,6 +185,14 @@
   outline-offset: 2px;
 }
 
+/* Non-interactive elements focused programmatically (e.g. headings) */
+h1:focus-visible,
+h2:focus-visible,
+h3:focus-visible,
+[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
 /* H. Skip navigation link */
 .skip-link {
   position: absolute;

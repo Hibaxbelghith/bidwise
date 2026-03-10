@@ -4,7 +4,8 @@ import { Button } from '../../components/ui/button.jsx';
 import { Input } from '../../components/ui/input.jsx';
 import { Label } from '../../components/ui/label.jsx';
 import { Alert, AlertDescription } from '../../components/ui/alert.jsx';
-import { Briefcase, Loader2, ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
+import { Briefcase, ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
+import { Spinner } from '../../components/ui/spinner.jsx';
 import { useAuth } from './AuthContext.jsx';
 import { useGoogleIdentity } from './useGoogleIdentity.js';
 
@@ -12,7 +13,7 @@ const COOLDOWN_SECONDS = 60;
 const VITE_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 const OTPLogin = () => {
-	const { requestOTP, verifyOTP, loginWithGoogle, error: authError, isAuthenticated, user } = useAuth();
+	const { requestOTP, verifyOTP, loginWithGoogle, error: authError, isAuthenticated, user, loading } = useAuth();
 	const navigate = useNavigate();
 	const headingRef = useRef(null);
 
@@ -53,6 +54,11 @@ const OTPLogin = () => {
 	const [step, setStep] = useState(1);
 	const [email, setEmail] = useState('');
 	const [otp, setOtp] = useState('');
+	const [showGoogleOnly, setShowGoogleOnly] = useState(false);
+
+	useEffect(() => {
+		setShowGoogleOnly(/@gmail\.com$/i.test(email.trim()));
+	}, [email]);
 	const [emailError, setEmailError] = useState('');
 	const [otpError, setOtpError] = useState('');
 	const [formError, setFormError] = useState('');
@@ -179,6 +185,9 @@ const OTPLogin = () => {
 		setCooldown(0);
 	};
 
+	// Don't flash the login form while checking existing session
+	if (loading) return null;
+
 	// ── Render ──────────────────────────────────────────────
 
 	return (
@@ -212,7 +221,65 @@ const OTPLogin = () => {
 				{/* Card */}
 				<div className="rounded-lg border border-neutral-200 bg-white p-8">
 					{/* ── Step 1: Email ── */}
-					{step === 1 && (
+				{step === 1 && (
+					showGoogleOnly ? (
+						<div className="space-y-6" aria-label="Sign in with Google">
+							{/* Texte d'accueil et sécurité */}
+							<div className="mb-2 text-center">
+								<h2 className="text-xl font-semibold text-neutral-900 mb-1">Nous sommes ravis de vous revoir</h2>
+								<p className="text-neutral-700 mb-1">Votre email est géré en toute sécurité par Google.</p>
+								<p className="text-neutral-700 mb-1">Continuer en tant que <span className="font-bold">{email}</span>.</p>
+								<button
+									type="button"
+									className="text-sm text-blue-600 hover:underline mb-2"
+									onClick={() => setEmail('')}
+								>
+									(Ce n'est pas vous ?)
+								</button>
+							</div>
+
+							{(formError || authError || googleError) && (
+								<div role="alert" aria-live="assertive">
+									<Alert variant="destructive">
+										<AlertDescription>{formError || authError || googleError}</AlertDescription>
+									</Alert>
+								</div>
+							)}
+
+							{/* Google button principal */}
+							{VITE_GOOGLE_CLIENT_ID && (
+								<div className="relative mb-4">
+									{googleReady ? (
+										<div
+											ref={googleBtnRef}
+											className={googleLoading ? 'pointer-events-none opacity-50' : ''}
+										/>
+									) : (
+										<div className="flex h-[44px] w-full items-center justify-center rounded border border-neutral-200 bg-white">
+											<span className="text-sm text-neutral-400">Loading...</span>
+										</div>
+									)}
+								</div>
+							)}
+
+							{/* Explication confidentialité */}
+							<div className="text-xs text-neutral-500 text-left mb-2">
+								Indeed utilisera vos informations uniquement dans le cadre décrit par sa <a href="https://www.indeed.com/legal?hl=fr&co=FR#privacy" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">politique de confidentialité</a>. Google peut vous demander l'autorisation de partager des données avec Indeed, telles que votre nom, votre photo de profil, vos informations de profil public et votre adresse email.
+							</div>
+
+							{/* Lien pour code */}
+							<div className="text-center">
+								<button
+									type="button"
+									className="text-sm text-blue-600 hover:underline"
+									onClick={() => setShowGoogleOnly(false)}
+								>
+									Se connecter avec un code
+								</button>
+							</div>
+						</div>
+					) : (
+						// ...existing code for email form...
 						<form onSubmit={handleRequestOTP} className="space-y-6" aria-label="Sign in with email">
 							{(formError || authError || googleError) && (
 								<div role="alert" aria-live="assertive">
@@ -222,14 +289,20 @@ const OTPLogin = () => {
 								</div>
 							)}
 
-							{/* Google button */}
-							{googleReady && (
+							{/* Google button — reserve space to prevent layout shift */}
+							{VITE_GOOGLE_CLIENT_ID && (
 								<>
 									<div className="relative">
-										<div
-											ref={googleBtnRef}
-											className={googleLoading ? 'pointer-events-none opacity-50' : ''}
-										/>
+										{googleReady ? (
+											<div
+												ref={googleBtnRef}
+												className={googleLoading ? 'pointer-events-none opacity-50' : ''}
+											/>
+										) : (
+											<div className="flex h-[44px] w-full items-center justify-center rounded border border-neutral-200 bg-white">
+												<span className="text-sm text-neutral-400">Loading...</span>
+											</div>
+										)}
 									</div>
 
 									{/* Separator */}
@@ -270,7 +343,7 @@ const OTPLogin = () => {
 							<Button type="submit" className="w-full" disabled={isLoading}>
 								{isLoading ? (
 									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										   <Spinner size={18} className="mr-2" />
 										Sending code...
 									</>
 								) : (
@@ -281,7 +354,8 @@ const OTPLogin = () => {
 								)}
 							</Button>
 						</form>
-					)}
+					)
+				)}
 
 					{/* ── Step 2: OTP ── */}
 					{step === 2 && (
@@ -334,7 +408,7 @@ const OTPLogin = () => {
 							<Button type="submit" className="w-full" disabled={isLoading}>
 								{isLoading ? (
 									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										   <Spinner size={18} className="mr-2" />
 										Verifying...
 									</>
 								) : (

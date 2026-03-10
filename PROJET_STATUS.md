@@ -59,6 +59,40 @@
 
 ---
 
+## 🚀 SPRINT 1.1 — Passwordless & Accessibilité (Backend + Frontend)
+**Durée :** 2 jours
+**Objectif :** Authentification passwordless, sécurité, accessibilité, UX mobile/web
+
+**Features principales :**
+- Authentification passwordless (OTP email, Google Sign-In)
+- Revocation de tokens JWT (SimpleJWT + blacklist)
+- Détection de login suspect (IP, géolocalisation, email alert)
+- Autofill OTP mobile (Expo, React Native)
+- Accessibilité WCAG 2.1 (focus, contrast, navigation)
+- Tests backend (94/94 tests OK)
+
+**Corrections & améliorations :**
+- Correction multi-device OTP (cooldown, purge OTP utilisé)
+- Redirection onboarding (web/mobile)
+- Correction PUT profil (niveau_experience null)
+- Layout login (Google button, placeholder, loading guard)
+- Outline heading (exclusion h1/h2/h3)
+
+**Tests & validation :**
+- Backend : 94/94 tests OK
+- Frontend : build OK, UX validée
+- Mobile : Expo Go compatible, Google Sign-In
+
+**UX :**
+- Google login dynamique (détection email Gmail)
+- Onboarding guidé
+- Spinner moderne
+
+**Documentation mise à jour :**
+- AUTHENTICATION.md, TESTS_POSTMAN.md, SPRINT1_RECAP.md
+
+---
+
 ## 📋 Sprints Planifiés
 
 ### ✅ SPRINT 1 — Authentification (Backend API) [COMPLÉTÉ]
