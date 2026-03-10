@@ -27,6 +27,12 @@ class UtilisateurSerializer(serializers.ModelSerializer):
 
 class ProfilUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour permettre à l'utilisateur de modifier son profil."""
+    # CharField fields accept blank=True in the model but not null;
+    # the frontend may send null for unset values, so we convert it.
+    niveau_experience = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+
     class Meta:
         model = Profil
         fields = [
@@ -37,6 +43,10 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             'employment_types', 'target_roles', 'profile_visibility',
             'onboarding_completed', 'last_onboarding_step',
         ]
+
+    def validate_niveau_experience(self, value):
+        """Convert null to empty string for the CharField."""
+        return value if value is not None else ''
 
 
 # ── Passwordless OTP serializers ───────────────────────────

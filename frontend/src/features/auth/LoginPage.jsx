@@ -12,7 +12,7 @@ const COOLDOWN_SECONDS = 60;
 const VITE_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 const OTPLogin = () => {
-	const { requestOTP, verifyOTP, loginWithGoogle, error: authError, isAuthenticated } = useAuth();
+	const { requestOTP, verifyOTP, loginWithGoogle, error: authError, isAuthenticated, user } = useAuth();
 	const navigate = useNavigate();
 	const headingRef = useRef(null);
 
@@ -30,7 +30,7 @@ const OTPLogin = () => {
 		setGoogleLoading(false);
 
 		if (result.success) {
-			if (result.is_new_user) {
+			if (result.is_new_user || !result.onboarding_completed) {
 				navigate('/onboarding', { replace: true });
 			} else {
 				navigate('/dashboard', { replace: true });
@@ -62,9 +62,10 @@ const OTPLogin = () => {
 	// Redirect if already authenticated
 	useEffect(() => {
 		if (isAuthenticated) {
-			navigate('/dashboard', { replace: true });
+			const onboarded = user?.profil?.onboarding_completed;
+			navigate(onboarded ? '/dashboard' : '/onboarding', { replace: true });
 		}
-	}, [isAuthenticated, navigate]);
+	}, [isAuthenticated, user, navigate]);
 
 	// Cooldown timer
 	useEffect(() => {
@@ -139,7 +140,7 @@ const OTPLogin = () => {
 		setIsLoading(false);
 
 		if (result.success) {
-			if (result.is_new_user) {
+			if (result.is_new_user || !result.onboarding_completed) {
 				navigate('/onboarding', { replace: true });
 			} else {
 				navigate('/dashboard', { replace: true });
