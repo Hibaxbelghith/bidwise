@@ -32,6 +32,7 @@ class SourceOpportunite(models.Model):
 class Opportunite(models.Model):
     titre = models.CharField(max_length=255)
     description = models.TextField()
+    organisation_nom = models.CharField(max_length=255, blank=True, default="")
 
     type_opportunite = models.CharField(
         max_length=30,
@@ -65,8 +66,19 @@ class Opportunite(models.Model):
     date_modification = models.DateTimeField(auto_now=True)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["titre", "source", "date_publication"],
+                name="uniq_opp_title_source_pub",
+            ),
+        ]
         indexes = [
-            models.Index(fields=["type_opportunite", "statut"]),
+            models.Index(fields=["type_opportunite", "statut"], name="opp_type_statut_idx"),
+            models.Index(fields=["statut"], name="opp_statut_idx"),
+            models.Index(fields=["date_publication"], name="opp_date_pub_idx"),
+            models.Index(fields=["date_limite"], name="opp_date_limite_idx"),
+            models.Index(fields=["date_creation"], name="opp_date_creation_idx"),
+            models.Index(fields=["statut", "date_publication"], name="opp_statut_date_pub_idx"),
         ]
         ordering = ["-date_publication"]
 
