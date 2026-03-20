@@ -7,3 +7,6 @@ python-dotenv==1.0.1
 django-cors-headers
 google-auth>=2.29.0
 requests>=2.31.0
+beautifulsoup4
+playwright==1.54.0
+pytest==8.3.5
