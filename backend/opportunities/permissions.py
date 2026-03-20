@@ -3,11 +3,13 @@ from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 class IsAuthenticatedOrReadOnly(BasePermission):
     """
-    Any authenticated user can create/modify opportunities.
-    Read access requires authentication too.
+    Read-only requests are public.
+    Write operations require authentication.
     """
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_authenticated)
 
 
 class IsOwnerOrReadOnly(BasePermission):
@@ -19,4 +21,15 @@ class IsOwnerOrReadOnly(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return obj.organisation == request.user
+
+
+class IsAdminOrReadOnly(BasePermission):
+    """
+    Public read access, write access reserved to admin/staff users.
+    """
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
 

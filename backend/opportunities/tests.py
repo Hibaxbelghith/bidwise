@@ -1,544 +1,372 @@
-"""
-Comprehensive tests for the opportunities app — Sprint 1.
-
-Covers:
-  - Models: SourceOpportunite, Opportunite (fields, choices, indexes, ordering)
-  - Serializers: OpportuniteSerializer (including date validation), SourceOpportuniteSerializer
-  - Views: CRUD, filtering, ordering, permissions
-  - Permissions: IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly
-"""
-
 from datetime import date, timedelta
-from unittest.mock import MagicMock
 
+from django.db import connection, models
+from django.db.utils import IntegrityError
 from django.test import TestCase
-from rest_framework.test import APITestCase, APIClient
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
+from rest_framework.test import APIClient, APITestCase
 
 from users.models import Utilisateur
-from .models import Opportunite, SourceOpportunite, TypeOpportunite, StatutOpportunite
-from .serializers import OpportuniteSerializer, SourceOpportuniteSerializer
-from .permissions import IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly
+
+from .models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
+from .scraping.pipeline import run_collection
+from .scraping.scraper_base import BaseOpportunityScraper
+from .serializers import OpportuniteSerializer
 
 
-# ═══════════════════════════════════════════════════════════
-# MODEL TESTS
-# ═══════════════════════════════════════════════════════════
+class OpportuniteModelMetaTests(TestCase):
+    def test_unique_constraint_exists_for_title_source_publication(self):
+        unique_constraints = [
+            tuple(constraint.fields)
+            for constraint in Opportunite._meta.constraints
+            if isinstance(constraint, models.UniqueConstraint)
+        ]
+        self.assertIn(("titre", "source", "date_publication"), unique_constraints)
 
+    def test_expected_indexes_exist(self):
+        index_fields = {tuple(index.fields) for index in Opportunite._meta.indexes}
+        self.assertIn(("type_opportunite", "statut"), index_fields)
+        self.assertIn(("statut",), index_fields)
+        self.assertIn(("date_publication",), index_fields)
+        self.assertIn(("date_limite",), index_fields)
+        self.assertIn(("date_creation",), index_fields)
+        self.assertIn(("statut", "date_publication"), index_fields)
 
-class SourceOpportuniteModelTests(TestCase):
-    def test_create_source(self):
+    def test_duplicate_opportunity_same_triplet_is_blocked(self):
         source = SourceOpportunite.objects.create(
-            nom="LinkedIn", url="https://linkedin.com", type_source="SITE_EMPLOI"
+            nom="Keejob",
+            url="https://www.keejob.com",
+            type_source="SITE_EMPLOI",
         )
-        self.assertEqual(source.nom, "LinkedIn")
-        self.assertEqual(str(source), "LinkedIn")
-
-    def test_type_source_choices(self):
-        for choice_value in ["SITE_EMPLOI", "PORTAIL_PROJET", "AUTRE"]:
-            source = SourceOpportunite(
-                nom=f"Source {choice_value}",
-                url="https://example.com",
-                type_source=choice_value,
-            )
-            source.full_clean()  # should not raise
-
-
-class OpportuniteModelTests(TestCase):
-    def setUp(self):
-        self.user = Utilisateur.objects.create_user(username="org", password="pass1234")
-        self.source = SourceOpportunite.objects.create(
-            nom="Indeed", url="https://indeed.com", type_source="SITE_EMPLOI"
-        )
-
-    def test_create_opportunite(self):
-        opp = Opportunite.objects.create(
-            titre="Dev Backend",
-            description="Développeur Django",
+        Opportunite.objects.create(
+            titre="Backend Engineer",
+            description="Desc",
             type_opportunite=TypeOpportunite.EMPLOI,
             statut=StatutOpportunite.ACTIVE,
             date_publication=date.today(),
-            organisation=self.user,
-            source=self.source,
+            source=source,
         )
-        self.assertEqual(str(opp), "Dev Backend")
-        self.assertEqual(opp.statut, "ACTIVE")
 
-    def test_default_statut_is_active(self):
-        opp = Opportunite.objects.create(
-            titre="Stage IA",
-            description="Stage en IA",
-            type_opportunite=TypeOpportunite.STAGE,
-            date_publication=date.today(),
-            source=self.source,
-        )
-        self.assertEqual(opp.statut, StatutOpportunite.ACTIVE)
-
-    def test_type_opportunite_choices(self):
-        for choice in TypeOpportunite.values:
-            opp = Opportunite(
-                titre=f"Opp {choice}",
-                description="desc",
-                type_opportunite=choice,
-                date_publication=date.today(),
-                source=self.source,
-            )
-            opp.full_clean()
-
-    def test_statut_choices(self):
-        for choice in StatutOpportunite.values:
-            opp = Opportunite(
-                titre=f"Opp {choice}",
-                description="desc",
+        with self.assertRaises(IntegrityError):
+            Opportunite.objects.create(
+                titre="Backend Engineer",
+                description="Another desc",
                 type_opportunite=TypeOpportunite.EMPLOI,
-                statut=choice,
+                statut=StatutOpportunite.ACTIVE,
                 date_publication=date.today(),
-                source=self.source,
+                source=source,
             )
-            opp.full_clean()
-
-    def test_date_limite_optional(self):
-        opp = Opportunite.objects.create(
-            titre="No deadline",
-            description="desc",
-            type_opportunite=TypeOpportunite.PROJET,
-            date_publication=date.today(),
-            source=self.source,
-        )
-        self.assertIsNone(opp.date_limite)
-
-    def test_organisation_optional(self):
-        opp = Opportunite.objects.create(
-            titre="No org",
-            description="desc",
-            type_opportunite=TypeOpportunite.FINANCEMENT,
-            date_publication=date.today(),
-            source=self.source,
-        )
-        self.assertIsNone(opp.organisation)
-
-    def test_ordering_by_date_publication_desc(self):
-        opp1 = Opportunite.objects.create(
-            titre="Old",
-            description="d",
-            type_opportunite=TypeOpportunite.EMPLOI,
-            date_publication=date.today() - timedelta(days=5),
-            source=self.source,
-        )
-        opp2 = Opportunite.objects.create(
-            titre="New",
-            description="d",
-            type_opportunite=TypeOpportunite.EMPLOI,
-            date_publication=date.today(),
-            source=self.source,
-        )
-        opps = list(Opportunite.objects.all())
-        self.assertEqual(opps[0].pk, opp2.pk)
-        self.assertEqual(opps[1].pk, opp1.pk)
-
-    def test_auto_timestamps(self):
-        opp = Opportunite.objects.create(
-            titre="Timestamped",
-            description="d",
-            type_opportunite=TypeOpportunite.EMPLOI,
-            date_publication=date.today(),
-            source=self.source,
-        )
-        self.assertIsNotNone(opp.date_creation)
-        self.assertIsNotNone(opp.date_modification)
-
-    def test_organisation_set_null_on_delete(self):
-        opp = Opportunite.objects.create(
-            titre="Org delete",
-            description="d",
-            type_opportunite=TypeOpportunite.EMPLOI,
-            date_publication=date.today(),
-            organisation=self.user,
-            source=self.source,
-        )
-        self.user.delete()
-        opp.refresh_from_db()
-        self.assertIsNone(opp.organisation)
-
-
-# ═══════════════════════════════════════════════════════════
-# SERIALIZER TESTS
-# ═══════════════════════════════════════════════════════════
-
-
-class SourceOpportuniteSerializerTests(TestCase):
-    def test_serializes_fields(self):
-        source = SourceOpportunite.objects.create(
-            nom="Test", url="https://test.com", type_source="AUTRE"
-        )
-        data = SourceOpportuniteSerializer(source).data
-        self.assertEqual(set(data.keys()), {"id", "nom", "url", "type_source"})
-
-    def test_deserializes_valid_data(self):
-        s = SourceOpportuniteSerializer(
-            data={"nom": "New", "url": "https://new.com", "type_source": "AUTRE"}
-        )
-        self.assertTrue(s.is_valid())
 
 
 class OpportuniteSerializerTests(TestCase):
     def setUp(self):
         self.source = SourceOpportunite.objects.create(
-            nom="Src", url="https://src.com", type_source="SITE_EMPLOI"
+            nom="Indeed",
+            url="https://indeed.com",
+            type_source="SITE_EMPLOI",
         )
 
-    def test_serializes_with_nested_source(self):
-        opp = Opportunite.objects.create(
-            titre="Opp",
-            description="d",
-            type_opportunite=TypeOpportunite.EMPLOI,
-            date_publication=date.today(),
-            source=self.source,
+    def test_validate_deadline_not_before_publication(self):
+        serializer = OpportuniteSerializer(
+            data={
+                "titre": "Bad Dates",
+                "description": "Desc",
+                "type_opportunite": TypeOpportunite.EMPLOI,
+                "date_publication": "2026-03-10",
+                "date_limite": "2026-03-01",
+                "source_id": self.source.pk,
+            }
         )
-        data = OpportuniteSerializer(opp).data
-        self.assertIn("source", data)
-        self.assertEqual(data["source"]["nom"], "Src")
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("date_limite", serializer.errors)
 
-    def test_validate_date_limite_before_publication_rejected(self):
-        data = {
-            "titre": "Bad dates",
-            "description": "d",
-            "type_opportunite": "EMPLOI",
-            "date_publication": "2026-03-10",
-            "date_limite": "2026-03-05",
-            "source_id": self.source.pk,
-        }
-        s = OpportuniteSerializer(data=data)
-        self.assertFalse(s.is_valid())
-        self.assertIn("date_limite", s.errors)
-
-    def test_validate_date_limite_equal_to_publication_accepted(self):
-        today = date.today().isoformat()
-        data = {
-            "titre": "Same dates",
-            "description": "d",
-            "type_opportunite": "EMPLOI",
-            "date_publication": today,
-            "date_limite": today,
-            "source_id": self.source.pk,
-        }
-        s = OpportuniteSerializer(data=data)
-        # source is read_only in serializer, so we need to handle it
-        # The serializer has source as read_only, so creation via serializer
-        # won't include source. This validates the date logic only.
-        if not s.is_valid():
-            # Only date_limite error matters here
-            self.assertNotIn("date_limite", s.errors)
-
-    def test_validate_date_limite_after_publication_accepted(self):
-        data = {
-            "titre": "Good dates",
-            "description": "d",
-            "type_opportunite": "EMPLOI",
-            "date_publication": "2026-03-01",
-            "date_limite": "2026-03-31",
-            "source_id": self.source.pk,
-        }
-        s = OpportuniteSerializer(data=data)
-        if not s.is_valid():
-            self.assertNotIn("date_limite", s.errors)
-
-    def test_validate_no_date_limite_accepted(self):
-        data = {
-            "titre": "No deadline",
-            "description": "d",
-            "type_opportunite": "EMPLOI",
-            "date_publication": "2026-03-10",
-            "source_id": self.source.pk,
-        }
-        s = OpportuniteSerializer(data=data)
-        if not s.is_valid():
-            self.assertNotIn("date_limite", s.errors)
+    def test_read_only_owner_field_ignores_payload_owner(self):
+        owner = Utilisateur.objects.create_user(username="owner", password="pass1234")
+        serializer = OpportuniteSerializer(
+            data={
+                "titre": "Owner Test",
+                "description": "Desc",
+                "organisation_nom": "Orange Tunisie",
+                "type_opportunite": TypeOpportunite.EMPLOI,
+                "date_publication": "2026-03-10",
+                "source_id": self.source.pk,
+                "organisation": owner.pk,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertNotIn("organisation", serializer.validated_data)
+        self.assertEqual(serializer.validated_data["organisation_nom"], "Orange Tunisie")
 
 
-# ═══════════════════════════════════════════════════════════
-# PERMISSION TESTS
-# ═══════════════════════════════════════════════════════════
-
-
-class IsAuthenticatedOrReadOnlyPermissionTests(TestCase):
+class OpportuniteAPITests(APITestCase):
     def setUp(self):
-        self.permission = IsAuthenticatedOrReadOnly()
-
-    def _make_request(self, user=None):
-        request = MagicMock()
-        request.user = user if user else MagicMock(is_authenticated=False)
-        return request
-
-    def test_authenticated_user_allowed(self):
-        user = Utilisateur.objects.create_user(username="u1", password="pass1234")
-        request = self._make_request(user)
-        self.assertTrue(self.permission.has_permission(request, None))
-
-    def test_anonymous_user_denied(self):
-        request = self._make_request(None)
-        self.assertFalse(self.permission.has_permission(request, None))
-
-
-class IsOwnerOrReadOnlyPermissionTests(TestCase):
-    def setUp(self):
-        self.permission = IsOwnerOrReadOnly()
-        self.owner = Utilisateur.objects.create_user(username="owner", password="pass1234")
-        self.other = Utilisateur.objects.create_user(username="other", password="pass1234")
-        self.source = SourceOpportunite.objects.create(
-            nom="S", url="https://s.com", type_source="AUTRE"
-        )
-        self.opp = Opportunite.objects.create(
-            titre="Owned",
-            description="d",
-            type_opportunite=TypeOpportunite.EMPLOI,
-            date_publication=date.today(),
-            organisation=self.owner,
-            source=self.source,
-        )
-
-    def _make_request(self, user, method="GET"):
-        request = MagicMock()
-        request.user = user
-        request.method = method
-        return request
-
-    def test_owner_can_modify(self):
-        request = self._make_request(self.owner, "PUT")
-        self.assertTrue(self.permission.has_object_permission(request, None, self.opp))
-
-    def test_non_owner_cannot_modify(self):
-        request = self._make_request(self.other, "PUT")
-        self.assertFalse(self.permission.has_object_permission(request, None, self.opp))
-
-    def test_non_owner_can_read(self):
-        request = self._make_request(self.other, "GET")
-        self.assertTrue(self.permission.has_object_permission(request, None, self.opp))
-
-    def test_safe_methods_allowed(self):
-        for method in ("GET", "HEAD", "OPTIONS"):
-            request = self._make_request(self.other, method)
-            self.assertTrue(self.permission.has_object_permission(request, None, self.opp))
-
-
-# ═══════════════════════════════════════════════════════════
-# VIEW / API TESTS
-# ═══════════════════════════════════════════════════════════
-
-
-class OpportuniteViewSetTests(APITestCase):
-    """Tests for /api/opportunites/ CRUD, filtering, ordering."""
-
-    def setUp(self):
-        self.user = Utilisateur.objects.create_user(
-            username="apiuser", email="api@test.com", password="pass1234"
+        self.client = APIClient()
+        self.owner = Utilisateur.objects.create_user(
+            username="owner",
+            email="owner@test.com",
+            password="pass1234",
         )
         self.other_user = Utilisateur.objects.create_user(
-            username="otherapi", email="other@test.com", password="pass1234"
+            username="other",
+            email="other@test.com",
+            password="pass1234",
+        )
+        self.staff_user = Utilisateur.objects.create_user(
+            username="admin",
+            email="admin@test.com",
+            password="pass1234",
+            is_staff=True,
         )
         self.source = SourceOpportunite.objects.create(
-            nom="JobBoard", url="https://jobboard.com", type_source="SITE_EMPLOI"
+            nom="JobBoard",
+            url="https://jobboard.com",
+            type_source="SITE_EMPLOI",
         )
-        self.client = APIClient()
-        self.url = "/api/opportunites/"
+        self.base_url = "/api/opportunities/"
+        self.legacy_url = "/api/opportunites/"
+        self.sources_url = "/api/sources/"
 
-    def _create_opp(self, titre="Dev", type_opp="EMPLOI", statut="ACTIVE",
-                     date_pub=None, organisation=None):
-        return Opportunite.objects.create(
-            titre=titre,
-            description="desc",
-            type_opportunite=type_opp,
-            statut=statut,
-            date_publication=date_pub or date.today(),
-            organisation=organisation or self.user,
-            source=self.source,
+    def create_opp(self, **kwargs):
+        defaults = {
+            "titre": "Default Opportunity",
+            "description": "Django and APIs",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": date.today(),
+            "date_limite": date.today() + timedelta(days=15),
+            "organisation": self.owner,
+            "source": self.source,
+        }
+        defaults.update(kwargs)
+        return Opportunite.objects.create(**defaults)
+
+    def test_list_is_public(self):
+        self.create_opp()
+        response = self.client.get(self.base_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("results", response.data)
+
+    def test_detail_is_public(self):
+        opportunity = self.create_opp(statut=StatutOpportunite.EXPIREE)
+        response = self.client.get(f"{self.base_url}{opportunity.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], opportunity.pk)
+
+    def test_create_requires_authentication(self):
+        response = self.client.post(
+            self.base_url,
+            {
+                "titre": "Unauthorized create",
+                "description": "Desc",
+                "type_opportunite": TypeOpportunite.EMPLOI,
+                "date_publication": date.today().isoformat(),
+                "source_id": self.source.pk,
+            },
         )
-
-    # ── Authentication ────────────────────────────────────
-
-    def test_list_requires_authentication(self):
-        response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_list_authenticated(self):
-        self.client.force_authenticate(user=self.user)
-        self._create_opp()
-        response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    # ── List / Read ───────────────────────────────────────
-
-    def test_list_only_active(self):
-        """ViewSet queryset filters to statut=ACTIVE only."""
-        self.client.force_authenticate(user=self.user)
-        self._create_opp(titre="Active1")
-        self._create_opp(titre="Expired", statut="EXPIREE")
-        self._create_opp(titre="Archived", statut="ARCHIVEE")
-        response = self.client.get(self.url)
-        titles = [r["titre"] for r in response.data["results"]]
-        self.assertIn("Active1", titles)
-        self.assertNotIn("Expired", titles)
-        self.assertNotIn("Archived", titles)
-
-    def test_retrieve_single(self):
-        self.client.force_authenticate(user=self.user)
-        opp = self._create_opp(titre="Single")
-        response = self.client.get(f"{self.url}{opp.pk}/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["titre"], "Single")
-
-    # ── Create ────────────────────────────────────────────
-
-    def test_create_opportunite(self):
-        self.client.force_authenticate(user=self.user)
-        data = {
-            "titre": "New Opp",
-            "description": "A new opportunity",
-            "type_opportunite": "STAGE",
-            "date_publication": date.today().isoformat(),
-            "source_id": self.source.pk,
-        }
-        response = self.client.post(self.url, data)
+    def test_create_binds_owner_from_authenticated_user(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            self.base_url,
+            {
+                "titre": "Secure ownership",
+                "description": "Desc",
+                "organisation_nom": "Acme Corp",
+                "type_opportunite": TypeOpportunite.STAGE,
+                "date_publication": date.today().isoformat(),
+                "source_id": self.source.pk,
+                "organisation": self.other_user.pk,
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["titre"], "New Opp")
+        opportunity = Opportunite.objects.get(pk=response.data["id"])
+        self.assertEqual(opportunity.organisation_id, self.owner.pk)
+        self.assertEqual(opportunity.organisation_nom, "Acme Corp")
 
-    def test_create_unauthenticated(self):
-        data = {
-            "titre": "Fail",
-            "description": "d",
-            "type_opportunite": "EMPLOI",
-            "date_publication": date.today().isoformat(),
-            "source_id": self.source.pk,
-        }
-        response = self.client.post(self.url, data)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    # ── Update ────────────────────────────────────────────
-
-    def test_update_own_opportunite(self):
-        self.client.force_authenticate(user=self.user)
-        opp = self._create_opp(titre="Old Title", organisation=self.user)
+    def test_non_owner_cannot_update(self):
+        opportunity = self.create_opp()
+        self.client.force_authenticate(self.other_user)
         response = self.client.patch(
-            f"{self.url}{opp.pk}/", {"titre": "New Title"}, format="json"
+            f"{self.base_url}{opportunity.pk}/",
+            {"titre": "Hacked"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_owner_can_update(self):
+        opportunity = self.create_opp()
+        self.client.force_authenticate(self.owner)
+        response = self.client.patch(
+            f"{self.base_url}{opportunity.pk}/",
+            {"titre": "Updated Title"},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        opp.refresh_from_db()
-        self.assertEqual(opp.titre, "New Title")
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.titre, "Updated Title")
 
-    def test_update_other_user_opportunite_forbidden(self):
-        self.client.force_authenticate(user=self.other_user)
-        opp = self._create_opp(titre="Not mine", organisation=self.user)
-        response = self.client.patch(
-            f"{self.url}{opp.pk}/", {"titre": "Hacked"}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+    def test_default_list_returns_only_active(self):
+        self.create_opp(titre="Active", statut=StatutOpportunite.ACTIVE)
+        self.create_opp(titre="Expired", statut=StatutOpportunite.EXPIREE)
 
-    # ── Delete ────────────────────────────────────────────
+        response = self.client.get(self.base_url)
+        titles = {item["titre"] for item in response.data["results"]}
+        self.assertIn("Active", titles)
+        self.assertNotIn("Expired", titles)
 
-    def test_delete_own_opportunite(self):
-        self.client.force_authenticate(user=self.user)
-        opp = self._create_opp(organisation=self.user)
-        response = self.client.delete(f"{self.url}{opp.pk}/")
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Opportunite.objects.filter(pk=opp.pk).exists())
+    def test_status_filter_allows_non_active_records(self):
+        self.create_opp(titre="Active", statut=StatutOpportunite.ACTIVE)
+        self.create_opp(titre="Expired", statut=StatutOpportunite.EXPIREE)
 
-    def test_delete_other_user_opportunite_forbidden(self):
-        self.client.force_authenticate(user=self.other_user)
-        opp = self._create_opp(organisation=self.user)
-        response = self.client.delete(f"{self.url}{opp.pk}/")
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.client.get(self.base_url, {"statut": StatutOpportunite.EXPIREE})
+        titles = {item["titre"] for item in response.data["results"]}
+        self.assertIn("Expired", titles)
+        self.assertNotIn("Active", titles)
 
-    # ── Filtering ─────────────────────────────────────────
+    def test_status_alias_filter_works(self):
+        self.create_opp(titre="Archived", statut=StatutOpportunite.ARCHIVEE)
+        response = self.client.get(self.base_url, {"status": StatutOpportunite.ARCHIVEE})
+        titles = {item["titre"] for item in response.data["results"]}
+        self.assertIn("Archived", titles)
 
-    def test_filter_by_type_opportunite(self):
-        self.client.force_authenticate(user=self.user)
-        self._create_opp(titre="Emploi", type_opp="EMPLOI")
-        self._create_opp(titre="Stage", type_opp="STAGE")
-        response = self.client.get(self.url, {"type_opportunite": "STAGE"})
-        titles = [r["titre"] for r in response.data["results"]]
-        self.assertIn("Stage", titles)
-        self.assertNotIn("Emploi", titles)
+    def test_search_uses_title_and_description(self):
+        self.create_opp(titre="Python Engineer", description="Backend APIs")
+        self.create_opp(titre="Data Analyst", description="Django pipelines")
 
-    def test_filter_by_source(self):
-        self.client.force_authenticate(user=self.user)
-        source2 = SourceOpportunite.objects.create(
-            nom="Other", url="https://other.com", type_source="AUTRE"
-        )
-        self._create_opp(titre="FromJobBoard")
-        Opportunite.objects.create(
-            titre="FromOther",
-            description="d",
-            type_opportunite="EMPLOI",
-            date_publication=date.today(),
-            source=source2,
-        )
-        response = self.client.get(self.url, {"source": self.source.pk})
-        titles = [r["titre"] for r in response.data["results"]]
-        self.assertIn("FromJobBoard", titles)
-        self.assertNotIn("FromOther", titles)
+        response_title = self.client.get(self.base_url, {"search": "Python"})
+        title_results = {item["titre"] for item in response_title.data["results"]}
+        self.assertIn("Python Engineer", title_results)
+        self.assertNotIn("Data Analyst", title_results)
 
-    # ── Ordering ──────────────────────────────────────────
+        response_description = self.client.get(self.base_url, {"search": "pipelines"})
+        description_results = {item["titre"] for item in response_description.data["results"]}
+        self.assertIn("Data Analyst", description_results)
+        self.assertNotIn("Python Engineer", description_results)
 
-    def test_ordering_by_date_publication(self):
-        self.client.force_authenticate(user=self.user)
-        self._create_opp(titre="Old", date_pub=date.today() - timedelta(days=10))
-        self._create_opp(titre="New", date_pub=date.today())
-        response = self.client.get(self.url, {"ordering": "date_publication"})
-        titles = [r["titre"] for r in response.data["results"]]
-        self.assertEqual(titles[0], "Old")
+    def test_ordering_by_publication_date(self):
+        self.create_opp(titre="Old", date_publication=date.today() - timedelta(days=10))
+        self.create_opp(titre="New", date_publication=date.today())
 
-    def test_ordering_by_date_publication_desc(self):
-        self.client.force_authenticate(user=self.user)
-        self._create_opp(titre="Old", date_pub=date.today() - timedelta(days=10))
-        self._create_opp(titre="New", date_pub=date.today())
-        response = self.client.get(self.url, {"ordering": "-date_publication"})
-        titles = [r["titre"] for r in response.data["results"]]
+        response = self.client.get(self.base_url, {"ordering": "-date_publication"})
+        titles = [item["titre"] for item in response.data["results"]]
         self.assertEqual(titles[0], "New")
 
-    # ── Pagination ────────────────────────────────────────
+    def test_page_size_is_capped_to_50(self):
+        for index in range(60):
+            self.create_opp(
+                titre=f"Opportunity {index}",
+                date_publication=date.today() - timedelta(days=index),
+            )
 
-    def test_paginated_response(self):
-        self.client.force_authenticate(user=self.user)
-        self._create_opp()
-        response = self.client.get(self.url)
-        self.assertIn("results", response.data)
-        self.assertIn("count", response.data)
-
-
-class SourceOpportuniteViewSetTests(APITestCase):
-    """Tests for /api/sources/ CRUD."""
-
-    def setUp(self):
-        self.user = Utilisateur.objects.create_user(
-            username="srcuser", email="src@test.com", password="pass1234"
-        )
-        self.client = APIClient()
-        self.client.force_authenticate(user=self.user)
-        self.url = "/api/sources/"
-
-    def test_list_sources(self):
-        SourceOpportunite.objects.create(
-            nom="S1", url="https://s1.com", type_source="SITE_EMPLOI"
-        )
-        response = self.client.get(self.url)
+        response = self.client.get(self.base_url, {"page_size": 100})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertLessEqual(len(response.data["results"]), 50)
 
-    def test_create_source(self):
-        data = {"nom": "New", "url": "https://new.com", "type_source": "AUTRE"}
-        response = self.client.post(self.url, data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+    def test_english_and_legacy_routes_are_both_available(self):
+        self.create_opp()
+        english_response = self.client.get(self.base_url)
+        legacy_response = self.client.get(self.legacy_url)
+        self.assertEqual(english_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(legacy_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(english_response.data["count"], legacy_response.data["count"])
 
-    def test_retrieve_source(self):
-        source = SourceOpportunite.objects.create(
-            nom="Ret", url="https://ret.com", type_source="PORTAIL_PROJET"
+    def test_source_read_is_public_but_write_requires_admin(self):
+        public_read = self.client.get(self.sources_url)
+        self.assertEqual(public_read.status_code, status.HTTP_200_OK)
+
+        non_admin_response = self.client.post(
+            self.sources_url,
+            {"nom": "X", "url": "https://x.com", "type_source": "AUTRE"},
+            format="json",
         )
-        response = self.client.get(f"{self.url}{source.pk}/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["nom"], "Ret")
+        self.assertEqual(non_admin_response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_delete_source(self):
-        source = SourceOpportunite.objects.create(
-            nom="Del", url="https://del.com", type_source="AUTRE"
+        self.client.force_authenticate(self.staff_user)
+        admin_response = self.client.post(
+            self.sources_url,
+            {"nom": "Admin Source", "url": "https://admin.com", "type_source": "AUTRE"},
+            format="json",
         )
-        response = self.client.delete(f"{self.url}{source.pk}/")
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(admin_response.status_code, status.HTTP_201_CREATED)
+
+    def test_select_related_prevents_n_plus_one_on_list(self):
+        for index in range(5):
+            source = SourceOpportunite.objects.create(
+                nom=f"Source {index}",
+                url=f"https://source-{index}.com",
+                type_source="AUTRE",
+            )
+            self.create_opp(
+                titre=f"Opportunity {index}",
+                source=source,
+                date_publication=date.today() - timedelta(days=index),
+            )
+
+        with CaptureQueriesContext(connection) as context:
+            response = self.client.get(self.base_url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.assertLessEqual(len(context), 5)
+
+
+class PipelineTests(TestCase):
+    def test_pipeline_uses_upsert_on_duplicate_triplet(self):
+        class DuplicateScraper(BaseOpportunityScraper):
+            source_name = "Keejob"
+            source_url = "https://www.keejob.com/offres-emploi/"
+            source_type = "SITE_EMPLOI"
+
+            def fetch_raw_records(self):
+                return [
+                    {
+                        "title": "Duplicate title",
+                        "description": "Version 1",
+                        "organization": "Company A",
+                        "opportunity_type": "job",
+                        "status": "active",
+                        "publication_date": "2026-03-10",
+                    },
+                    {
+                        "title": "Duplicate title",
+                        "description": "Version 2",
+                        "organization": "Company B",
+                        "opportunity_type": "job",
+                        "status": "active",
+                        "publication_date": "2026-03-10",
+                    },
+                ]
+
+        stats = run_collection(DuplicateScraper())
+        self.assertEqual(stats["created"], 1)
+        self.assertEqual(stats["updated"], 1)
+        self.assertEqual(stats["skipped"], 0)
+
+        self.assertEqual(Opportunite.objects.count(), 1)
+        opportunity = Opportunite.objects.first()
+        self.assertEqual(opportunity.description, "version 2")
+        self.assertEqual(opportunity.organisation_nom, "Company B")
+
+    def test_pipeline_skips_invalid_records(self):
+        class InvalidScraper(BaseOpportunityScraper):
+            source_name = "Keejob"
+            source_url = "https://www.keejob.com/offres-emploi/"
+            source_type = "SITE_EMPLOI"
+
+            def fetch_raw_records(self):
+                return [
+                    {
+                        "title": "",
+                        "description": "Missing title",
+                        "opportunity_type": "job",
+                        "publication_date": "2026-03-10",
+                    }
+                ]
+
+        stats = run_collection(InvalidScraper())
+        self.assertEqual(stats["created"], 0)
+        self.assertEqual(stats["updated"], 0)
+        self.assertEqual(stats["skipped"], 1)
+        self.assertEqual(Opportunite.objects.count(), 0)

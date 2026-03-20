@@ -1,6 +1,5 @@
 from rest_framework import serializers
-from .models import Opportunite
-from .models import SourceOpportunite
+from .models import Opportunite, SourceOpportunite
 
 
 class SourceOpportuniteSerializer(serializers.ModelSerializer):
@@ -17,7 +16,27 @@ class OpportuniteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Opportunite
-        fields = '__all__'
+        fields = [
+            "id",
+            "titre",
+            "description",
+            "organisation_nom",
+            "type_opportunite",
+            "statut",
+            "date_publication",
+            "date_limite",
+            "organisation",
+            "source",
+            "source_id",
+            "date_creation",
+            "date_modification",
+        ]
+        read_only_fields = [
+            "id",
+            "organisation",
+            "date_creation",
+            "date_modification",
+        ]
 
     def validate(self, attrs):
         """Business rule: date_limite must be >= date_publication when set."""
