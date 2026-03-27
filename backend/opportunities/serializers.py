@@ -9,6 +9,7 @@ class SourceOpportuniteSerializer(serializers.ModelSerializer):
 
 
 class OpportuniteSerializer(serializers.ModelSerializer):
+    similarity_score = serializers.SerializerMethodField(read_only=True)
     source = SourceOpportuniteSerializer(read_only=True)
     source_id = serializers.PrimaryKeyRelatedField(
         queryset=SourceOpportunite.objects.all(), source='source', write_only=True
@@ -21,6 +22,7 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "titre",
             "description",
             "organisation_nom",
+            "similarity_score",
             "type_opportunite",
             "statut",
             "date_publication",
@@ -38,6 +40,15 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "date_modification",
         ]
 
+    def get_similarity_score(self, obj):
+        score = getattr(obj, "similarity_score", None)
+        if score is None:
+            return None
+        try:
+            return float(score)
+        except (TypeError, ValueError):
+            return None
+
     def validate(self, attrs):
         """Business rule: date_limite must be >= date_publication when set."""
         # Support both create and partial update by falling back to instance values.
@@ -50,3 +61,21 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             })
 
         return attrs
+
+
+class SimilarOpportunitySerializer(serializers.ModelSerializer):
+    similarity_score = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Opportunite
+        fields = ["id", "titre", "similarity_score"]
+        read_only_fields = ["id", "titre", "similarity_score"]
+
+    def get_similarity_score(self, obj):
+        score = getattr(obj, "similarity_score", None)
+        if score is None:
+            return None
+        try:
+            return float(score)
+        except (TypeError, ValueError):
+            return None

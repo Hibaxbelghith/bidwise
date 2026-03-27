@@ -187,6 +187,9 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': [
         'rest_framework.filters.OrderingFilter',
     ],
+    'DEFAULT_THROTTLE_RATES': {
+        'opportunity_similar': '20/min',
+    },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
 }
@@ -218,3 +221,8 @@ else:
 
 # Google OAuth2
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
+
+# Embeddings
+OPPORTUNITY_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+OPPORTUNITY_EMBEDDING_BATCH_SIZE = int(os.getenv("OPPORTUNITY_EMBEDDING_BATCH_SIZE", "32"))
+OPPORTUNITY_EMBEDDING_MODEL_VERSION = "prod-v1-fr"

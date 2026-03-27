@@ -9,13 +9,16 @@ logger = logging.getLogger(__name__)
 
 
 MIN_TEXT_LENGTH = 30
-MAX_TEXT_LENGTH = 1200
+MAX_TEXT_LENGTH = 900
+TARGET_TEXT_LENGTH = 380
 
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 URL_RE = re.compile(r"(https?://\S+|www\.\S+)", re.IGNORECASE)
 EMAIL_RE = re.compile(r"\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b", re.IGNORECASE)
 WHITESPACE_RE = re.compile(r"\s+")
 REPEATED_PUNCT_RE = re.compile(r"([!?.,;:])\1+")
+TYPE_JOB_PREFIX_RE = re.compile(r"\btype:\s*job\b", re.IGNORECASE)
+TITLE_PREFIX_RE = re.compile(r"\btitle:\s*", re.IGNORECASE)
 DATE_RE = re.compile(r"\b(\d{2}/\d{2}/\d{4})\b")
 LOCATION_MARKER_RE = re.compile(r"\b(?:nat|rep|inter)\s*\./\s*([a-z]{2,5})\b", re.IGNORECASE)
 LEADING_CODE_RE = re.compile(r"^\s*\d+\s+[a-z]{1,3}\b", re.IGNORECASE)
@@ -136,6 +139,57 @@ def _remove_phrase(text: str, phrase: str) -> str:
         return text
     pattern = re.compile(rf"\b{re.escape(phrase)}\b", re.IGNORECASE)
     return pattern.sub(" ", text)
+
+
+def _trim_to_boundary(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    snippet = text[:limit].rstrip()
+    boundary = max(snippet.rfind(". "), snippet.rfind("; "), snippet.rfind(": "))
+    if boundary >= 120:
+        return snippet[:boundary + 1].rstrip()
+    return snippet
+
+
+def _compact_long_text(text: str) -> str:
+    if not text:
+        return ""
+
+    # Remove repeated sentence-like chunks to avoid page dumps and duplicated blocks.
+    chunks = [c.strip() for c in re.split(r"[.!?;\n]+", text) if c.strip()]
+    unique_chunks = []
+    seen = set()
+    for chunk in chunks:
+        normalized = _normalize_for_matching(chunk)
+        if not normalized or len(normalized) < 8:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_chunks.append(chunk)
+
+    if unique_chunks:
+        compacted = ". ".join(unique_chunks)
+    else:
+        compacted = text
+
+    compacted = _normalize_punctuation(compacted)
+    if len(compacted) > TARGET_TEXT_LENGTH:
+        compacted = _trim_to_boundary(compacted, TARGET_TEXT_LENGTH)
+    if len(compacted) > MAX_TEXT_LENGTH:
+        compacted = _trim_to_boundary(compacted, MAX_TEXT_LENGTH)
+    return compacted.strip()
+
+
+def _clean_embedding_payload(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = TYPE_JOB_PREFIX_RE.sub(" ", text)
+    cleaned = TITLE_PREFIX_RE.sub(" ", cleaned)
+    cleaned = _remove_boilerplate(cleaned)
+    cleaned = _dedupe_consecutive_words(cleaned)
+    cleaned = _compact_long_text(cleaned)
+    return _normalize_punctuation(cleaned)
 
 
 def _normalize_org_candidate(value: str) -> str:
@@ -699,9 +753,16 @@ def prepare_text_for_nlp(text: str) -> str:
         if normalized_org_prefix not in _normalize_for_matching(value):
             value = f"{org_prefix} {value}".strip()
 
+    # Guarantee structured NLP cues on rich descriptions (without polluting short titles).
+    rich_text = len(pre_clean) >= 120
+    normalized_value = _normalize_for_matching(value)
+    if rich_text and content_type == "tender" and "type:" not in normalized_value:
+        value = f"type: tender {value}".strip()
+
+    value = _compact_long_text(value)
     value = _normalize_punctuation(value)
     if len(value) > MAX_TEXT_LENGTH:
-        value = value[:MAX_TEXT_LENGTH].rstrip()
+        value = _trim_to_boundary(value, MAX_TEXT_LENGTH)
 
     # Critical fix: never drop meaningful short content.
     if len(value) < MIN_TEXT_LENGTH:
@@ -744,4 +805,5 @@ def prepare_combined_text(opportunity: Any) -> str:
     location = _get_attr(opportunity, "location")
 
     combined = " ".join(part for part in [title, description, organization, location] if part).strip()
-    return prepare_text_for_nlp(combined)
+    prepared = prepare_text_for_nlp(combined)
+    return _clean_embedding_payload(prepared)

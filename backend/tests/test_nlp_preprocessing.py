@@ -48,8 +48,8 @@ class NLPPreprocessingTests(SimpleTestCase):
         cleaned = prepare_text_for_nlp(raw)
 
         self.assertTrue(cleaned)
-        self.assertIn("developpeur senior!", cleaned)
-        self.assertIn("python?", cleaned)
+        self.assertIn("developpeur senior", cleaned)
+        self.assertIn("python", cleaned)
         self.assertNotIn("!!!", cleaned)
         self.assertNotIn("??", cleaned)
 
@@ -129,7 +129,7 @@ class NLPPreprocessingTests(SimpleTestCase):
         cleaned = prepare_text_for_nlp(raw)
 
         self.assertTrue(cleaned)
-        self.assertLessEqual(len(cleaned), 1200)
+        self.assertLessEqual(len(cleaned), 900)
 
     def test_prepare_combined_text_uses_title_description_org_location(self):
         opportunity = {
@@ -145,3 +145,17 @@ class NLPPreprocessingTests(SimpleTestCase):
         self.assertIn("stage data engineer", combined)
         self.assertIn("bidwise", combined)
         self.assertIn("tunis", combined)
+
+    def test_prepare_combined_text_removes_embedding_artifacts_for_jobs(self):
+        opportunity = {
+            "titre": "Business Analyst Senior H/F Sousse CDI",
+            "description": "type: job title: business analyst senior h/f sousse cdi",
+            "organization": "BidWise",
+            "location": "Sousse",
+        }
+
+        combined = prepare_combined_text(opportunity)
+
+        self.assertTrue(combined)
+        self.assertNotIn("type: job", combined)
+        self.assertNotIn("title:", combined)

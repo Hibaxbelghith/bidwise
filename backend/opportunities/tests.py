@@ -146,6 +146,9 @@ class OpportuniteAPITests(APITestCase):
         response = self.client.get(self.base_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("results", response.data)
+        first = response.data["results"][0]
+        self.assertNotIn("embedding_vector", first)
+        self.assertNotIn("embedding_model", first)
 
     def test_detail_is_public(self):
         opportunity = self.create_opp(statut=StatutOpportunite.EXPIREE)
@@ -310,6 +313,147 @@ class OpportuniteAPITests(APITestCase):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.assertLessEqual(len(context), 5)
+
+    def test_similar_endpoint_returns_ranked_results(self):
+        model_identifier = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@prod-v1-fr"
+        anchor = self.create_opp(
+            titre="Anchor Opportunity",
+            embedding_vector=[1.0, 0.0, 0.0],
+            embedding_model=model_identifier,
+        )
+        best_match = self.create_opp(
+            titre="Best Match",
+            embedding_vector=[0.9, 0.1, 0.0],
+            embedding_model=model_identifier,
+        )
+        second_match = self.create_opp(
+            titre="Second Match",
+            embedding_vector=[0.6, 0.4, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="Other Model Match",
+            embedding_vector=[0.99, 0.0, 0.01],
+            embedding_model="BAAI/bge-small-en-v1.5@bench-v1",
+        )
+
+        response = self.client.get(f"{self.base_url}{anchor.pk}/similar/", {"k": 2})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]["id"], best_match.pk)
+        self.assertEqual(response.data[1]["id"], second_match.pk)
+        self.assertLessEqual(response.data[0]["similarity_score"], 1.0)
+        self.assertGreaterEqual(
+            response.data[0]["similarity_score"],
+            response.data[1]["similarity_score"],
+        )
+        self.assertIn("titre", response.data[0])
+        self.assertNotIn("embedding_vector", response.data[0])
+        self.assertNotIn("embedding_model", response.data[0])
+        returned_ids = {item["id"] for item in response.data}
+        self.assertNotIn(anchor.pk, returned_ids)
+
+    def test_similar_endpoint_deduplicates_top_k_by_content_fingerprint(self):
+        model_identifier = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@prod-v1-fr"
+        anchor = self.create_opp(
+            titre="Anchor",
+            description="Role description",
+            embedding_vector=[1.0, 0.0, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="TÉLÉCONSEILLERS (APPELS, CHAT & EMAIL)",
+            description="Le groupe outsourcia est un opérateur spécialisé dans les métiers de l'outsourcing.",
+            embedding_vector=[0.99, 0.01, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="teleconseillers appels chat email",
+            description="Le groupe outsourcia est un operateur specialise dans les metiers de l outsourcing.",
+            embedding_vector=[0.98, 0.02, 0.0],
+            embedding_model=model_identifier,
+        )
+
+        response = self.client.get(f"{self.base_url}{anchor.pk}/similar/", {"k": 5})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+    def test_similar_endpoint_filters_candidates_by_status_and_type(self):
+        model_identifier = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@prod-v1-fr"
+        anchor = self.create_opp(
+            titre="Anchor Job",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            embedding_vector=[1.0, 0.0, 0.0],
+            embedding_model=model_identifier,
+        )
+        active_same_type = self.create_opp(
+            titre="Active Same Type",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            embedding_vector=[0.9, 0.1, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="Expired Same Type",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.EXPIREE,
+            embedding_vector=[0.95, 0.05, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="Active Different Type",
+            type_opportunite=TypeOpportunite.PROJET,
+            statut=StatutOpportunite.ACTIVE,
+            embedding_vector=[0.93, 0.07, 0.0],
+            embedding_model=model_identifier,
+        )
+
+        response = self.client.get(f"{self.base_url}{anchor.pk}/similar/", {"k": 5})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = [item["id"] for item in response.data]
+        self.assertEqual(returned_ids, [active_same_type.pk])
+
+    def test_similar_endpoint_returns_empty_list_when_source_has_no_embedding(self):
+        anchor = self.create_opp(titre="No Embedding Anchor", embedding_vector=None, embedding_model="")
+        self.create_opp(
+            titre="Candidate",
+            embedding_vector=[1.0, 0.0, 0.0],
+            embedding_model="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@prod-v1-fr",
+        )
+
+        response = self.client.get(f"{self.base_url}{anchor.pk}/similar/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_similar_endpoint_top_k_alias_is_supported(self):
+        model_identifier = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@prod-v1-fr"
+        anchor = self.create_opp(
+            titre="Anchor Top K Alias",
+            embedding_vector=[1.0, 0.0, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="Top K Candidate 1",
+            embedding_vector=[0.9, 0.1, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="Top K Candidate 2",
+            embedding_vector=[0.8, 0.2, 0.0],
+            embedding_model=model_identifier,
+        )
+
+        response = self.client.get(f"{self.base_url}{anchor.pk}/similar/", {"top_k": 1})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+    def test_similar_endpoint_returns_404_for_unknown_opportunity(self):
+        response = self.client.get(f"{self.base_url}999999/similar/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
 class PipelineTests(TestCase):
