@@ -10,8 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,19 +23,34 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-_l7)agxr--y2bm%=t^9px8ezpnq)sewpl21(v#6vw3ysh^vb&d'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY environment variable is required.')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.12.0.3']
+
+def _split_env_list(name, default):
+    raw_value = os.getenv(name, '')
+    if not raw_value.strip():
+        return default
+    return [item.strip() for item in raw_value.split(',') if item.strip()]
+
+
+ALLOWED_HOSTS = _split_env_list(
+    'DJANGO_ALLOWED_HOSTS',
+    ['localhost', '127.0.0.1','192.168.49.130'],
+)
 
 # CORS configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # Vite dev server
-    "http://127.0.0.1:5173",
-    "http://10.12.0.3:8000",
-]
+CORS_ALLOWED_ORIGINS = _split_env_list(
+    'DJANGO_CORS_ALLOWED_ORIGINS',
+    [
+        "http://localhost:5173",  # Vite dev server
+        "http://127.0.0.1:5173",
+    ],
+)
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -112,8 +129,6 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # PostgreSQL Configuration au lieu de SQLite
 
-import os
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -180,16 +195,19 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ],
     'DEFAULT_FILTER_BACKENDS': [
         'rest_framework.filters.OrderingFilter',
     ],
+
     'DEFAULT_THROTTLE_RATES': {
         'opportunity_similar': '20/min',
+
+        # OTP endpoints (configurable via env)
+        'otp_request': os.getenv('OTP_REQUEST_RATE', '10/hour'),
+        'otp_verify': os.getenv('OTP_VERIFY_RATE', '20/hour'),
+        'otp_verify_email': os.getenv('OTP_VERIFY_EMAIL_RATE', '10/hour'),
     },
+
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
 }

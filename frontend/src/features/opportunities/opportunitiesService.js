@@ -34,3 +34,41 @@ export const listOpportunities = async ({
     throw error;
   }
 };
+
+export const getOpportunityById = async (id) => {
+  if (!id) {
+    throw new Error('Opportunity id is required');
+  }
+
+  try {
+    const response = await api.get(`${OPPORTUNITIES_ENDPOINT}${id}/`);
+    return response.data;
+  } catch (error) {
+    if (error?.response?.status === 404) {
+      const fallbackResponse = await api.get(`${LEGACY_OPPORTUNITIES_ENDPOINT}${id}/`);
+      return fallbackResponse.data;
+    }
+    throw error;
+  }
+};
+
+export const getSimilarOpportunities = async (id, k = 5) => {
+  if (!id) return [];
+
+  const safeK = Math.max(1, Math.min(Number(k) || 5, 50));
+
+  try {
+    const response = await api.get(`${OPPORTUNITIES_ENDPOINT}${id}/similar/`, {
+      params: { k: safeK },
+    });
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    if (error?.response?.status === 404) {
+      const fallbackResponse = await api.get(`${LEGACY_OPPORTUNITIES_ENDPOINT}${id}/similar/`, {
+        params: { k: safeK },
+      });
+      return Array.isArray(fallbackResponse.data) ? fallbackResponse.data : [];
+    }
+    throw error;
+  }
+};

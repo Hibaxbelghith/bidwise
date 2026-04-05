@@ -16,21 +16,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      - GOOGLE_CLIENT_ID=149784459020-aknnq7m4rlur7pj32cd1elkf68cpbblt.apps.googleusercontent.com
-      - GMAIL_ADDRESS=hibabelg7@gmail.com
-      - GMAIL_APP_PASSWORD=qgih nctp mvtr ykfc
   db:
     image: postgres:16
     container_name: bidwise_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: bidwise_db
-      POSTGRES_USER: bidwise_user
-      POSTGRES_PASSWORD: bidwise_pass
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bidwise_user -d bidwise_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5

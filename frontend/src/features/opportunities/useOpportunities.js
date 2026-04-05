@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { listOpportunities } from './opportunitiesService';
+import {
+  getOpportunityById,
+  getSimilarOpportunities,
+  listOpportunities,
+} from './opportunitiesService';
 
 const SEARCH_DEBOUNCE_MS = 400;
 const DEFAULT_PAGE_SIZE = 20;
@@ -118,4 +122,90 @@ export const useOpportunities = () => {
     setPage,
     refetch,
   };
+};
+
+export const useOpportunityDetail = (opportunityId) => {
+  const [opportunity, setOpportunity] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!opportunityId) {
+      setOpportunity(null);
+      setLoading(false);
+      setError('Opportunity id is missing.');
+      return undefined;
+    }
+
+    const fetchOpportunity = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const data = await getOpportunityById(opportunityId);
+        if (isCancelled) return;
+        setOpportunity(data ?? null);
+      } catch (err) {
+        if (isCancelled) return;
+        const message =
+          err?.response?.data?.detail ||
+          'Unable to load this opportunity. Please try again.';
+        setError(message);
+        setOpportunity(null);
+      } finally {
+        if (!isCancelled) setLoading(false);
+      }
+    };
+
+    fetchOpportunity();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [opportunityId]);
+
+  return { opportunity, loading, error };
+};
+
+export const useSimilarOpportunities = (opportunityId, k = 5, enabled = true) => {
+  const [similarOpportunities, setSimilarOpportunities] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!enabled || !opportunityId) {
+      setSimilarOpportunities([]);
+      setLoading(false);
+      setError(null);
+      return undefined;
+    }
+
+    const fetchSimilar = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getSimilarOpportunities(opportunityId, k);
+        if (isCancelled) return;
+        setSimilarOpportunities(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (isCancelled) return;
+        console.log('Failed to load similar opportunities', err);
+        setError(err);
+        setSimilarOpportunities([]);
+      } finally {
+        if (!isCancelled) setLoading(false);
+      }
+    };
+
+    fetchSimilar();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [enabled, opportunityId, k]);
+
+  return { similarOpportunities, loading, error };
 };

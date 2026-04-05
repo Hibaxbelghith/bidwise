@@ -283,7 +283,9 @@ class ProfilUpdateSerializerTests(TestCase):
 
     def test_partial_update(self):
         serializer = ProfilUpdateSerializer(
-            self.profil, data={"nom": "UpdatedNom", "prenom": "UpdatedPrenom"}, partial=True
+            self.profil,
+            data={"nom": "UpdatedNom", "prenom": "UpdatedPrenom"},
+            partial=True,
         )
         self.assertTrue(serializer.is_valid())
         instance = serializer.save()
@@ -403,7 +405,10 @@ class ProfileDetailViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_put_profile_update(self):
-        response = self.client.put(self.url, {"nom": "Dupont", "prenom": "Jean"})
+        response = self.client.put(
+            self.url,
+            {"nom": "Dupont", "prenom": "Jean"},
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.profil.refresh_from_db()
         self.assertEqual(self.user.profil.nom, "Dupont")
@@ -796,6 +801,7 @@ class LoginEventModelTests(TestCase):
         request = MagicMock()
         request.META = {"REMOTE_ADDR": "192.168.1.1"}
         self.assertEqual(LoginEvent._get_client_ip(request), "192.168.1.1")
+
 
     def test_get_client_ip_forwarded(self):
         from .models import LoginEvent

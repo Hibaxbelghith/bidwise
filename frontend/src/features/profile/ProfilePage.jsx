@@ -169,24 +169,22 @@ const Profile = () => {
 							<div className="grid gap-4 sm:grid-cols-2">
 								<div className="space-y-2">
 									<Label htmlFor="firstName">First name</Label>
-									<Input
-										id="firstName"
-										type="text"
-										value={formData.firstName}
-										onChange={(event) => handleChange('firstName', event.target.value)}
-										required
-									/>
+										<Input
+											id="firstName"
+											type="text"
+											value={formData.firstName}
+											onChange={(event) => handleChange('firstName', event.target.value)}
+										/>
 								</div>
 
 								<div className="space-y-2">
 									<Label htmlFor="lastName">Last name</Label>
-									<Input
-										id="lastName"
-										type="text"
-										value={formData.lastName}
-										onChange={(event) => handleChange('lastName', event.target.value)}
-										required
-									/>
+										<Input
+											id="lastName"
+											type="text"
+											value={formData.lastName}
+											onChange={(event) => handleChange('lastName', event.target.value)}
+										/>
 								</div>
 							</div>
 						</CardContent>

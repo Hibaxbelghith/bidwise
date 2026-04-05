@@ -5,7 +5,7 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 import * as authService from './authService';
-import { isAuthenticated as checkAuth, removeTokens, getAccessToken, isTokenExpired } from '../../lib/tokenManager';
+import { isAuthenticated as checkAuth, removeTokens } from '../../lib/tokenManager';
 
 // Créer le contexte
 const AuthContext = createContext(null);
@@ -33,21 +33,13 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   /**
-   * Charger l'utilisateur au montage si un token existe
+   * Charger l'utilisateur au montage si un token existe.
+   * Le refresh silencieux est géré uniquement par l'intercepteur Axios.
    */
   useEffect(() => {
     const loadUser = async () => {
       try {
         if (!checkAuth()) return;
-
-        // If access token is expired, attempt a silent refresh first.
-        // The Axios interceptor handles this automatically on API calls,
-        // but we trigger it explicitly here so getCurrentUser() succeeds
-        // on the first try without an extra 401 round-trip.
-        const accessToken = getAccessToken();
-        if (!accessToken || isTokenExpired(accessToken)) {
-          await authService.refreshAccessToken();
-        }
 
         const userData = await authService.getCurrentUser();
         setUser(userData);
@@ -65,34 +57,7 @@ export const AuthProvider = ({ children }) => {
     loadUser();
   }, []);
 
-  /**
-   * Periodic token validity check.
-   * Detects token expiry mid-session and either silently refreshes
-   * or logs the user out — keeps ProtectedRoute in sync without
-   * waiting for a page reload.
-   */
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const interval = setInterval(async () => {
-      const token = getAccessToken();
-      if (token && !isTokenExpired(token)) return; // still valid
-
-      // Access token expired or missing — attempt silent refresh
-      try {
-        await authService.refreshAccessToken();
-      } catch {
-        // Refresh failed — session is over
-        setUser(null);
-        setIsAuthenticated(false);
-        removeTokens();
-      }
-    }, 15_000); // check every 15 seconds
-
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
-
-  // ── Passwordless OTP ────────────────────────────────────
+  // —— Passwordless OTP ————————————————————————————————————————————————
 
   /**
    * Request an OTP code for the given email.
@@ -141,7 +106,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Google OAuth2 ───────────────────────────────────────
+  // —— Google OAuth2 —————————————————————————————————————————————————————
 
   /**
    * Authenticate with a Google id_token, store tokens, load profile.
@@ -172,7 +137,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Legacy (kept until Phase 2 page cleanup) ───────────
+  // —— Legacy (kept until Phase 2 page cleanup) ————————————————
 
   /**
    * Déconnexion de l'utilisateur
@@ -228,7 +193,7 @@ export const AuthProvider = ({ children }) => {
     logout,
     updateUserProfile,
     refreshUser,
-    setError, // Pour effacer les erreurs manuellement
+    setError,
   };
 
   return (

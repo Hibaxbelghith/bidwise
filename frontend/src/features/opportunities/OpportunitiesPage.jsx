@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { useOpportunities } from './useOpportunities';
+import { cleanDescription } from './utils/text.js';
 
 const TYPE_OPTIONS = [
   { value: 'EMPLOI', label: 'Job' },
@@ -184,7 +185,7 @@ export function OpportunitiesBrowse() {
                     to={`/opportunities/${opportunity.id}`}
                     className="text-xl font-semibold text-neutral-900 hover:text-blue-600"
                   >
-                    {opportunity.titre}
+                    {opportunity.titre || 'Untitled opportunity'}
                   </Link>
                   <Badge variant="secondary">
                     {TYPE_LABELS[opportunity.type_opportunite] || opportunity.type_opportunite}
@@ -209,7 +210,7 @@ export function OpportunitiesBrowse() {
                   </span>
                 </div>
 
-                <p className="mb-4 text-neutral-700">{opportunity.description}</p>
+                <p className="mb-4 text-neutral-700">{cleanDescription(opportunity.description)}</p>
 
                 <div className="flex justify-end">
                   <Button asChild>

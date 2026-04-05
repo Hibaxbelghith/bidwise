@@ -1,11 +1,15 @@
+import logging
+
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAdminUser, IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from django.core.mail import EmailMultiAlternatives
-from django.conf import settings
+
+from .emails import otp_email_html, otp_email_plaintext
 from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
 from .serializers import (
     UtilisateurSerializer,
@@ -13,15 +17,16 @@ from .serializers import (
     OTPRequestSerializer,
     OTPVerifySerializer,
 )
-from .emails import otp_email_html, otp_email_plaintext
-from .throttles import OTPRequestThrottle
+from .throttles import OTPRequestThrottle, OTPVerifyThrottle, OTPVerifyEmailThrottle
+
+logger = logging.getLogger(__name__)
 
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
-    """Admin-only user list.  Restricted to Django staff users."""
+    """Admin-only user list. Restricted to Django staff users."""
     queryset = Utilisateur.objects.all()
     serializer_class = UtilisateurSerializer
-    permission_classes = [IsAuthenticated]  # TODO: restrict to is_staff if needed
+    permission_classes = [IsAdminUser]
 
 
 @api_view(['GET', 'PUT'])
@@ -64,6 +69,7 @@ _OTP_SENT_MSG = "Un code de connexion a été envoyé à votre adresse email."
 @permission_classes([AllowAny])
 @throttle_classes([OTPRequestThrottle])
 def request_otp(request):
+    print(">>>>>>>>> ENTERED request_otp")
     """
     POST /api/auth/passwordless/request/
     Send a 6-digit OTP to any valid email address.
@@ -100,7 +106,7 @@ def request_otp(request):
     # Create new challenge (hashed)
     _challenge, plaintext_otp = OTPChallenge.create_for_email(email)
 
-    # Send the code by email (HTML + plain-text fallback)
+        # Send the code by email (HTML + plain-text fallback)
     try:
         subject = "Your BidWise login code"
         plaintext = otp_email_plaintext(plaintext_otp, OTPChallenge.OTP_EXPIRY_MINUTES)
@@ -114,14 +120,22 @@ def request_otp(request):
         )
         msg.attach_alternative(html, "text/html")
         msg.send(fail_silently=False)
-    except Exception as e:
-        print(f"[OTP] Erreur envoi email: {e}")
+    except Exception:
+        # Delete the orphaned challenge — user never received the code
+        # so it must not remain as a valid (but undeliverable) credential.
+        _challenge.delete()
+        logger.error("[OTP] Email delivery failed for %s", email, exc_info=True)
+        return Response(
+            {"error": "Impossible d'envoyer l'email. Veuillez réessayer."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     return Response({"message": _OTP_SENT_MSG}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([OTPVerifyThrottle, OTPVerifyEmailThrottle])
 def verify_otp(request):
     """
     POST /api/auth/passwordless/verify/
@@ -165,17 +179,16 @@ def verify_otp(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # OTP valid — resolve or auto-create user
-    is_new_user = False
-    try:
-        user = Utilisateur.objects.get(email=email)
-    except Utilisateur.DoesNotExist:
-        # Auto-create: username = email, unusable password.
-        # The post_save signal in signals.py auto-creates the Profil.
-        user = Utilisateur(username=email, email=email)
+        # OTP valid — resolve or auto-create user.
+    # get_or_create is atomic and prevents a duplicate-user race condition
+    # when two verify requests for a brand-new email arrive simultaneously.
+    user, is_new_user = Utilisateur.objects.get_or_create(
+        email=email,
+        defaults={'username': email},
+    )
+    if is_new_user:
         user.set_unusable_password()
-        user.save()
-        is_new_user = True
+        user.save(update_fields=['password'])
 
     if not user.is_active:
         return Response(
