@@ -18,6 +18,9 @@ from .scraper_utils import (
     SCRAPER_TIMEOUT_DEFAULT,
     clean_description_for_ml,
     clean_location_for_ml,
+    infer_city_from_text,
+    infer_organization_from_title,
+    normalize_organization_name,
 )
 
 
@@ -181,7 +184,6 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
                     detail_data.get("location"),
                     row_record.get("location"),
                 )
-                location = self._clean_location(location)
                 publication_date = self._first_non_empty(
                     self._parse_date_to_iso(detail_data.get("publication_date")),
                     self._parse_date_to_iso(row_record.get("publication_date")),
@@ -202,6 +204,13 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
                 description, raw_description = self._clean_description(description)
                 if not description:
                     description, raw_description = self._clean_description(title)
+
+                organization = normalize_organization_name(organization)
+                if not organization:
+                    organization = infer_organization_from_title(title)
+                if not location:
+                    location = infer_city_from_text(title, description, url, organization)
+                location = self._clean_location(location)
 
                 record = {
                     "title": title,

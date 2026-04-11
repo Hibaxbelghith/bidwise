@@ -1,218 +1,251 @@
-# Sprint 2 — Gestion Profils & Opportunités
+# Sprint 2 — Récapitulatif Technique (Focus Keejob)
 
-## Overview (problème + objectif)
+## 1. Ce que fait le système
 
-Sprint 2 met en place la couche data centrale pour les opportunités afin de préparer le moteur de recommandation de Sprint 3.
+Le système transforme des annonces web hétérogènes en opportunités propres, structurées et exploitables par l'application (frontend + IA).
 
-Problèmes adressés :
-- données d’opportunités hétérogènes (sources multiples, texte bruité)
-- besoin d’une API de consultation fiable et sécurisée
-- besoin d’une similarité sémantique exploitable en production
+Objectifs atteints sur la source Keejob :
+- scraping fiable de la page détail
+- extraction de champs métier utiles
+- normalisation canonique cohérente
+- qualité de données contrôlée
+- exposition API stable pour le frontend
+- préparation des embeddings pour la similarité
 
-Objectifs atteints :
-- ingestion + normalisation des opportunités
-- pipeline NLP appliqué avant embeddings
-- endpoint de similarité `/api/opportunities/{id}/similar/`
-- sécurisation API + optimisations performance adaptées à un dataset petit (~400 items)
-
----
-
-## System Architecture (pipeline)
-
-Flux global backend :
-
-1. **Scraping sources**  
-2. **Parser / Normalisation** (mapping vers modèle `Opportunite`)  
-3. **NLP preprocessing** (nettoyage + enrichissement texte)  
-4. **Embeddings generation** (Sentence Transformers)  
-5. **Stockage DB** (`embedding_vector`, `embedding_model`)  
-6. **Similarity retrieval API** (cosine similarity + filtres)
-
-Architecture fonctionnelle :
-
-- `scraping/*` : collecte brute
-- `scraping/parser.py` : normalisation opportunité
-- `nlp_preprocessing.py` : texte prêt pour embeddings
-- `embeddings/service.py` : encodage embeddings
-- `similarity.py` : recherche similaire
-- `views.py` : exposition endpoint REST
+Champs métier couverts (Keejob) :
+- titre
+- organisation_nom
+- ville
+- contract_type
+- experience_min / experience_max
+- education_level
+- availability
+- salary
+- languages
+- description
+- source_item_url
 
 ---
 
-## NLP Pipeline (détaillé et clair)
+## 2. Architecture Sprint 2 (réelle dans le code)
 
-Le pipeline NLP prépare un texte stable avant encodage.
+Pipeline complet :
 
-Étapes principales :
-- nettoyage HTML, URLs, emails
-- normalisation (minuscules, accents, espaces)
-- réduction bruit (boilerplate, répétitions)
-- traitement par type de contenu (job vs tender)
-- extraction heuristique (organisation, signaux structurés)
-- contrôle de longueur pour éviter les dumps de page
+Scraper -> RawOpportunite -> Processing -> Normalization -> Enrichment -> Quality Gate -> Materialization -> Opportunite -> API -> Embeddings -> Similarity
 
-Sortie :
-- texte compact, lisible, cohérent pour embeddings
-- fallback sécurisé si texte incomplet
-
-Exemple simplifié :
-- Entrée brute : `type: job title: ...` + phrases répétées
-- Sortie NLP : texte nettoyé sans artefacts inutiles
+Modules clés :
+- scraping/keejob_scraper.py
+- scraping/pipeline.py
+- scraping/normalization.py
+- enrichment/text_enrichment.py
+- quality/quality_gate.py
+- scraping/materialization.py
+- processing.py
+- similarity.py
+- dataset_metrics.py
+- management/commands/*
 
 ---
 
-## Embedding & Similarity Logic
+## 3. Comment fonctionne le pipeline pour Keejob
 
-Embeddings :
-- modèle Sentence Transformers configuré en settings
-- embeddings stockés en base
-- version tracée via `embedding_model` (`model@version`)
+### Étape A — Scraping détail
 
-Similarité :
-- base = **cosine similarity**
-- si vecteurs normalisés, dot product = cosine
+Le scraper Keejob lit la page listing, puis la page détail de chaque annonce.
 
-Formule :
-- `similarity(A,B) = dot(A,B) / (||A|| * ||B||)`
+Il extrait les champs structurés depuis la sidebar et le contenu principal :
+- Type de contrat
+- Expérience
+- Niveau d'études
+- Disponibilité
+- Salaire
+- Langues
+- Lieu précis
+- Description
 
-Logique actuelle de ranking :
-- score sémantique de base
-- bonus léger de récence (borné)
-- exclusion candidats sous seuil minimal (`MIN_SIMILARITY = 0.52`)
+### Étape B — Ingestion RAW (source de vérité)
 
----
+Chaque record est stocké dans RawOpportunite avec :
+- payload brut complet
+- hashes de déduplication
+- status de traitement (NEW / MATERIALIZED / REJECTED)
 
-## Deduplication Strategy
+Cela garantit :
+- audit
+- replay
+- traçabilité
 
-Déduplication au niveau résultats similaires :
+### Étape C — Processing orchestré
 
-- fingerprint contenu basé sur SHA1
-- source fingerprint calculé depuis `titre + description` normalisés
-- candidat ignoré si fingerprint identique à la source
-- dédup top-k : un seul résultat par fingerprint
+processing.py traite les raws NEW de façon déterministe :
+1. normalize_raw_opportunity
+2. enrich_opportunity_text
+3. evaluate_opportunity
+4. materialize_opportunity
 
-Bénéfice :
-- évite les quasi-doublons dans les recommandations similaires
-- améliore la diversité immédiate du top-k
+### Étape D — Normalization
 
----
+La normalisation convertit le payload brut vers le modèle canonique Opportunite :
+- mapping type/statut/date
+- nettoyage de texte
+- parsing experience range (min/max)
+- mapping contract_type
+- préservation d'une ville affichable (ex: Sbikha, Kairouan)
 
-## API Design (`/similar/`)
+### Étape E — Enrichment
 
-Endpoint :
-- `GET /api/opportunities/{id}/similar/`
+Le module enrichment ajoute des signaux NLP déterministes :
+- salary fallback depuis texte
+- skills
+- languages_fallback
+- experience_min/max et compatibilité legacy
 
-Paramètres :
-- `k` (ou `top_k`) avec clamp serveur `[1, 50]`
+### Étape F — Quality Gate
 
-Réponse :
-- minimale et publique, sans fuite de détails ML internes
+Le quality gate vérifie que la donnée est exploitable :
+- description assez riche
+- URL de détail valide
+- contraintes qualité par source
 
-Exemple :
-```json
-[
-  {
-    "id": 320,
-    "titre": "Téléconseillers (Appels, Chat & Email)",
-    "similarity_score": 0.88
-  }
-]
-```
+### Étape G — Materialization
 
-Important :
-- `embedding_vector` et `embedding_model` ne sont pas exposés
+La matérialisation persiste dans Opportunite avec :
+- déduplication canonique
+- merge non destructif
+- conservation des champs les plus fiables
 
----
+### Étape H — API, Embeddings, Similarity
 
-## Performance Optimizations
+L'API DRF expose des réponses stables.
 
-Optimisations appliquées (sans complexité excessive) :
+Les embeddings sont stockés en :
+- embedding_vector (JSON)
+- embedding_vector_pg (pgvector)
 
-- filtres candidats :
-  - `statut = ACTIVE`
-  - même `type_opportunite`
-  - même `embedding_model`
-- fenêtre temporelle : **90 derniers jours**
-- limite candidats : **1000 max**
-- `top_k` borné `[1,50]`
-- throttling DRF : **20 requêtes/minute** sur `/similar/`
-- logging de traitement : `processed_candidates`, `returned`
-
-Pourquoi ce choix :
-- dataset actuel petit (~400) → in-memory exact search reste adapté
-- optimisation ciblée sans introduire de dette d’architecture
+La similarité utilise :
+- pgvector si activé
+- fallback Python sinon
 
 ---
 
-## Security Considerations
+## 4. Problèmes réels résolus sur Keejob
 
-Mesures appliquées :
+### Problème 1 — contract_type manquant
 
-- suppression des champs sensibles d’API (`embedding_vector`, `embedding_model`)
-- throttling endpoint similarité (anti-abus)
-- validation serveur des bornes (`k`)
-- filtrage côté serveur (pas de confiance aux paramètres client pour la logique métier)
+Symptôme : contract_type null alors que la page affiche Type de contrat: CDI.
 
----
+Correction :
+- extraction renforcée du label Type de contrat dans le scraper
+- fallback de normalisation sur plusieurs clés payload
+- backfill des enregistrements existants
 
-## Engineering Decisions (WHY)
+Résultat : contract_type correctement rempli sur la majorité des annonces Keejob actives.
 
-Choix majeurs et justification :
+### Problème 2 — source_item_url manquant
 
-- **In-memory similarity** : suffisant à ce volume, plus simple et maintenable
-- **Fingerprint SHA1 texte normalisé** : dédup robuste à faible coût
-- **Seuil minimal de similarité** : réduit le bruit sémantique
-- **Réponse API minimale** : meilleure sécurité + meilleur temps de réponse
-- **Optimisations incrémentales** : priorité à la stabilité production
+Symptôme : annonces sans lien source, bloquant la redirection frontend.
 
----
+Correction :
+- nettoyage dataset des opportunités sans source_item_url
 
-## Trade-offs & Limitations
+Résultat validé :
+- 0 source_item_url null
+- 0 source_item_url vide
 
-Trade-offs assumés :
+### Problème 3 — description répétée
 
-- pas d’ANN (FAISS/pgvector) pour l’instant
-- pas de reranker ML complexe
-- heuristiques NLP simples (robustes mais imparfaites)
+Symptôme : blocs de description dupliqués dans certaines annonces.
 
-Limitations actuelles :
+Correction :
+- déduplication des blocs de texte avant nettoyage ML
 
-- certaines similarités peuvent rester “linguistiques” plus que “fonction métier”
-- qualité dépend de la propreté des descriptions source
-- dataset petit donc variance des résultats possible selon source
+Résultat : descriptions plus propres et plus lisibles côté API.
 
----
+### Problème 4 — perte de granularité de ville
 
-## Improvements Made During Sprint 2
+Symptôme : ville simplifiée (ex: Kairouan au lieu de Sbikha, Kairouan).
 
-Améliorations clés livrées :
+Correction :
+- conservation de la valeur de localisation détaillée
+- enrichissement depuis le texte descriptif
 
-- NLP preprocessing stabilisé
-- génération embeddings versionnée
-- endpoint similarité opérationnel
-- dedup top-k par fingerprint
-- exclusion quasi-doublons source
-- seuil de similarité minimal
-- filtres candidats + fenêtre 90 jours + cap 1000
-- clamp `k` et throttling `20/min`
-- suppression exposition embeddings dans API
+Résultat : meilleure précision géographique pour frontend et matching.
 
 ---
 
-## Final System Behavior (état actuel)
+## 5. Tests réalisés (Sprint 2)
 
-Ce qui fonctionne aujourd’hui :
+Tests exécutés et validés :
+- tests scraper Keejob (fixtures HTML réalistes)
+- tests enrichment (salary, skills, languages, experience)
+- tests API (forme de réponse, champs structurés)
+- tests pipeline (processing + materialization + merge)
+- validation dataset via métriques
 
-- collecte, normalisation et stockage opportunités
-- texte nettoyé avant embeddings
-- embeddings générés et persistés
-- endpoint `/similar/` stable, sécurisé et testé
-- résultats plus pertinents grâce à :
-  - déduplication
-  - seuil minimal
-  - filtres métier de base
-  - contraintes performance
+Points de test importants :
+- extraction contract_type
+- parsing experience min/max
+- source_item_url présent
+- fallback API compatible legacy
+- robustesse en cas de champs partiels
 
-Statut :
-- **version stable, testée et validée pour Sprint 2**
-- prête pour extension contrôlée en Sprint 3 (recommandation avancée)
+---
+
+## 6. Métriques qualité (snapshot de validation)
+
+Indicateurs observés :
+- 0 organisation vide
+- 0 ville vide
+- 0 lien source null (après nettoyage)
+- taux de succès pipeline proche de 100%
+- coverage enrichment ~15 à 20%
+
+Interprétation :
+- le dataset Keejob est maintenant utilisable en production pour affichage et recommandation de base.
+
+---
+
+## 7. Version simplifiée (présentation orale, 5 à 8 points)
+
+1. Nous avons construit un pipeline complet qui transforme des pages Keejob en données fiables.
+2. Chaque annonce brute est d'abord stockée dans RawOpportunite pour audit et replay.
+3. Ensuite on normalise, enrichit, contrôle la qualité, puis on matérialise dans Opportunite.
+4. Nous extrayons maintenant les champs utiles au frontend: contrat, salaire, expérience, langues, localisation.
+5. Nous avons corrigé trois bugs critiques: contract_type null, liens source manquants, descriptions dupliquées.
+6. Les tests scraper, API, enrichment et pipeline sont passés.
+7. Les embeddings sont prêts avec pgvector et fallback Python pour la similarité.
+8. Le résultat est une base stable pour Sprint 3 (matching profil/CV).
+
+---
+
+## 8. Key Messages pour jury
+
+### Pourquoi ce pipeline est important
+
+Il transforme des données web instables en données produit stables, testables et exploitables par l'IA.
+
+### Pourquoi RawOpportunite est clé
+
+RawOpportunite garantit la traçabilité: on ne perd jamais la source, on peut auditer, rejouer, corriger sans re-scraper.
+
+### Pourquoi pgvector est utile
+
+pgvector permet une montée en charge de la similarité sémantique côté base, avec fallback Python pour rester robuste.
+
+### Pourquoi séparer scraping et enrichment est intelligent
+
+Le scraping collecte les faits bruts; l'enrichment ajoute des signaux calculés.
+Cette séparation réduit les bugs, facilite les tests et simplifie le debug.
+
+---
+
+## 9. Conclusion
+
+Sprint 2 (focus Keejob) est terminé avec un pipeline propre, démontrable et défendable techniquement.
+
+Le socle est prêt pour passer à la source suivante tout en gardant la même discipline :
+- ingestion traçable
+- normalisation stricte
+- qualité contrôlée
+- API stable
+- similarité prête à scaler

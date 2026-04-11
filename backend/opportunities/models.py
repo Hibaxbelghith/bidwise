@@ -1,5 +1,7 @@
 from django.db import models
+from django.db.models import Q
 from django.contrib.postgres.fields import ArrayField
+from pgvector.django import VectorField
 from users.models import Utilisateur
 from datetime import datetime, timedelta
 
@@ -16,6 +18,12 @@ class StatutOpportunite(models.TextChoices):
     ARCHIVEE = "ARCHIVEE", "Archivée"
 
 
+class DateConfidence(models.TextChoices):
+    EXACT = "EXACT", "Exacte"
+    ESTIMATED = "ESTIMATED", "Estimée"
+    FALLBACK = "FALLBACK", "Fallback"
+
+
 class SourceOpportunite(models.Model):
     nom = models.CharField(max_length=150)
     url = models.URLField()
@@ -23,6 +31,7 @@ class SourceOpportunite(models.Model):
         max_length=50,
         choices=[
             ("SITE_EMPLOI", "Site d'emploi"),
+            ("SITE_STAGE", "Site de stage"),
             ("PORTAIL_PROJET", "Portail de projets"),
             ("AUTRE", "Autre"),
         ]
@@ -30,6 +39,83 @@ class SourceOpportunite(models.Model):
 
     def __str__(self):
         return self.nom
+
+
+class RawOpportuniteProcessingStatus(models.TextChoices):
+    NEW = "NEW", "New"
+    VALIDATED = "VALIDATED", "Validated"
+    REJECTED = "REJECTED", "Rejected"
+    MATERIALIZED = "MATERIALIZED", "Materialized"
+
+
+class RawOpportunite(models.Model):
+    source = models.ForeignKey(
+        SourceOpportunite,
+        on_delete=models.CASCADE,
+        related_name="raw_opportunites",
+    )
+    canonical = models.ForeignKey(
+        "Opportunite",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="raw_records",
+    )
+
+    # Full source payload is kept so parsing rules can be replayed later without re-scraping.
+    raw_payload = models.JSONField()
+    raw_titre = models.TextField(blank=True, default="")
+    raw_description = models.TextField(blank=True, default="")
+    raw_organisation_nom = models.TextField(blank=True, default="")
+    raw_type = models.CharField(max_length=100, blank=True, default="")
+    raw_status = models.CharField(max_length=100, blank=True, default="")
+    raw_date_publication = models.CharField(max_length=100, blank=True, default="")
+    raw_date_limite = models.CharField(max_length=100, blank=True, default="")
+
+    source_item_url = models.URLField(max_length=1000, null=True, blank=True)
+    source_listing_url = models.URLField(max_length=1000, null=True, blank=True)
+    source_record_id = models.CharField(max_length=255, null=True, blank=True)
+
+    # payload_hash tracks exact raw duplicates; content_fingerprint groups near-identical content.
+    payload_hash = models.CharField(max_length=40)
+    content_fingerprint = models.CharField(max_length=40, blank=True, default="")
+
+    # processing_status lets later stages move records through validation/materialization safely.
+    processing_status = models.CharField(
+        max_length=20,
+        choices=RawOpportuniteProcessingStatus.choices,
+        default=RawOpportuniteProcessingStatus.NEW,
+    )
+    validation_errors = models.JSONField(default=list, blank=True)
+    seen_count = models.PositiveIntegerField(default=1)
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["payload_hash"], name="raw_opp_payload_hash_idx"),
+            models.Index(fields=["content_fingerprint"], name="raw_opp_content_fp_idx"),
+            models.Index(fields=["processing_status"], name="raw_opp_status_idx"),
+        ]
+        constraints = [
+            # Source-native identifiers are the strongest dedup key when a scraper exposes them.
+            models.UniqueConstraint(
+                fields=["source", "source_record_id"],
+                condition=Q(source_record_id__isnull=False) & ~Q(source_record_id=""),
+                name="uniq_raw_opp_source_record_id",
+            ),
+            # Direct item URLs are the next best stable key for sources without native IDs.
+            models.UniqueConstraint(
+                fields=["source", "source_item_url"],
+                condition=Q(source_item_url__isnull=False) & ~Q(source_item_url=""),
+                name="uniq_raw_opp_source_item_url",
+            ),
+        ]
+        ordering = ["-last_seen_at", "-id"]
+
+    def __str__(self):
+        return self.raw_titre or f"Raw opportunity #{self.pk}"
 
 
 class SimilarityMetrics(models.Model):
@@ -94,7 +180,26 @@ class Opportunite(models.Model):
     titre = models.CharField(max_length=255)
     description = models.TextField()
     organisation_nom = models.CharField(max_length=255, blank=True, default="")
+    ville = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    contract_type = models.CharField(max_length=64, blank=True, default="")
+    experience_min = models.PositiveSmallIntegerField(null=True, blank=True)
+    experience_max = models.PositiveSmallIntegerField(null=True, blank=True)
+    education_level = models.CharField(max_length=120, blank=True, default="")
+    availability = models.CharField(max_length=120, blank=True, default="")
+    salary = models.CharField(max_length=120, blank=True, default="")
+    experience_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    skills = ArrayField(models.CharField(max_length=64), blank=True, default=list)
+    languages = ArrayField(models.CharField(max_length=64), blank=True, default=list)
+    languages_fallback = ArrayField(models.CharField(max_length=64), blank=True, default=list)
+    date_confidence = models.CharField(
+        max_length=16,
+        choices=DateConfidence.choices,
+        default=DateConfidence.FALLBACK,
+        db_index=True,
+    )
+    quality_score = models.FloatField(default=0.0, db_index=True)
     embedding_vector = models.JSONField(null=True, blank=True)
+    embedding_vector_pg = VectorField(dimensions=384, null=True, blank=True)
     embedding_model = models.CharField(max_length=200, blank=True, default="", db_index=True)
 
     type_opportunite = models.CharField(
@@ -110,6 +215,7 @@ class Opportunite(models.Model):
 
     date_publication = models.DateField()
     date_limite = models.DateField(null=True, blank=True)
+    source_item_url = models.URLField(max_length=1000, null=True, blank=True)
 
     organisation = models.ForeignKey(
         Utilisateur,

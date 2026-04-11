@@ -48,3 +48,12 @@ class OTPVerifyEmailThrottle(SimpleRateThrottle):
             hashlib.sha256,
         ).hexdigest()
         return self.cache_format % {'scope': self.scope, 'ident': email_digest}
+
+
+class GoogleAuthThrottle(AnonRateThrottle):
+    """
+    Per-IP throttle on /auth/google/.
+    Limits abuse against public Google token verification endpoint.
+    """
+
+    scope = 'google_auth'

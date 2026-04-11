@@ -1,5 +1,7 @@
 import logging
+import math
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from opportunities.embeddings import service
@@ -8,6 +10,27 @@ from opportunities.nlp_preprocessing import prepare_combined_text
 
 
 logger = logging.getLogger(__name__)
+
+
+def _to_pgvector_payload(vector):
+    if not isinstance(vector, list) or not vector:
+        return None
+
+    expected_dimensions = int(getattr(settings, "OPPORTUNITY_PGVECTOR_DIMENSIONS", 384))
+    if len(vector) != expected_dimensions:
+        return None
+
+    casted = []
+    try:
+        for item in vector:
+            value = float(item)
+            if not math.isfinite(value):
+                return None
+            casted.append(value)
+    except (TypeError, ValueError):
+        return None
+
+    return casted
 
 
 class Command(BaseCommand):
@@ -125,13 +148,14 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
                 opportunity.embedding_vector = vector
+                opportunity.embedding_vector_pg = _to_pgvector_payload(vector)
                 opportunity.embedding_model = model_identifier
                 rows_to_update.append(opportunity)
 
             if rows_to_update:
                 Opportunite.objects.bulk_update(
                     rows_to_update,
-                    fields=["embedding_vector", "embedding_model"],
+                    fields=["embedding_vector", "embedding_vector_pg", "embedding_model"],
                     batch_size=batch_size,
                 )
                 updated += len(rows_to_update)

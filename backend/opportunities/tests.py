@@ -9,7 +9,16 @@ from rest_framework.test import APIClient, APITestCase
 
 from users.models import Utilisateur
 
-from .models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
+from .models import (
+    Opportunite,
+    RawOpportunite,
+    RawOpportuniteProcessingStatus,
+    SourceOpportunite,
+    StatutOpportunite,
+    TypeOpportunite,
+)
+from .enrichment.text_enrichment import enrich_opportunity_text
+from .scraping.materialization import materialize_opportunity
 from .scraping.pipeline import run_collection
 from .scraping.scraper_base import BaseOpportunityScraper
 from .serializers import OpportuniteSerializer
@@ -99,6 +108,97 @@ class OpportuniteSerializerTests(TestCase):
         self.assertEqual(serializer.validated_data["organisation_nom"], "Orange Tunisie")
 
 
+class OpportunityTextEnrichmentTests(TestCase):
+    def test_enrichment_extracts_salary_experience_skills_and_languages(self):
+        payload = {
+            "description": "Profil Python/Django avec SQL. Salaire 1200-1800 TND. 3 years d'experience. Langues: anglais et arabe."
+        }
+
+        enriched = enrich_opportunity_text(payload)
+
+        self.assertEqual(enriched["salary"], "1200-1800 TND")
+        self.assertEqual(enriched["experience_min"], 3)
+        self.assertEqual(enriched["experience_max"], 3)
+        self.assertEqual(enriched["experience_years"], 3)
+        self.assertIn("python", enriched["skills"])
+        self.assertIn("django", enriched["skills"])
+        self.assertIn("sql", enriched["skills"])
+        self.assertEqual(enriched["languages_fallback"], ["anglais", "arabe"])
+
+    def test_enrichment_keeps_safe_defaults_when_description_missing(self):
+        enriched = enrich_opportunity_text({"description": None})
+        self.assertEqual(enriched["salary"], None)
+        self.assertEqual(enriched["experience_min"], None)
+        self.assertEqual(enriched["experience_max"], None)
+        self.assertEqual(enriched["experience_years"], None)
+        self.assertEqual(enriched["skills"], [])
+        self.assertEqual(enriched["languages_fallback"], None)
+
+    def test_enrichment_uses_structured_salary_and_experience_range(self):
+        payload = {
+            "description": "Poste logistique.",
+            "salary": "700 -1000 TND / Mois",
+            "experience": "Entre 2 et 5 ans",
+        }
+
+        enriched = enrich_opportunity_text(payload)
+
+        self.assertEqual(enriched["salary"], "700 -1000 TND")
+        self.assertEqual(enriched["experience_min"], 2)
+        self.assertEqual(enriched["experience_max"], 5)
+        self.assertEqual(enriched["experience_years"], 2)
+
+    def test_enrichment_does_not_override_structured_languages(self):
+        payload = {
+            "description": "Mission fullstack. Anglais requis.",
+            "languages": ["français"],
+        }
+
+        enriched = enrich_opportunity_text(payload)
+        self.assertEqual(enriched["languages_fallback"], None)
+
+
+class OpportunityMaterializationTests(TestCase):
+    def test_materialization_syncs_legacy_experience_to_range(self):
+        source = SourceOpportunite.objects.create(
+            nom="JobBoard",
+            url="https://jobboard.example",
+            type_source="SITE_EMPLOI",
+        )
+
+        normalized_data = {
+            "raw_id": 999,
+            "source": source,
+            "titre": "Backend Developer",
+            "description": "Description suffisamment longue pour passer la quality gate et persister la fiche sans rejet.",
+            "organisation_nom": "Acme",
+            "ville": "Tunis",
+            "source_item_url": "https://jobboard.example/opportunity/1",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": date.today(),
+            "date_confidence": "EXACT",
+            "date_limite": None,
+            "organisation": None,
+            "contract_type": "",
+            "education_level": "",
+            "availability": "",
+            "salary": "",
+            "experience_years": 3,
+            "experience_min": None,
+            "experience_max": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        opportunity = materialize_opportunity(normalized_data)
+
+        self.assertEqual(opportunity.experience_years, 3)
+        self.assertEqual(opportunity.experience_min, 3)
+        self.assertEqual(opportunity.experience_max, 3)
+
+
 class OpportuniteAPITests(APITestCase):
     def setUp(self):
         self.client = APIClient()
@@ -155,6 +255,50 @@ class OpportuniteAPITests(APITestCase):
         response = self.client.get(f"{self.base_url}{opportunity.pk}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["id"], opportunity.pk)
+
+    def test_detail_hides_organisation_and_exposes_enrichment_fields(self):
+        opportunity = self.create_opp(
+            statut=StatutOpportunite.EXPIREE,
+            source_item_url="https://example.org/opportunity-detail",
+            contract_type="CDI",
+            education_level="Bac + 3",
+            availability="Plein temps",
+            salary="1500 TND",
+            experience_min=2,
+            experience_max=5,
+            experience_years=2,
+            skills=["python", "sql"],
+            languages=["français"],
+            languages_fallback=["anglais"],
+        )
+
+        response = self.client.get(f"{self.base_url}{opportunity.pk}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("organisation", response.data)
+        self.assertEqual(response.data["contract_type"], "CDI")
+        self.assertEqual(response.data["education_level"], "Bac + 3")
+        self.assertEqual(response.data["availability"], "Plein temps")
+        self.assertEqual(response.data["salary"], "1500 TND")
+        self.assertEqual(response.data["experience"], {"min": 2, "max": 5})
+        self.assertEqual(response.data["skills"], ["python", "sql"])
+        self.assertEqual(response.data["languages"], ["français"])
+        self.assertEqual(response.data["languages_fallback"], ["anglais"])
+        self.assertEqual(response.data["source_item_url"], "https://example.org/opportunity-detail")
+
+    def test_detail_experience_falls_back_to_legacy_years(self):
+        opportunity = self.create_opp(
+            statut=StatutOpportunite.ACTIVE,
+            source_item_url="https://example.org/opportunity-legacy-experience",
+            experience_years=2,
+            experience_min=None,
+            experience_max=None,
+        )
+
+        response = self.client.get(f"{self.base_url}{opportunity.pk}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["experience"], {"min": 2, "max": 2})
 
     def test_create_requires_authentication(self):
         response = self.client.post(
@@ -234,6 +378,49 @@ class OpportuniteAPITests(APITestCase):
         response = self.client.get(self.base_url, {"status": StatutOpportunite.ARCHIVEE})
         titles = {item["titre"] for item in response.data["results"]}
         self.assertIn("Archived", titles)
+
+    def test_stage_list_keeps_only_high_quality_hiinterns_and_prioritizes_keejob(self):
+        hiinterns_source = SourceOpportunite.objects.create(
+            nom="HiInterns",
+            url="https://hi-interns.com",
+            type_source="SITE_STAGE",
+        )
+        keejob_source = SourceOpportunite.objects.create(
+            nom="Keejob",
+            url="https://www.keejob.com",
+            type_source="SITE_EMPLOI",
+        )
+
+        low_quality_hiinterns = self.create_opp(
+            titre="HiInterns Low Quality",
+            type_opportunite=TypeOpportunite.STAGE,
+            source=hiinterns_source,
+            quality_score=0.85,
+            date_publication=date.today(),
+        )
+        high_quality_hiinterns = self.create_opp(
+            titre="HiInterns High Quality",
+            type_opportunite=TypeOpportunite.STAGE,
+            source=hiinterns_source,
+            quality_score=0.95,
+            date_publication=date.today(),
+        )
+        keejob_stage = self.create_opp(
+            titre="Keejob Stage",
+            type_opportunite=TypeOpportunite.STAGE,
+            source=keejob_source,
+            quality_score=0.90,
+            date_publication=date.today(),
+        )
+
+        response = self.client.get(self.base_url, {"type_opportunite": TypeOpportunite.STAGE})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = [item["id"] for item in response.data["results"]]
+        self.assertNotIn(low_quality_hiinterns.pk, returned_ids)
+        self.assertIn(high_quality_hiinterns.pk, returned_ids)
+        self.assertIn(keejob_stage.pk, returned_ids)
+        self.assertEqual(returned_ids[0], keejob_stage.pk)
 
     def test_search_uses_title_and_description(self):
         self.create_opp(titre="Python Engineer", description="Backend APIs")
@@ -484,14 +671,17 @@ class PipelineTests(TestCase):
                 ]
 
         stats = run_collection(DuplicateScraper())
-        self.assertEqual(stats["created"], 1)
-        self.assertEqual(stats["updated"], 1)
+        self.assertEqual(stats["created"], 2)
+        self.assertEqual(stats["updated"], 0)
         self.assertEqual(stats["skipped"], 0)
 
-        self.assertEqual(Opportunite.objects.count(), 1)
-        opportunity = Opportunite.objects.first()
-        self.assertEqual(opportunity.description, "version 2")
-        self.assertEqual(opportunity.organisation_nom, "Company B")
+        self.assertEqual(RawOpportunite.objects.count(), 2)
+        raw_records = list(RawOpportunite.objects.order_by("id"))
+        self.assertEqual(raw_records[0].raw_description, "Version 1")
+        self.assertEqual(raw_records[1].raw_description, "Version 2")
+        self.assertEqual(raw_records[0].processing_status, RawOpportuniteProcessingStatus.NEW)
+        self.assertEqual(raw_records[1].processing_status, RawOpportuniteProcessingStatus.NEW)
+        self.assertEqual(Opportunite.objects.count(), 0)
 
     def test_pipeline_skips_invalid_records(self):
         class InvalidScraper(BaseOpportunityScraper):
@@ -510,7 +700,8 @@ class PipelineTests(TestCase):
                 ]
 
         stats = run_collection(InvalidScraper())
-        self.assertEqual(stats["created"], 0)
+        self.assertEqual(stats["created"], 1)
         self.assertEqual(stats["updated"], 0)
-        self.assertEqual(stats["skipped"], 1)
+        self.assertEqual(stats["skipped"], 0)
+        self.assertEqual(RawOpportunite.objects.count(), 1)
         self.assertEqual(Opportunite.objects.count(), 0)

@@ -15,7 +15,7 @@ class CandidatureViewSet(viewsets.ModelViewSet):
         """
         return Candidature.objects.filter(
             candidat=self.request.user
-        )
+        ).order_by("-date_creation", "-id")
 
     def perform_create(self, serializer):
         """

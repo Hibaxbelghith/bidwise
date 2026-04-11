@@ -11,6 +11,7 @@ Covers:
 from datetime import timedelta
 from unittest.mock import patch, MagicMock
 
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password
@@ -453,6 +454,7 @@ class RequestOTPViewTests(APITestCase):
     """Tests for POST /api/auth/passwordless/request/"""
 
     def setUp(self):
+        cache.clear()
         self.url = "/api/auth/passwordless/request/"
         self.client = APIClient()
 
@@ -508,6 +510,7 @@ class VerifyOTPViewTests(APITestCase):
     """Tests for POST /api/auth/passwordless/verify/"""
 
     def setUp(self):
+        cache.clear()
         self.url = "/api/auth/passwordless/verify/"
         self.client = APIClient()
         self.email = "otp@example.com"
@@ -603,6 +606,7 @@ class GoogleAuthViewTests(APITestCase):
     """Tests for POST /api/auth/google/"""
 
     def setUp(self):
+        cache.clear()
         self.url = "/api/auth/google/"
         self.client = APIClient()
         self.valid_idinfo = {

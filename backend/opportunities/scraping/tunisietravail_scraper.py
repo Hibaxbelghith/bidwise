@@ -18,10 +18,57 @@ from .scraper_utils import (
     SCRAPER_TIMEOUT_DEFAULT,
     clean_description_for_ml,
     clean_location_for_ml,
+    infer_city_from_text,
+    infer_opportunity_type,
+    infer_organization_from_title,
+    normalize_organization_name,
 )
 
 
 logger = logging.getLogger(__name__)
+
+MONTH_TOKEN_TO_NUMBER = {
+    "jan": 1,
+    "january": 1,
+    "janvier": 1,
+    "fev": 2,
+    "fevr": 2,
+    "feb": 2,
+    "february": 2,
+    "fevrier": 2,
+    "mars": 3,
+    "mar": 3,
+    "march": 3,
+    "avr": 4,
+    "avril": 4,
+    "apr": 4,
+    "april": 4,
+    "mai": 5,
+    "may": 5,
+    "juin": 6,
+    "jun": 6,
+    "june": 6,
+    "juil": 7,
+    "juillet": 7,
+    "jul": 7,
+    "july": 7,
+    "aout": 8,
+    "aug": 8,
+    "august": 8,
+    "sept": 9,
+    "septembre": 9,
+    "sep": 9,
+    "september": 9,
+    "oct": 10,
+    "octobre": 10,
+    "october": 10,
+    "nov": 11,
+    "novembre": 11,
+    "november": 11,
+    "dec": 12,
+    "decembre": 12,
+    "december": 12,
+}
 
 
 def _get_env_int(name, default):
@@ -46,20 +93,33 @@ def _get_env_float(name, default):
         return default
 
 
+def _get_env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 SCRAPER_TIMEOUT = _get_env_int("SCRAPER_TIMEOUT", SCRAPER_TIMEOUT_DEFAULT)
 SCRAPER_MIN_DELAY = _get_env_float("SCRAPER_MIN_DELAY", 0.8)
 SCRAPER_MAX_DELAY = _get_env_float("SCRAPER_MAX_DELAY", 1.5)
 TUNISIETRAVAIL_MAX_PAGES = _get_env_int("TUNISIETRAVAIL_MAX_PAGES", 5)
 TUNISIETRAVAIL_MAX_RECORDS = _get_env_int("TUNISIETRAVAIL_MAX_RECORDS", 0)
 TUNISIETRAVAIL_PAGE_SIZE = _get_env_int("TUNISIETRAVAIL_PAGE_SIZE", 10)
+TUNISIETRAVAIL_STAGE_ONLY = _get_env_bool("TUNISIETRAVAIL_STAGE_ONLY", False)
+TUNISIETRAVAIL_STAGE_LISTING_BASE_URL = os.getenv(
+    "TUNISIETRAVAIL_STAGE_LISTING_BASE_URL",
+    "https://www.tunisietravail.net/tag/stage/",
+)
 
 
 class TunisieTravailScraper(BaseOpportunityScraper):
     source_name = "TunisieTravail"
-    source_url = "https://www.tunisietravail.net/tag/offre-demploi-tunisie-2026/"
+    source_url = "https://www.tunisietravail.net"
     source_type = "SITE_EMPLOI"
 
     LISTING_BASE_URL = "https://www.tunisietravail.net/tag/offre-demploi-tunisie-2026/"
+    STAGE_LISTING_BASE_URL = TUNISIETRAVAIL_STAGE_LISTING_BASE_URL
     DEFAULT_TIMEOUT = SCRAPER_TIMEOUT
     DEFAULT_MAX_PAGES = TUNISIETRAVAIL_MAX_PAGES
 
@@ -91,6 +151,10 @@ class TunisieTravailScraper(BaseOpportunityScraper):
         ".entry-content",
         ".PostContent",
     ]
+    DETAIL_LOCATION_SELECTORS = [
+        "p.PostInfo a[href*='/category/pays/tunisie/']",
+        "p.PostInfo a[href*='/category/pays/']",
+    ]
     DETAIL_DATE_SELECTORS = [
         "time.entry-date",
         "meta[property='article:published_time']",
@@ -107,6 +171,7 @@ class TunisieTravailScraper(BaseOpportunityScraper):
         max_records=TUNISIETRAVAIL_MAX_RECORDS,
         fetch_details=FETCH_DETAILS,
         page_size=TUNISIETRAVAIL_PAGE_SIZE,
+        stage_only=TUNISIETRAVAIL_STAGE_ONLY,
     ):
         self.max_pages = max(1, min(int(max_pages), self.DEFAULT_MAX_PAGES))
         self.timeout = timeout
@@ -115,6 +180,8 @@ class TunisieTravailScraper(BaseOpportunityScraper):
         self.max_records = max_records if max_records and max_records > 0 else None
         self.fetch_details = fetch_details
         self.page_size = max(1, int(page_size))
+        self.stage_only = bool(stage_only)
+        self.listing_base_url = self.STAGE_LISTING_BASE_URL if self.stage_only else self.LISTING_BASE_URL
         self.max_description_length = MAX_DESCRIPTION_LENGTH
 
         if self.min_delay > self.max_delay:
@@ -175,11 +242,11 @@ class TunisieTravailScraper(BaseOpportunityScraper):
 
                 listing_title = self._extract_title(card, None)
                 listing_description = self._extract_summary_description(card)
-                listing_publication_date = self._extract_publication_date(card, None)
+                listing_publication_date, listing_date_confidence = self._extract_publication_date(card, None)
                 listing_organization = self._extract_organization(listing_title)
 
                 detail_soup = None
-                needs_details = self.fetch_details or self._needs_detail_fetch(
+                needs_details = self.fetch_details or self.stage_only or self._needs_detail_fetch(
                     listing_title,
                     listing_description,
                     listing_publication_date,
@@ -193,21 +260,49 @@ class TunisieTravailScraper(BaseOpportunityScraper):
 
                 title = self._extract_title(card, detail_soup) or listing_title
                 description = self._extract_detail_description(detail_soup) or listing_description or title
-                publication_date = self._extract_publication_date(card, detail_soup) or listing_publication_date
-                organization = self._extract_organization(title) or listing_organization
+                publication_date, date_confidence = self._extract_publication_date(card, detail_soup)
+                if not publication_date:
+                    publication_date = listing_publication_date
+                    date_confidence = listing_date_confidence
+                organization = normalize_organization_name(
+                    self._extract_organization(title) or listing_organization
+                )
+                if not organization:
+                    organization = infer_organization_from_title(title)
+                location = self._extract_location(detail_soup) or infer_city_from_text(
+                    title,
+                    description,
+                    url,
+                    organization,
+                )
                 description, raw_description = self._clean_description(description)
 
                 record = {
                     "title": title,
                     "description": description,
                     "organization": organization,
-                    "location": self._clean_location(""),
+                    "location": self._clean_location(location),
                     "publication_date": publication_date,
+                    "date_confidence": date_confidence,
                     "url": url,
                     "source_name": self.source_name,
                     "source_url": self.source_url,
                     "source_type": self.source_type,
                 }
+
+                if self.stage_only:
+                    # Stage-feed pages can still contain regular jobs. Keep type factual.
+                    inferred_type = infer_opportunity_type(
+                        title,
+                        description,
+                        listing_title,
+                        listing_description,
+                    )
+                    record["type_opportunite"] = inferred_type
+                    record["type"] = inferred_type
+                    record["statut"] = "ACTIVE"
+                    record["status"] = "ACTIVE"
+
                 if raw_description:
                     record["raw_description"] = raw_description
 
@@ -245,8 +340,8 @@ class TunisieTravailScraper(BaseOpportunityScraper):
 
     def _build_listing_url(self, page_number):
         if page_number <= 1:
-            return self.LISTING_BASE_URL
-        return f"{self.LISTING_BASE_URL.rstrip('/')}/page/{page_number}/"
+            return self.listing_base_url
+        return f"{self.listing_base_url.rstrip('/')}/page/{page_number}/"
 
     def _safe_get_soup(self, url):
         try:
@@ -307,19 +402,45 @@ class TunisieTravailScraper(BaseOpportunityScraper):
                     return text
         return ""
 
+    def _extract_location(self, detail_soup):
+        if detail_soup is None:
+            return ""
+
+        for selector in self.DETAIL_LOCATION_SELECTORS:
+            nodes = detail_soup.select(selector)
+            for node in nodes:
+                value = self._clean_text(node.get_text(" ", strip=True))
+                if not value:
+                    continue
+                if value.lower() in {"tunisie", "premium"}:
+                    continue
+                cleaned = self._clean_location(value)
+                if cleaned:
+                    return cleaned
+        return ""
+
     def _extract_publication_date(self, card, detail_soup):
         listing_raw = self._extract_date_from_node(card, self.PUBLICATION_DATE_SELECTORS)
-        parsed = self._parse_date_to_iso(listing_raw)
+        parsed, confidence = self._parse_date_to_iso(listing_raw)
         if parsed:
-            return parsed
+            return parsed, confidence
+
+        if card is not None:
+            parsed, confidence = self._parse_date_to_iso(card.get_text(" ", strip=True))
+            if parsed:
+                return parsed, confidence
 
         if detail_soup is not None:
             detail_raw = self._extract_date_from_node(detail_soup, self.DETAIL_DATE_SELECTORS)
-            parsed = self._parse_date_to_iso(detail_raw)
+            parsed, confidence = self._parse_date_to_iso(detail_raw)
             if parsed:
-                return parsed
+                return parsed, confidence
 
-        return date.today().isoformat()
+            parsed, confidence = self._parse_date_to_iso(detail_soup.get_text(" ", strip=True))
+            if parsed:
+                return parsed, confidence
+
+        return date.today().isoformat(), "FALLBACK"
 
     def _extract_date_from_node(self, node, selectors):
         if node is None:
@@ -342,13 +463,13 @@ class TunisieTravailScraper(BaseOpportunityScraper):
             return ""
         match = re.match(r"^(.*?)\s+recrute\b", text, flags=re.IGNORECASE)
         if match:
-            return self._clean_text(match.group(1))
+            return normalize_organization_name(self._clean_text(match.group(1)))
         return ""
 
     def _parse_date_to_iso(self, raw_value):
         text = self._clean_text(raw_value)
         if not text:
-            return ""
+            return "", ""
 
         if "T" in text and len(text) >= 10 and text[:4].isdigit():
             text = text[:10]
@@ -363,10 +484,38 @@ class TunisieTravailScraper(BaseOpportunityScraper):
         )
         for fmt in absolute_formats:
             try:
-                return datetime.strptime(text, fmt).date().isoformat()
+                return datetime.strptime(text, fmt).date().isoformat(), "EXACT"
             except ValueError:
                 continue
-        return ""
+
+        month_year = re.search(r"\b([A-Za-z\u00C0-\u017F]{3,12})\s*,?\s*(20\d{2})\b", text)
+        if month_year:
+            token = self._normalize_month_token(month_year.group(1))
+            month = MONTH_TOKEN_TO_NUMBER.get(token)
+            if month:
+                year = int(month_year.group(2))
+                return f"{year:04d}-{month:02d}-01", "ESTIMATED"
+
+        return "", ""
+
+    def _normalize_month_token(self, token):
+        lowered = self._clean_text(token).lower()
+        replacements = {
+            "\u00e9": "e",
+            "\u00e8": "e",
+            "\u00ea": "e",
+            "\u00e0": "a",
+            "\u00e2": "a",
+            "\u00ee": "i",
+            "\u00ef": "i",
+            "\u00f4": "o",
+            "\u00f9": "u",
+            "\u00fb": "u",
+            "\u00e7": "c",
+        }
+        for src, target in replacements.items():
+            lowered = lowered.replace(src, target)
+        return lowered
 
     def _extract_first_text(self, node, selectors):
         for selector in selectors:

@@ -206,6 +206,9 @@ REST_FRAMEWORK = {
         'otp_request': os.getenv('OTP_REQUEST_RATE', '10/hour'),
         'otp_verify': os.getenv('OTP_VERIFY_RATE', '20/hour'),
         'otp_verify_email': os.getenv('OTP_VERIFY_EMAIL_RATE', '10/hour'),
+
+        # Public Google auth endpoint
+        'google_auth': os.getenv('GOOGLE_AUTH_RATE', '60/hour'),
     },
 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -244,3 +247,13 @@ GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 OPPORTUNITY_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 OPPORTUNITY_EMBEDDING_BATCH_SIZE = int(os.getenv("OPPORTUNITY_EMBEDDING_BATCH_SIZE", "32"))
 OPPORTUNITY_EMBEDDING_MODEL_VERSION = "prod-v1-fr"
+
+# Optional pgvector acceleration for similarity search. Keep disabled by default
+# to preserve current Python cosine behavior until rollout is explicitly enabled.
+OPPORTUNITY_PGVECTOR_ENABLED = os.getenv("OPPORTUNITY_PGVECTOR_ENABLED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+OPPORTUNITY_PGVECTOR_DIMENSIONS = int(os.getenv("OPPORTUNITY_PGVECTOR_DIMENSIONS", "384"))

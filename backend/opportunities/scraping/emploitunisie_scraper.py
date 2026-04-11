@@ -20,6 +20,7 @@ from .scraper_utils import (
     SCRAPER_TIMEOUT_DEFAULT,
     clean_description_for_ml,
     clean_location_for_ml,
+    infer_opportunity_type,
 )
 
 
@@ -48,12 +49,20 @@ def _get_env_float(name, default):
         return default
 
 
+def _get_env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 SCRAPER_TIMEOUT = _get_env_int("SCRAPER_TIMEOUT", SCRAPER_TIMEOUT_DEFAULT)
 SCRAPER_MIN_DELAY = _get_env_float("SCRAPER_MIN_DELAY", 0.8)
 SCRAPER_MAX_DELAY = _get_env_float("SCRAPER_MAX_DELAY", 1.5)
 EMPLOITUNISIE_MAX_PAGES = _get_env_int("EMPLOITUNISIE_MAX_PAGES", 5)
 EMPLOITUNISIE_MAX_RECORDS = _get_env_int("EMPLOITUNISIE_MAX_RECORDS", 0)
 EMPLOITUNISIE_PAGE_SIZE = _get_env_int("EMPLOITUNISIE_PAGE_SIZE", 20)
+EMPLOITUNISIE_STAGE_ONLY = _get_env_bool("EMPLOITUNISIE_STAGE_ONLY", False)
 
 
 class EmploiTunisieScraper(BaseOpportunityScraper):
@@ -62,6 +71,7 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
     source_type = "SITE_EMPLOI"
 
     LISTING_BASE_URL = "https://www.emploitunisie.com/recherche-jobs-tunisie"
+    STAGE_LISTING_BASE_URL = "https://www.emploitunisie.com/recherche-jobs-tunisie/stage"
     DEFAULT_TIMEOUT = SCRAPER_TIMEOUT
     DEFAULT_MAX_PAGES = EMPLOITUNISIE_MAX_PAGES
 
@@ -109,6 +119,7 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
         max_records=EMPLOITUNISIE_MAX_RECORDS,
         fetch_details=FETCH_DETAILS,
         page_size=EMPLOITUNISIE_PAGE_SIZE,
+        stage_only=EMPLOITUNISIE_STAGE_ONLY,
     ):
         self.max_pages = max(1, min(int(max_pages), self.DEFAULT_MAX_PAGES))
         self.timeout = timeout
@@ -117,6 +128,8 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
         self.max_records = max_records if max_records and max_records > 0 else None
         self.fetch_details = fetch_details
         self.page_size = max(1, int(page_size))
+        self.stage_only = bool(stage_only)
+        self.listing_base_url = self.STAGE_LISTING_BASE_URL if self.stage_only else self.LISTING_BASE_URL
         self.max_description_length = MAX_DESCRIPTION_LENGTH
 
         if self.min_delay > self.max_delay:
@@ -179,7 +192,7 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                 listing_description = self._extract_listing_description(card)
                 listing_organization = self._extract_organization(card, None)
                 listing_location = self._extract_location(card, None)
-                listing_publication_date = self._extract_publication_date(card, None)
+                listing_publication_date, listing_date_confidence = self._extract_publication_date(card, None)
 
                 detail_soup = None
                 needs_details = self.fetch_details or self._needs_detail_fetch(
@@ -203,7 +216,10 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                         listing_location,
                     )
                 )
-                publication_date = self._extract_publication_date(card, detail_soup) or listing_publication_date
+                publication_date, date_confidence = self._extract_publication_date(card, detail_soup)
+                if not publication_date:
+                    publication_date = listing_publication_date
+                    date_confidence = listing_date_confidence
                 description, raw_description = self._clean_description(description)
 
                 record = {
@@ -212,11 +228,26 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                     "organization": organization,
                     "location": location,
                     "publication_date": publication_date,
+                    "date_confidence": date_confidence,
                     "url": url,
                     "source_name": self.source_name,
                     "source_url": self.source_url,
                     "source_type": self.source_type,
                 }
+
+                if self.stage_only:
+                    # Stage-filter pages can still expose non-stage records.
+                    inferred_type = infer_opportunity_type(
+                        title,
+                        description,
+                        listing_title,
+                        listing_description,
+                    )
+                    record["type_opportunite"] = inferred_type
+                    record["type"] = inferred_type
+                    record["statut"] = "ACTIVE"
+                    record["status"] = "ACTIVE"
+
                 if raw_description:
                     record["raw_description"] = raw_description
 
@@ -253,8 +284,8 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
 
     def _build_listing_url(self, page_index):
         if page_index <= 0:
-            return self.LISTING_BASE_URL
-        return f"{self.LISTING_BASE_URL}?page={page_index}"
+            return self.listing_base_url
+        return f"{self.listing_base_url}?page={page_index}"
 
     def _safe_get_soup(self, url):
         try:
@@ -370,21 +401,21 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
             raw_value = self._clean_text(time_node.get("datetime")) or self._clean_text(time_node.get_text(" ", strip=True))
             parsed = self._parse_date_to_iso(raw_value)
             if parsed:
-                return parsed
+                return parsed, "EXACT"
 
         fallback_time_node = card.select_one("time")
         if fallback_time_node:
             parsed = self._parse_date_to_iso(fallback_time_node.get_text(" ", strip=True))
             if parsed:
-                return parsed
+                return parsed, "EXACT"
 
         jsonld_date = self._extract_date_from_jsonld(detail_soup) if detail_soup is not None else ""
         if jsonld_date:
             parsed = self._parse_date_to_iso(jsonld_date)
             if parsed:
-                return parsed
+                return parsed, "EXACT"
 
-        return date.today().isoformat()
+        return date.today().isoformat(), "FALLBACK"
 
     def _extract_date_from_jsonld(self, soup):
         if soup is None:

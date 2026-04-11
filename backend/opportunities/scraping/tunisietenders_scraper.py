@@ -18,6 +18,10 @@ from .scraper_utils import (
     SCRAPER_TIMEOUT_DEFAULT,
     clean_description_for_ml,
     clean_location_for_ml,
+    infer_city_from_text,
+    infer_organization_from_text,
+    infer_organization_from_title,
+    normalize_organization_name,
 )
 
 
@@ -254,13 +258,11 @@ class TunisieTendersScraper(BaseOpportunityScraper):
                     organization = self._first_non_empty(
                         detail_data.get("organization"),
                         item.get("organization"),
-                        "Unknown",
+                        "",
                     )
-                    location = self._clean_location(
-                        self._first_non_empty(
-                            detail_data.get("location"),
-                            item.get("location"),
-                        )
+                    location = self._first_non_empty(
+                        detail_data.get("location"),
+                        item.get("location"),
                     )
 
                     publication_date = self._first_non_empty(
@@ -276,6 +278,20 @@ class TunisieTendersScraper(BaseOpportunityScraper):
                     if deadline and "deadline:" not in description.lower():
                         description = f"{description}\nDeadline: {deadline}"
                         description, raw_description = self._clean_description(description)
+
+                    organization = normalize_organization_name(organization)
+                    if not organization:
+                        organization = infer_organization_from_title(title)
+                    if not organization:
+                        organization = infer_organization_from_text(
+                            title,
+                            description,
+                            detail_data.get("description"),
+                            item.get("description"),
+                        )
+                    if not location:
+                        location = infer_city_from_text(title, description, url, organization)
+                    location = self._clean_location(location)
 
                     record = {
                         "title": title,
@@ -470,7 +486,7 @@ class TunisieTendersScraper(BaseOpportunityScraper):
                 ],
             ),
             self._extract_organization_from_text(page_text),
-            "Unknown",
+            "",
         )
         publication_date = self._extract_labeled_value(
             soup,
@@ -524,18 +540,18 @@ class TunisieTendersScraper(BaseOpportunityScraper):
     def _extract_organization_from_text(self, text):
         cleaned = self._clean_text(text)
         if not cleaned:
-            return "Unknown"
+            return ""
 
         normalized = self._normalize_keyword(cleaned)
 
         if "nat./tun" in normalized:
-            return "Tunisie"
+            return ""
         if "inter./" in normalized:
-            return "International"
+            return ""
 
         rep_match = re.search(r"\brep\./([a-z]{2,4})\b", normalized)
         if rep_match:
-            return rep_match.group(1).upper()
+            return ""
 
         keyword_match = re.search(
             r"\b(ministere|societe|entreprise|office)\b([^\.;,\n]{0,80})",
@@ -545,9 +561,9 @@ class TunisieTendersScraper(BaseOpportunityScraper):
             phrase = f"{keyword_match.group(1)} {keyword_match.group(2)}"
             phrase = self._clean_text(phrase).strip(" -_:;,")
             if phrase:
-                return phrase.title()
+                return normalize_organization_name(phrase.title())
 
-        return "Unknown"
+        return infer_organization_from_text(cleaned)
 
     def _extract_labeled_value(self, soup, label_keywords):
         keywords = [self._normalize_keyword(k) for k in label_keywords]

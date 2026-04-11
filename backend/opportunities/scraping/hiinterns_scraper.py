@@ -19,6 +19,10 @@ from .scraper_utils import (
     SCRAPER_TIMEOUT_DEFAULT,
     clean_description_for_ml,
     clean_location_for_ml,
+    infer_city_from_text,
+    infer_organization_from_text,
+    infer_organization_from_title,
+    normalize_organization_name,
 )
 
 
@@ -47,12 +51,34 @@ def _get_env_float(name, default):
         return default
 
 
+def _get_env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 SCRAPER_TIMEOUT = _get_env_int("SCRAPER_TIMEOUT", SCRAPER_TIMEOUT_DEFAULT)
 SCRAPER_MIN_DELAY = _get_env_float("SCRAPER_MIN_DELAY", 0.8)
 SCRAPER_MAX_DELAY = _get_env_float("SCRAPER_MAX_DELAY", 1.5)
 HIINTERNS_MAX_PAGES = _get_env_int("HIINTERNS_MAX_PAGES", 5)
 HIINTERNS_MAX_RECORDS = _get_env_int("HIINTERNS_MAX_RECORDS", 0)
 HIINTERNS_PAGE_SIZE = _get_env_int("HIINTERNS_PAGE_SIZE", 20)
+HIINTERNS_USE_PLAYWRIGHT = _get_env_bool("HIINTERNS_USE_PLAYWRIGHT", True)
+HIINTERNS_PLAYWRIGHT_HEADLESS = _get_env_bool("HIINTERNS_PLAYWRIGHT_HEADLESS", True)
+HIINTERNS_PLAYWRIGHT_WAIT_MS = _get_env_int("HIINTERNS_PLAYWRIGHT_WAIT_MS", 2500)
+HIINTERNS_PLAYWRIGHT_TIMEOUT_MS = _get_env_int("HIINTERNS_PLAYWRIGHT_TIMEOUT_MS", 30000)
+HIINTERNS_TRACE_API = _get_env_bool("HIINTERNS_TRACE_API", False)
+HIINTERNS_TRACE_API_MAX_EVENTS = _get_env_int("HIINTERNS_TRACE_API_MAX_EVENTS", 40)
+HIINTERNS_TRACE_API_INCLUDE_BODIES = _get_env_bool("HIINTERNS_TRACE_API_INCLUDE_BODIES", False)
+HIINTERNS_TRACE_API_MAX_BODY_CHARS = _get_env_int("HIINTERNS_TRACE_API_MAX_BODY_CHARS", 500)
+HIINTERNS_TRACE_STDOUT = _get_env_bool("HIINTERNS_TRACE_STDOUT", True)
+HIINTERNS_TRACE_FIRST_PARTY_ONLY = _get_env_bool("HIINTERNS_TRACE_FIRST_PARTY_ONLY", True)
+HIINTERNS_TRACE_DETAIL_URLS_MAX = _get_env_int("HIINTERNS_TRACE_DETAIL_URLS_MAX", 20)
+HIINTERNS_USE_RSC = _get_env_bool("HIINTERNS_USE_RSC", True)
+HIINTERNS_RSC_MAX_URLS = _get_env_int("HIINTERNS_RSC_MAX_URLS", 100)
+HIINTERNS_USE_SITEMAP = _get_env_bool("HIINTERNS_USE_SITEMAP", True)
+HIINTERNS_SITEMAP_URL = os.getenv("HIINTERNS_SITEMAP_URL", "https://hi-interns.com/sitemap.xml")
 
 
 class HiInternsScraper(BaseOpportunityScraper):
@@ -67,6 +93,7 @@ class HiInternsScraper(BaseOpportunityScraper):
     LISTING_CARD_SELECTORS = [
         "a[href*='/internships/']",
     ]
+    OPPORTUNITY_TYPE = "STAGE"
     DETAIL_DESCRIPTION_SELECTORS = [
         "div.payload-richtext",
         "div.prose",
@@ -81,6 +108,21 @@ class HiInternsScraper(BaseOpportunityScraper):
         max_records=HIINTERNS_MAX_RECORDS,
         fetch_details=FETCH_DETAILS,
         page_size=HIINTERNS_PAGE_SIZE,
+        use_playwright=HIINTERNS_USE_PLAYWRIGHT,
+        playwright_headless=HIINTERNS_PLAYWRIGHT_HEADLESS,
+        playwright_wait_ms=HIINTERNS_PLAYWRIGHT_WAIT_MS,
+        playwright_timeout_ms=HIINTERNS_PLAYWRIGHT_TIMEOUT_MS,
+        trace_api=HIINTERNS_TRACE_API,
+        trace_api_max_events=HIINTERNS_TRACE_API_MAX_EVENTS,
+        trace_api_include_bodies=HIINTERNS_TRACE_API_INCLUDE_BODIES,
+        trace_api_max_body_chars=HIINTERNS_TRACE_API_MAX_BODY_CHARS,
+        trace_stdout=HIINTERNS_TRACE_STDOUT,
+        trace_first_party_only=HIINTERNS_TRACE_FIRST_PARTY_ONLY,
+        trace_detail_urls_max=HIINTERNS_TRACE_DETAIL_URLS_MAX,
+        use_rsc=HIINTERNS_USE_RSC,
+        rsc_max_urls=HIINTERNS_RSC_MAX_URLS,
+        use_sitemap=HIINTERNS_USE_SITEMAP,
+        sitemap_url=HIINTERNS_SITEMAP_URL,
     ):
         self.max_pages = max(1, min(int(max_pages), self.DEFAULT_MAX_PAGES))
         self.timeout = timeout
@@ -89,6 +131,21 @@ class HiInternsScraper(BaseOpportunityScraper):
         self.max_records = max_records if max_records and max_records > 0 else None
         self.fetch_details = fetch_details
         self.page_size = max(1, int(page_size))
+        self.use_playwright = bool(use_playwright)
+        self.playwright_headless = bool(playwright_headless)
+        self.playwright_wait_ms = max(0, int(playwright_wait_ms))
+        self.playwright_timeout_ms = max(1000, int(playwright_timeout_ms))
+        self.trace_api = bool(trace_api)
+        self.trace_api_max_events = max(1, int(trace_api_max_events))
+        self.trace_api_include_bodies = bool(trace_api_include_bodies)
+        self.trace_api_max_body_chars = max(80, int(trace_api_max_body_chars))
+        self.trace_stdout = bool(trace_stdout)
+        self.trace_first_party_only = bool(trace_first_party_only)
+        self.trace_detail_urls_max = max(1, int(trace_detail_urls_max))
+        self.use_rsc = bool(use_rsc)
+        self.rsc_max_urls = max(1, int(rsc_max_urls))
+        self.use_sitemap = bool(use_sitemap)
+        self.sitemap_url = (sitemap_url or "").strip()
         self.max_description_length = MAX_DESCRIPTION_LENGTH
 
         if self.min_delay > self.max_delay:
@@ -120,15 +177,46 @@ class HiInternsScraper(BaseOpportunityScraper):
         records = []
         seen_urls = set()
         skipped_records = 0
+        sitemap_cards = self._build_listing_cards_from_sitemap() if self.use_sitemap else []
 
         for page_number in range(1, self.max_pages + 1):
             listing_url = self._build_listing_url(page_number)
-            listing_soup = self._safe_get_soup(listing_url)
-            if listing_soup is None:
-                logger.warning("No listing HTML for page=%s url=%s", page_number, listing_url)
-                continue
+            if sitemap_cards:
+                cards = sitemap_cards if page_number == 1 else []
+                logger.info(
+                    "HiInterns page=%s loaded %s cards via sitemap path",
+                    page_number,
+                    len(cards),
+                )
+                listing_soup = None
+            else:
+                listing_soup = self._safe_get_soup(listing_url)
+                if listing_soup is None:
+                    logger.warning("No listing HTML for page=%s url=%s", page_number, listing_url)
+                    continue
 
-            cards = self._extract_listing_cards(listing_soup)
+                cards = self._extract_listing_cards(listing_soup)
+
+                if not cards and self.use_rsc:
+                    rsc_cards = self._build_listing_cards_from_rsc(listing_url)
+                    if rsc_cards:
+                        cards = rsc_cards
+                        logger.info(
+                            "HiInterns page=%s recovered %s cards via RSC requests path",
+                            page_number,
+                            len(cards),
+                        )
+
+                if not cards and self.use_playwright:
+                    logger.info(
+                        "HiInterns page=%s had no cards via requests; trying Playwright fallback",
+                        page_number,
+                    )
+                    rendered_soup = self._safe_get_soup_with_playwright(listing_url)
+                    if rendered_soup is not None:
+                        listing_soup = rendered_soup
+                        cards = self._extract_listing_cards(listing_soup)
+
             logger.info(
                 "HiInterns page=%s detected %s candidate cards",
                 page_number,
@@ -153,7 +241,7 @@ class HiInternsScraper(BaseOpportunityScraper):
                 listing_publication_date = self._extract_publication_date(None, card)
 
                 detail_soup = None
-                needs_details = self.fetch_details or self._needs_detail_fetch(
+                needs_details = self.fetch_details or not listing_location or self._needs_detail_fetch(
                     listing_title,
                     listing_description,
                     listing_publication_date,
@@ -174,6 +262,13 @@ class HiInternsScraper(BaseOpportunityScraper):
                 description = self._extract_description(card, detail_soup) or listing_description
                 publication_date = self._extract_publication_date(detail_soup, card) or listing_publication_date
 
+                organization = normalize_organization_name(organization)
+                if not organization:
+                    organization = infer_organization_from_title(title)
+                if not organization:
+                    organization = infer_organization_from_text(title, description)
+                if not location:
+                    location = infer_city_from_text(title, description, url, organization)
                 location = self._clean_location(location)
                 description, raw_description = self._clean_description(description)
 
@@ -183,6 +278,12 @@ class HiInternsScraper(BaseOpportunityScraper):
                     "organization": organization,
                     "location": location,
                     "publication_date": publication_date,
+                    # Ensure internships are materialized as STAGE instead of
+                    # falling back to EMPLOI when type is missing downstream.
+                    "type_opportunite": self.OPPORTUNITY_TYPE,
+                    "type": self.OPPORTUNITY_TYPE,
+                    "statut": "ACTIVE",
+                    "status": "ACTIVE",
                     "url": url,
                     "source_name": self.source_name,
                     "source_url": self.source_url,
@@ -223,6 +324,60 @@ class HiInternsScraper(BaseOpportunityScraper):
         )
         return records
 
+    def _build_listing_cards_from_sitemap(self):
+        if not self.sitemap_url:
+            return []
+
+        detail_urls = self._extract_detail_urls_from_sitemap()
+        if not detail_urls:
+            return []
+
+        max_urls = self.max_records or (self.max_pages * self.page_size)
+        if max_urls > 0:
+            detail_urls = detail_urls[:max_urls]
+
+        pseudo_soup = BeautifulSoup("", "html.parser")
+        cards = []
+        for detail_url in detail_urls:
+            path = urlparse(detail_url).path or ""
+            if not path.startswith("/internships/"):
+                continue
+            cards.append(pseudo_soup.new_tag("a", href=path))
+
+        if cards:
+            logger.info(
+                "HiInterns sitemap extracted %s internship URLs",
+                len(cards),
+            )
+        return cards
+
+    def _extract_detail_urls_from_sitemap(self):
+        try:
+            self._rate_limit_delay()
+            response = self.session.get(self.sitemap_url, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.text or ""
+        except requests.RequestException as exc:
+            logger.warning("HiInterns sitemap fetch failed for %s: %s", self.sitemap_url, exc)
+            return []
+
+        candidates = re.findall(
+            r"https?://hi-interns\.com/internships/[a-z0-9][a-z0-9\-]*",
+            payload,
+            flags=re.IGNORECASE,
+        )
+
+        unique_urls = []
+        seen = set()
+        for item in candidates:
+            canonical = item.rstrip("/")
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            unique_urls.append(canonical)
+
+        return unique_urls
+
     def _build_listing_url(self, page_number):
         if page_number <= 1:
             return self.LISTING_BASE_URL
@@ -238,6 +393,319 @@ class HiInternsScraper(BaseOpportunityScraper):
             logger.warning("Request failed for %s: %s", url, exc)
             return None
 
+    def _build_listing_cards_from_rsc(self, listing_url):
+        payload = self._safe_get_rsc_listing_payload(listing_url)
+        if not payload:
+            return []
+
+        detail_urls = self._extract_detail_urls_from_rsc_payload(payload)
+        if not detail_urls:
+            return []
+
+        pseudo_soup = BeautifulSoup("", "html.parser")
+        cards = []
+        for detail_url in detail_urls:
+            path = urlparse(detail_url).path or ""
+            if not path.startswith("/internships/"):
+                continue
+            cards.append(pseudo_soup.new_tag("a", href=path))
+
+        if cards:
+            logger.info(
+                "HiInterns RSC extracted %s internship URLs from %s",
+                len(cards),
+                listing_url,
+            )
+        return cards
+
+    def _safe_get_rsc_listing_payload(self, listing_url):
+        token = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=5))
+        separator = "&" if "?" in listing_url else "?"
+        rsc_url = f"{listing_url}{separator}_rsc={token}"
+
+        try:
+            self._rate_limit_delay()
+            response = self.session.get(
+                rsc_url,
+                timeout=self.timeout,
+                headers={
+                    "Accept": "text/x-component, text/plain;q=0.9, */*;q=0.8",
+                },
+            )
+            response.raise_for_status()
+
+            content_type = (response.headers.get("content-type") or "").lower()
+            if "text/x-component" not in content_type:
+                logger.info(
+                    "HiInterns RSC response is not text/x-component (url=%s, content_type=%s)",
+                    rsc_url,
+                    content_type,
+                )
+            return response.text
+        except requests.RequestException as exc:
+            logger.warning("HiInterns RSC request failed for %s: %s", rsc_url, exc)
+            return ""
+
+    def _extract_detail_urls_from_rsc_payload(self, payload):
+        if not payload:
+            return []
+
+        normalized_payload = payload.replace("\\/", "/")
+
+        raw_paths = re.findall(
+            r"/internships/[a-z0-9][a-z0-9\-]*",
+            normalized_payload,
+            flags=re.IGNORECASE,
+        )
+
+        raw_full_urls = re.findall(
+            r"https?://hi-interns\.com/internships/[a-z0-9][a-z0-9\-]*",
+            normalized_payload,
+            flags=re.IGNORECASE,
+        )
+
+        unique_urls = []
+        seen = set()
+
+        for path in raw_paths:
+            canonical = urljoin(self.source_url, path)
+            if canonical not in seen:
+                seen.add(canonical)
+                unique_urls.append(canonical)
+            if len(unique_urls) >= self.rsc_max_urls:
+                return unique_urls
+
+        for full_url in raw_full_urls:
+            canonical = full_url.rstrip("/")
+            if canonical not in seen:
+                seen.add(canonical)
+                unique_urls.append(canonical)
+            if len(unique_urls) >= self.rsc_max_urls:
+                break
+
+        return unique_urls
+
+    def _safe_get_soup_with_playwright(self, url):
+        try:
+            from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+            from playwright.sync_api import sync_playwright
+        except Exception as exc:  # noqa: BLE001 - optional dependency
+            logger.warning("Playwright not available for HiInterns fallback: %s", exc)
+            return None
+
+        try:
+            self._rate_limit_delay()
+            trace_events = []
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=self.playwright_headless)
+                context = browser.new_context(
+                    user_agent=self.session.headers.get("User-Agent", ""),
+                    locale="fr-FR",
+                )
+                page = context.new_page()
+
+                if self.trace_api:
+                    context.on(
+                        "response",
+                        lambda response: self._capture_trace_response(response, trace_events),
+                    )
+
+                page.goto(
+                    url,
+                    wait_until="domcontentloaded",
+                    timeout=self.playwright_timeout_ms,
+                )
+                try:
+                    page.wait_for_selector(
+                        "a[href*='/internships/']",
+                        timeout=self.playwright_timeout_ms,
+                    )
+                except PlaywrightTimeoutError:
+                    logger.info(
+                        "Playwright loaded %s but selector did not appear before timeout",
+                        url,
+                    )
+
+                if self.playwright_wait_ms:
+                    page.wait_for_timeout(self.playwright_wait_ms)
+
+                html = page.content()
+                if self.trace_api:
+                    self._log_trace_events(url, trace_events)
+                context.close()
+                browser.close()
+                return BeautifulSoup(html, "html.parser")
+        except Exception as exc:  # noqa: BLE001 - scraper resiliency
+            logger.warning("Playwright render failed for %s: %s", url, exc)
+            return None
+
+    def _capture_trace_response(self, response, trace_events):
+        if len(trace_events) >= self.trace_api_max_events:
+            return
+
+        try:
+            url = response.url or ""
+        except Exception:
+            return
+
+        if not self._is_trace_candidate_url(url):
+            return
+
+        event = {
+            "url": url,
+            "status": "unknown",
+            "method": "",
+            "content_type": "",
+            "request_body_preview": "",
+            "response_body_preview": "",
+        }
+
+        try:
+            event["status"] = str(response.status)
+        except Exception:
+            pass
+
+        try:
+            headers = response.headers or {}
+            event["content_type"] = headers.get("content-type", "")
+        except Exception:
+            pass
+
+        try:
+            req = response.request
+            event["method"] = req.method or ""
+            if self.trace_api_include_bodies:
+                post_data = req.post_data or ""
+                if post_data:
+                    event["request_body_preview"] = self._truncate_trace_text(post_data)
+        except Exception:
+            pass
+
+        if self.trace_api_include_bodies:
+            try:
+                response_text = response.text() or ""
+                if response_text:
+                    event["response_body_preview"] = self._truncate_trace_text(response_text)
+            except Exception:
+                pass
+
+        trace_events.append(event)
+
+    def _is_trace_candidate_url(self, url):
+        parsed = urlparse(url or "")
+        host = (parsed.netloc or "").lower()
+        path = (parsed.path or "").lower()
+        query = (parsed.query or "").lower()
+
+        if not (host or path):
+            return False
+
+        if self.trace_first_party_only and "hi-interns.com" not in host:
+            return False
+
+        noisy_paths = (
+            "/mobility",
+            "/pricing",
+            "/dashboard",
+            "/auth/login",
+            "/api/redirect/",
+        )
+        if any(path.startswith(noisy) for noisy in noisy_paths):
+            return False
+
+        if "/api/" in path or "/trpc" in path:
+            return True
+
+        if path == "/internships" or path.startswith("/internships/"):
+            return True
+
+        if "_rsc" in query and path.startswith("/internships"):
+            return True
+
+        return False
+
+    def _truncate_trace_text(self, text):
+        compact = self._clean_text(text)
+        if len(compact) <= self.trace_api_max_body_chars:
+            return compact
+        return compact[: self.trace_api_max_body_chars] + " ...<truncated>"
+
+    def _log_trace_events(self, listing_url, trace_events):
+        if not trace_events:
+            self._emit_trace(
+                "HiInterns trace: no candidate API calls captured for %s",
+                listing_url,
+            )
+            return
+
+        self._emit_trace(
+            "HiInterns trace: captured %s candidate calls for %s",
+            len(trace_events),
+            listing_url,
+        )
+
+        detail_urls = self._build_trace_shortlist_detail_urls(trace_events)
+        if detail_urls:
+            self._emit_trace(
+                "HiInterns trace: shortlist %s internship detail URLs",
+                len(detail_urls),
+            )
+            for idx, detail_url in enumerate(detail_urls, start=1):
+                self._emit_trace("HiInterns detail_url #%s %s", idx, detail_url)
+
+        for idx, event in enumerate(trace_events, start=1):
+            self._emit_trace(
+                "HiInterns trace #%s method=%s status=%s content_type=%s url=%s",
+                idx,
+                event.get("method", ""),
+                event.get("status", "unknown"),
+                event.get("content_type", ""),
+                event.get("url", ""),
+            )
+            if self.trace_api_include_bodies and event.get("request_body_preview"):
+                self._emit_trace(
+                    "HiInterns trace #%s request_body=%s",
+                    idx,
+                    event["request_body_preview"],
+                )
+            if self.trace_api_include_bodies and event.get("response_body_preview"):
+                self._emit_trace(
+                    "HiInterns trace #%s response_body=%s",
+                    idx,
+                    event["response_body_preview"],
+                )
+
+    def _build_trace_shortlist_detail_urls(self, trace_events):
+        urls = []
+        seen = set()
+        for event in trace_events:
+            parsed = urlparse(event.get("url", ""))
+            path = (parsed.path or "").strip()
+            if not path.startswith("/internships/"):
+                continue
+
+            canonical = urljoin(self.source_url, path)
+            if canonical in seen:
+                continue
+
+            seen.add(canonical)
+            urls.append(canonical)
+            if len(urls) >= self.trace_detail_urls_max:
+                break
+
+        return urls
+
+    def _emit_trace(self, message, *args):
+        logger.info(message, *args)
+        if self.trace_api and self.trace_stdout:
+            if args:
+                try:
+                    print(message % args)
+                    return
+                except Exception:
+                    pass
+            print(message)
+
     def _extract_listing_cards(self, soup):
         cards = []
         for selector in self.LISTING_CARD_SELECTORS:
@@ -246,7 +714,9 @@ class HiInternsScraper(BaseOpportunityScraper):
         filtered = []
         for card in cards:
             href = self._clean_text(card.get("href"))
-            if href.startswith("/internships/") and href != "/internships":
+            is_relative_detail = href.startswith("/internships/") and href != "/internships"
+            is_absolute_detail = href.startswith("https://hi-interns.com/internships/")
+            if is_relative_detail or is_absolute_detail:
                 filtered.append(card)
         return filtered
 

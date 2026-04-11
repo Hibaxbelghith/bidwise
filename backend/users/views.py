@@ -69,7 +69,6 @@ _OTP_SENT_MSG = "Un code de connexion a été envoyé à votre adresse email."
 @permission_classes([AllowAny])
 @throttle_classes([OTPRequestThrottle])
 def request_otp(request):
-    print(">>>>>>>>> ENTERED request_otp")
     """
     POST /api/auth/passwordless/request/
     Send a 6-digit OTP to any valid email address.

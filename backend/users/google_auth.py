@@ -9,7 +9,7 @@ No Google tokens are ever stored.
 """
 
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -19,6 +19,7 @@ from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 
 from .models import Utilisateur, LoginEvent
+from .throttles import GoogleAuthThrottle
 
 # ── Generic error — intentionally vague to prevent information leakage ──
 _INVALID_TOKEN_ERROR = "Invalid Google token."
@@ -31,6 +32,7 @@ class GoogleAuthSerializer(serializers.Serializer):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([GoogleAuthThrottle])
 def google_authenticate(request):
     """
     POST /api/auth/google/

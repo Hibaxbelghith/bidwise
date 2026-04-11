@@ -8,6 +8,7 @@ from opportunities.scraping.keejob_scraper import KeejobScraper
 from opportunities.scraping.marchespublics_scraper import MarchesPublicsScraper
 from opportunities.scraping.optioncarriere_scraper import OptionCarriereScraper
 from opportunities.scraping.pipeline import run_collection
+from opportunities.scraping.tunisietravail_scraper import TunisieTravailScraper
 from opportunities.scraping.tunisietenders_scraper import TunisieTendersScraper
 
 SCRAPER_REGISTRY = {
@@ -16,6 +17,7 @@ SCRAPER_REGISTRY = {
     "keejob": KeejobScraper,
     "marchespublics": MarchesPublicsScraper,
     "optioncarriere": OptionCarriereScraper,
+    "tunisietravail": TunisieTravailScraper,
     "tunisietenders": TunisieTendersScraper,
 }
 
@@ -59,6 +61,11 @@ class Command(BaseCommand):
             default=None,
             help="Optional maximum delay between HTTP requests in seconds.",
         )
+        parser.add_argument(
+            "--stage-only",
+            action="store_true",
+            help="Collect only internship-oriented listings for scrapers that support this mode.",
+        )
 
     def handle(self, *args, **options):
         source_key = options["source"].lower().strip()
@@ -74,6 +81,7 @@ class Command(BaseCommand):
             "timeout": options.get("timeout"),
             "min_delay": options.get("min_delay"),
             "max_delay": options.get("max_delay"),
+            "stage_only": options.get("stage_only"),
         }
         init_signature = inspect.signature(scraper_cls.__init__)
         scraper_kwargs = {

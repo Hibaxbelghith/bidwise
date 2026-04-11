@@ -1,7 +1,16 @@
+import logging
+
 from django.db.models import Avg, Count, Max, Min, Q
 from django.db.models.functions import Length
 
-from opportunities.models import Opportunite
+from opportunities.models import (
+    Opportunite,
+    RawOpportunite,
+    RawOpportuniteProcessingStatus,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 def compute_dataset_metrics():
@@ -76,3 +85,58 @@ def compute_dataset_metrics():
             "300+": int(length_buckets["len_300_plus"] or 0),
         },
     }
+
+
+def compute_pipeline_metrics() -> dict:
+    status_counts = RawOpportunite.objects.aggregate(
+        total_raw=Count("id"),
+        new_count=Count(
+            "id",
+            filter=Q(processing_status=RawOpportuniteProcessingStatus.NEW),
+        ),
+        materialized_count=Count(
+            "id",
+            filter=Q(processing_status=RawOpportuniteProcessingStatus.MATERIALIZED),
+        ),
+        rejected_count=Count(
+            "id",
+            filter=Q(processing_status=RawOpportuniteProcessingStatus.REJECTED),
+        ),
+    )
+
+    total_raw = int(status_counts["total_raw"] or 0)
+    new_count = int(status_counts["new_count"] or 0)
+    materialized_count = int(status_counts["materialized_count"] or 0)
+    rejected_count = int(status_counts["rejected_count"] or 0)
+
+    processed_count = materialized_count + rejected_count
+
+    processing_success_rate = (
+        materialized_count / processed_count if processed_count else 0.0
+    )
+
+    rejection_rate = (
+        rejected_count / processed_count if processed_count else 0.0
+    )
+
+    overall_success_rate = (
+        materialized_count / total_raw if total_raw else 0.0
+    )
+
+    backlog_rate = (
+        new_count / total_raw if total_raw else 0.0
+    )
+
+    metrics = {
+        "total_raw": total_raw,
+        "new_count": new_count,
+        "materialized_count": materialized_count,
+        "rejected_count": rejected_count,
+        "processed_count": processed_count,
+        "processing_success_rate": float(processing_success_rate),
+        "overall_success_rate": float(overall_success_rate),
+        "rejection_rate": float(rejection_rate),
+        "backlog_rate": float(backlog_rate),
+    }
+    logger.debug("Pipeline metrics computed: %s", metrics)
+    return metrics
