@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Clipboard,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -40,20 +39,13 @@ export default function OTPScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Auto-submit when 6 digits are entered (e.g. from paste or autofill)
-  useEffect(() => {
-    if (code.length === CODE_LENGTH && !verifying) {
-      handleVerify();
-    }
-  }, [code]);
-
   const handleCodeChange = (text: string) => {
     const cleaned = text.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH);
     setCode(cleaned);
     setError('');
   };
 
-  const handleVerify = async () => {
+  const handleVerify = useCallback(async () => {
     if (code.length !== CODE_LENGTH || !email) return;
     setVerifying(true);
     setError('');
@@ -67,7 +59,14 @@ export default function OTPScreen() {
     } finally {
       setVerifying(false);
     }
-  };
+  }, [code, email, loginWithOTP, router]);
+
+  // Auto-submit when 6 digits are entered (e.g. from paste or autofill)
+  useEffect(() => {
+    if (code.length === CODE_LENGTH && !verifying) {
+      void handleVerify();
+    }
+  }, [code, handleVerify, verifying]);
 
   const handleResend = async () => {
     if (!email || resending) return;

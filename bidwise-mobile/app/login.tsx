@@ -76,7 +76,7 @@ export default function LoginScreen() {
         setGoogleSending(false);
       }
     })();
-  }, [idToken]);
+  }, [idToken, loginWithGoogle, router]);
 
   // Show google auth errors
   useEffect(() => {

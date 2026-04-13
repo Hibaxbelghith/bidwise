@@ -54,6 +54,11 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
 class OTPRequestSerializer(serializers.Serializer):
     """Validates the email submitted when requesting an OTP."""
     email = serializers.EmailField(required=True)
+    client_type = serializers.ChoiceField(
+        choices=[("web", "web"), ("mobile", "mobile")],
+        required=False,
+        default="web",
+    )
 
 
 class OTPVerifySerializer(serializers.Serializer):

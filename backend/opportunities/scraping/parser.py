@@ -10,6 +10,8 @@ TYPE_MAP = {
     "emploi": TypeOpportunite.EMPLOI,
     "internship": TypeOpportunite.STAGE,
     "stage": TypeOpportunite.STAGE,
+    "saisonnier": TypeOpportunite.SAISONNIER,
+    "seasonal": TypeOpportunite.SAISONNIER,
     "project": TypeOpportunite.PROJET,
     "projet": TypeOpportunite.PROJET,
     "funding": TypeOpportunite.FINANCEMENT,

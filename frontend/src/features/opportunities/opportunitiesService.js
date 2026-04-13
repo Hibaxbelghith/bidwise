@@ -7,6 +7,7 @@ export const listOpportunities = async ({
   search = '',
   type = '',
   status = '',
+  city = '',
   source = '',
   ordering = '-date_publication',
   page = 1,
@@ -21,6 +22,7 @@ export const listOpportunities = async ({
   if (search) params.search = search;
   if (type) params.type_opportunite = type;
   if (status) params.statut = status;
+  if (city && String(city).trim()) params.ville = String(city).trim();
   if (source) params.source = source;
 
   try {

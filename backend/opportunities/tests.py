@@ -19,19 +19,20 @@ from .models import (
 )
 from .enrichment.text_enrichment import enrich_opportunity_text
 from .scraping.materialization import materialize_opportunity
+from .scraping.normalization import normalize_raw_opportunity
 from .scraping.pipeline import run_collection
 from .scraping.scraper_base import BaseOpportunityScraper
 from .serializers import OpportuniteSerializer
 
 
 class OpportuniteModelMetaTests(TestCase):
-    def test_unique_constraint_exists_for_title_source_publication(self):
+    def test_unique_constraint_exists_for_source_item_url_per_source(self):
         unique_constraints = [
             tuple(constraint.fields)
             for constraint in Opportunite._meta.constraints
             if isinstance(constraint, models.UniqueConstraint)
         ]
-        self.assertIn(("titre", "source", "date_publication"), unique_constraints)
+        self.assertIn(("source", "source_item_url"), unique_constraints)
 
     def test_expected_indexes_exist(self):
         index_fields = {tuple(index.fields) for index in Opportunite._meta.indexes}
@@ -42,7 +43,7 @@ class OpportuniteModelMetaTests(TestCase):
         self.assertIn(("date_creation",), index_fields)
         self.assertIn(("statut", "date_publication"), index_fields)
 
-    def test_duplicate_opportunity_same_triplet_is_blocked(self):
+    def test_duplicate_opportunity_same_source_url_is_blocked(self):
         source = SourceOpportunite.objects.create(
             nom="Keejob",
             url="https://www.keejob.com",
@@ -54,16 +55,18 @@ class OpportuniteModelMetaTests(TestCase):
             type_opportunite=TypeOpportunite.EMPLOI,
             statut=StatutOpportunite.ACTIVE,
             date_publication=date.today(),
+            source_item_url="https://www.keejob.com/offres-emploi/123/backend-engineer/",
             source=source,
         )
 
         with self.assertRaises(IntegrityError):
             Opportunite.objects.create(
-                titre="Backend Engineer",
+                titre="Backend Engineer duplicate",
                 description="Another desc",
                 type_opportunite=TypeOpportunite.EMPLOI,
                 statut=StatutOpportunite.ACTIVE,
                 date_publication=date.today(),
+                source_item_url="https://www.keejob.com/offres-emploi/123/backend-engineer/",
                 source=source,
             )
 
@@ -106,6 +109,241 @@ class OpportuniteSerializerTests(TestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertNotIn("organisation", serializer.validated_data)
         self.assertEqual(serializer.validated_data["organisation_nom"], "Orange Tunisie")
+
+    def test_serializer_city_output_is_canonicalized(self):
+        opportunity = Opportunite.objects.create(
+            titre="City Canonical",
+            description="Desc",
+            ville="Centre ville, Tunis",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=date.today(),
+            source=self.source,
+        )
+
+        payload = OpportuniteSerializer(opportunity).data
+        self.assertEqual(payload["ville"], "Tunis")
+
+
+class RawNormalizationTests(TestCase):
+    def setUp(self):
+        self.source = SourceOpportunite.objects.create(
+            nom="Keejob",
+            url="https://www.keejob.com",
+            type_source="SITE_EMPLOI",
+        )
+
+    def _create_raw(self, location):
+        return RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Backend Engineer",
+                "description": "Description suffisamment longue pour la normalisation backend.",
+                "type_opportunite": "emploi",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": location,
+                "url": "https://www.keejob.com/offres-emploi/sample/",
+            },
+            raw_titre="Backend Engineer",
+            raw_description="Description suffisamment longue pour la normalisation backend.",
+            raw_type="emploi",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash=f"hash-{location}",
+        )
+
+    def test_city_normalization_rule_based_variants(self):
+        variants = [
+            "La Marsa, Tunis",
+            "Centre ville, Tunis",
+            "Tunis, Ariana",
+        ]
+
+        for location in variants:
+            with self.subTest(location=location):
+                raw_obj = self._create_raw(location)
+                normalized = normalize_raw_opportunity(raw_obj)
+                self.assertEqual(normalized["ville"], "Tunis")
+
+    def test_status_becomes_expired_when_deadline_is_in_past(self):
+        generic_source = SourceOpportunite.objects.create(
+            nom="Indeed",
+            url="https://www.indeed.com",
+            type_source="SITE_EMPLOI",
+        )
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        raw_obj = RawOpportunite.objects.create(
+            source=generic_source,
+            raw_payload={
+                "title": "Backend Engineer",
+                "description": "Description suffisamment longue pour la normalisation backend.",
+                "type_opportunite": "emploi",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "date_limite": yesterday,
+                "location": "Tunis",
+                "url": "https://www.indeed.com/viewjob?jk=123",
+            },
+            raw_titre="Backend Engineer",
+            raw_description="Description suffisamment longue pour la normalisation backend.",
+            raw_type="emploi",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            raw_date_limite=yesterday,
+            payload_hash="hash-past-deadline",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertEqual(normalized["statut"], StatutOpportunite.EXPIREE)
+
+    def test_keejob_status_stays_active_when_only_deadline_is_in_past(self):
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Backend Engineer",
+                "description": "Description suffisamment longue pour la normalisation backend.",
+                "type_opportunite": "emploi",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "date_limite": yesterday,
+                "location": "Tunis",
+                "url": "https://www.keejob.com/offres-emploi/sample-active-deadline/",
+            },
+            raw_titre="Backend Engineer",
+            raw_description="Description suffisamment longue pour la normalisation backend.",
+            raw_type="emploi",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            raw_date_limite=yesterday,
+            payload_hash="hash-keejob-past-deadline-no-badge",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertEqual(normalized["statut"], StatutOpportunite.ACTIVE)
+
+    def test_source_item_url_is_canonicalized_for_identity(self):
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Data Analyst",
+                "description": "Description suffisamment longue pour la normalisation backend.",
+                "type_opportunite": "emploi",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": "Tunis",
+                "url": "HTTPS://WWW.KEEJOB.COM/offres-emploi/sample//?utm_source=mail&b=2&a=1",
+            },
+            raw_titre="Data Analyst",
+            raw_description="Description suffisamment longue pour la normalisation backend.",
+            raw_type="emploi",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash="hash-canonical-url",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertEqual(
+            normalized["source_item_url"],
+            "https://www.keejob.com/offres-emploi/sample?a=1&b=2",
+        )
+
+    def test_keejob_saisonnier_requires_strict_contract_type(self):
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Agent relation client",
+                "description": "Description suffisamment longue avec mention de primes saisonnieres.",
+                "type_opportunite": "saisonnier",
+                "contract_type": "CDD",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": "Tunis",
+                "url": "https://www.keejob.com/offres-emploi/sample-seasonal/",
+            },
+            raw_titre="Agent relation client",
+            raw_description="Description suffisamment longue avec mention de primes saisonnieres.",
+            raw_type="saisonnier",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash="hash-keejob-seasonal-contract-cdd",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertEqual(normalized["type_opportunite"], TypeOpportunite.EMPLOI)
+
+    def test_keejob_saisonnier_kept_when_contract_type_is_saisonnier(self):
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Agent saisonnier",
+                "description": "Description suffisamment longue pour normalisation.",
+                "type_opportunite": "saisonnier",
+                "contract_type": "SAISONNIER",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": "Tunis",
+                "url": "https://www.keejob.com/offres-emploi/sample-seasonal-strict/",
+            },
+            raw_titre="Agent saisonnier",
+            raw_description="Description suffisamment longue pour normalisation.",
+            raw_type="saisonnier",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash="hash-keejob-seasonal-contract-strict",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertEqual(normalized["type_opportunite"], TypeOpportunite.SAISONNIER)
+
+    def test_keejob_contract_type_invalid_is_dropped(self):
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Agent Support",
+                "description": "Description suffisamment longue pour normalisation backend.",
+                "type_opportunite": "emploi",
+                "contract_type": "Lieu du travail",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": "Tunis",
+                "url": "https://www.keejob.com/offres-emploi/sample-contract-invalid/",
+            },
+            raw_titre="Agent Support",
+            raw_description="Description suffisamment longue pour normalisation backend.",
+            raw_type="emploi",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash="hash-keejob-contract-invalid",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertIsNone(normalized["contract_type"])
+
+    def test_keejob_contract_type_stage_pfe_is_normalized(self):
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Stagiaire QA",
+                "description": "Description suffisamment longue pour normalisation backend.",
+                "type_opportunite": "stage",
+                "contract_type": "stage/pfe",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": "Tunis",
+                "url": "https://www.keejob.com/offres-emploi/sample-contract-stage-pfe/",
+            },
+            raw_titre="Stagiaire QA",
+            raw_description="Description suffisamment longue pour normalisation backend.",
+            raw_type="stage",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash="hash-keejob-contract-stage-pfe",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertEqual(normalized["contract_type"], "Stage/PFE")
 
 
 class OpportunityTextEnrichmentTests(TestCase):
@@ -198,6 +436,260 @@ class OpportunityMaterializationTests(TestCase):
         self.assertEqual(opportunity.experience_min, 3)
         self.assertEqual(opportunity.experience_max, 3)
 
+    def test_materialization_persists_logo_and_description_html(self):
+        source = SourceOpportunite.objects.create(
+            nom="JobBoard",
+            url="https://jobboard.example",
+            type_source="SITE_EMPLOI",
+        )
+
+        normalized_data = {
+            "raw_id": 1000,
+            "source": source,
+            "titre": "Backend Developer",
+            "description": "Description suffisamment longue pour passer la quality gate et persister la fiche sans rejet.",
+            "description_html": "<h3>Missions</h3><ul><li>Develop APIs</li></ul>",
+            "organisation_nom": "Acme",
+            "company_logo": "https://jobboard.example/media/acme/logo.png",
+            "ville": "Tunis",
+            "source_item_url": "https://jobboard.example/opportunity/2",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": date.today(),
+            "date_confidence": "EXACT",
+            "date_limite": None,
+            "organisation": None,
+            "contract_type": "",
+            "education_level": "",
+            "availability": "",
+            "salary": "",
+            "experience_years": None,
+            "experience_min": None,
+            "experience_max": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        opportunity = materialize_opportunity(normalized_data)
+
+        self.assertEqual(opportunity.company_logo, "https://jobboard.example/media/acme/logo.png")
+        self.assertEqual(opportunity.description_html, "<h3>Missions</h3><ul><li>Develop APIs</li></ul>")
+
+    def test_materialization_updates_existing_by_source_item_url_only(self):
+        source = SourceOpportunite.objects.create(
+            nom="JobBoard",
+            url="https://jobboard.example",
+            type_source="SITE_EMPLOI",
+        )
+
+        opportunity = Opportunite.objects.create(
+            titre="Magasinier",
+            description="Description initiale suffisamment longue pour respecter la quality gate.",
+            organisation_nom="Entreprise A",
+            ville="Tunis",
+            source_item_url="https://jobboard.example/opportunity/42",
+            external_id="",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=date.today(),
+            source=source,
+        )
+
+        normalized_data = {
+            "raw_id": 2001,
+            "source": source,
+            "titre": "Magasinier",
+            "description": "Description enrichie suffisamment longue pour passer la quality gate avec un détail métier utile.",
+            "description_html": "<p>description detaillee</p>",
+            "organisation_nom": "Entreprise B",
+            "company_logo": "https://jobboard.example/media/logo-b.png",
+            "ville": "Sfax",
+            "source_item_url": "https://jobboard.example/opportunity/42",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.EXPIREE,
+            "date_publication": date.today(),
+            "date_confidence": "EXACT",
+            "date_limite": date.today() - timedelta(days=1),
+            "organisation": None,
+            "contract_type": "",
+            "education_level": "",
+            "availability": "",
+            "salary": "",
+            "experience_years": None,
+            "experience_min": None,
+            "experience_max": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        updated = materialize_opportunity(normalized_data)
+        self.assertEqual(updated.pk, opportunity.pk)
+        self.assertEqual(updated.company_logo, "https://jobboard.example/media/logo-b.png")
+        self.assertEqual(updated.description_html, "<p>description detaillee</p>")
+        self.assertEqual(updated.statut, StatutOpportunite.EXPIREE)
+        self.assertTrue(updated.external_id)
+
+    def test_materialization_keejob_can_correct_expired_status_to_active(self):
+        source = SourceOpportunite.objects.create(
+            nom="Keejob",
+            url="https://www.keejob.com",
+            type_source="SITE_EMPLOI",
+        )
+
+        opportunity = Opportunite.objects.create(
+            titre="Support Client",
+            description="Description initiale suffisamment longue pour respecter la quality gate.",
+            organisation_nom="Entreprise E",
+            ville="Tunis",
+            source_item_url="https://www.keejob.com/offres-emploi/123/support-client",
+            external_id="",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.EXPIREE,
+            date_publication=date.today(),
+            source=source,
+        )
+
+        normalized_data = {
+            "raw_id": 2004,
+            "source": source,
+            "titre": "Support Client",
+            "description": "Description enrichie suffisamment longue pour passer la quality gate avec details utiles et contexte métier.",
+            "description_html": "<p>description detaillee</p>",
+            "organisation_nom": "Entreprise E",
+            "company_logo": "",
+            "ville": "Tunis",
+            "source_item_url": "https://www.keejob.com/offres-emploi/123/support-client",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": date.today(),
+            "date_confidence": "EXACT",
+            "date_limite": None,
+            "organisation": None,
+            "contract_type": "",
+            "education_level": "",
+            "availability": "",
+            "salary": "",
+            "experience_years": None,
+            "experience_min": None,
+            "experience_max": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        updated = materialize_opportunity(normalized_data)
+        self.assertEqual(updated.pk, opportunity.pk)
+        self.assertEqual(updated.statut, StatutOpportunite.ACTIVE)
+
+    def test_materialization_matches_existing_with_canonicalized_url(self):
+        source = SourceOpportunite.objects.create(
+            nom="JobBoard",
+            url="https://jobboard.example",
+            type_source="SITE_EMPLOI",
+        )
+
+        existing = Opportunite.objects.create(
+            titre="Comptable",
+            description="Description initiale suffisamment longue pour respecter la quality gate.",
+            organisation_nom="Entreprise C",
+            company_logo="https://jobboard.example/media/old-logo.png",
+            ville="Tunis",
+            source_item_url="https://jobboard.example/opportunity/99",
+            external_id="",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=date.today(),
+            source=source,
+        )
+
+        normalized_data = {
+            "raw_id": 2002,
+            "source": source,
+            "titre": "Comptable",
+            "description": "Description enrichie suffisamment longue pour passer la quality gate avec des details utiles.",
+            "description_html": "<p>description detaillee</p>",
+            "organisation_nom": "Entreprise C",
+            "company_logo": "https://jobboard.example/media/new-logo.png",
+            "ville": "Tunis",
+            "source_item_url": "https://jobboard.example/opportunity/99/?utm_source=email",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": date.today(),
+            "date_confidence": "EXACT",
+            "date_limite": None,
+            "organisation": None,
+            "contract_type": "",
+            "education_level": "",
+            "availability": "",
+            "salary": "",
+            "experience_years": None,
+            "experience_min": None,
+            "experience_max": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        updated = materialize_opportunity(normalized_data)
+        self.assertEqual(updated.pk, existing.pk)
+        self.assertEqual(updated.company_logo, "https://jobboard.example/media/new-logo.png")
+        self.assertEqual(updated.source_item_url, "https://jobboard.example/opportunity/99")
+
+    def test_materialization_does_not_erase_existing_logo_with_empty_incoming(self):
+        source = SourceOpportunite.objects.create(
+            nom="JobBoard",
+            url="https://jobboard.example",
+            type_source="SITE_EMPLOI",
+        )
+
+        existing = Opportunite.objects.create(
+            titre="Assistant RH",
+            description="Description initiale suffisamment longue pour respecter la quality gate.",
+            organisation_nom="Entreprise D",
+            company_logo="https://jobboard.example/media/logo-rh.png",
+            ville="Tunis",
+            source_item_url="https://jobboard.example/opportunity/120",
+            external_id="",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=date.today(),
+            source=source,
+        )
+
+        normalized_data = {
+            "raw_id": 2003,
+            "source": source,
+            "titre": "Assistant RH",
+            "description": "Description enrichie suffisamment longue pour passer la quality gate avec un meilleur contexte.",
+            "description_html": "",
+            "organisation_nom": "Entreprise D",
+            "company_logo": "",
+            "ville": "Tunis",
+            "source_item_url": "https://jobboard.example/opportunity/120",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": date.today(),
+            "date_confidence": "EXACT",
+            "date_limite": None,
+            "organisation": None,
+            "contract_type": "",
+            "education_level": "",
+            "availability": "",
+            "salary": "",
+            "experience_years": None,
+            "experience_min": None,
+            "experience_max": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        updated = materialize_opportunity(normalized_data)
+        self.assertEqual(updated.pk, existing.pk)
+        self.assertEqual(updated.company_logo, "https://jobboard.example/media/logo-rh.png")
+
 
 class OpportuniteAPITests(APITestCase):
     def setUp(self):
@@ -260,6 +752,8 @@ class OpportuniteAPITests(APITestCase):
         opportunity = self.create_opp(
             statut=StatutOpportunite.EXPIREE,
             source_item_url="https://example.org/opportunity-detail",
+            company_logo="https://example.org/logo.png",
+            description_html="<h3>Missions</h3><ul><li>Build APIs</li></ul>",
             contract_type="CDI",
             education_level="Bac + 3",
             availability="Plein temps",
@@ -285,6 +779,54 @@ class OpportuniteAPITests(APITestCase):
         self.assertEqual(response.data["languages"], ["français"])
         self.assertEqual(response.data["languages_fallback"], ["anglais"])
         self.assertEqual(response.data["source_item_url"], "https://example.org/opportunity-detail")
+        self.assertEqual(response.data["company_logo"], "https://example.org/logo.png")
+        self.assertEqual(response.data["description_html"], "<h3>Missions</h3><ul><li>Build APIs</li></ul>")
+
+    def test_city_filter_normalizes_query_variant(self):
+        self.create_opp(titre="Tunis Opp", ville="Tunis")
+        self.create_opp(titre="Sfax Opp", ville="Sfax")
+
+        response = self.client.get(self.base_url, {"ville": "La Marsa, Tunis"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = {item["titre"] for item in response.data["results"]}
+        self.assertIn("Tunis Opp", titles)
+        self.assertNotIn("Sfax Opp", titles)
+
+    def test_city_alias_filter_normalizes_query_variant(self):
+        self.create_opp(titre="Tunis Opp", ville="Tunis")
+        self.create_opp(titre="Sfax Opp", ville="Sfax")
+
+        response = self.client.get(self.base_url, {"city": "La Marsa, Tunis"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = {item["titre"] for item in response.data["results"]}
+        self.assertIn("Tunis Opp", titles)
+        self.assertNotIn("Sfax Opp", titles)
+
+    def test_type_alias_filter_matches_type_opportunite(self):
+        self.create_opp(titre="Job Opp", type_opportunite=TypeOpportunite.EMPLOI)
+        self.create_opp(titre="Stage Opp", type_opportunite=TypeOpportunite.STAGE)
+
+        response = self.client.get(self.base_url, {"type": TypeOpportunite.STAGE})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = {item["titre"] for item in response.data["results"]}
+        self.assertIn("Stage Opp", titles)
+        self.assertNotIn("Job Opp", titles)
+
+    def test_min_salary_filter_matches_numeric_threshold(self):
+        self.create_opp(titre="Junior Opp", salary="900 TND")
+        self.create_opp(titre="Mid Opp", salary="1 500 TND")
+        self.create_opp(titre="Senior Opp", salary="2300")
+
+        response = self.client.get(self.base_url, {"min_salary": "1200"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = {item["titre"] for item in response.data["results"]}
+        self.assertIn("Mid Opp", titles)
+        self.assertIn("Senior Opp", titles)
+        self.assertNotIn("Junior Opp", titles)
 
     def test_detail_experience_falls_back_to_legacy_years(self):
         opportunity = self.create_opp(

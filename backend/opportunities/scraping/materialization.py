@@ -1,7 +1,7 @@
 import logging
+import hashlib
 import re
 import unicodedata
-from datetime import timedelta
 from typing import Any
 
 from django.db import transaction
@@ -14,10 +14,10 @@ from opportunities.scraping.quality import (
     normalize_date_confidence,
 )
 from opportunities.scraping.scraper_utils import classify_source_item_url, normalize_organization_name
+from opportunities.scraping.scraper_utils import canonicalize_source_item_url
 
 
 logger = logging.getLogger(__name__)
-DEDUP_WINDOW_DAYS = 30
 MIN_DESCRIPTION_LENGTH = 40
 HIINTERNS_STAGE_MIN_QUALITY_SCORE = 0.85
 
@@ -118,60 +118,11 @@ def _to_optional_non_negative_int(value: Any) -> int | None:
     return parsed
 
 
-def _find_hard_duplicate(
-    *,
-    titre: str,
-    organisation_nom: str,
-    ville: str,
-    type_opportunite: str,
-    date_publication,
-):
-    # Safety guard: hard dedup requires the full triad (title + company + city).
-    norm_title = _normalize_key_text(titre)
-    norm_org = _normalize_key_text(organisation_nom)
-    norm_ville = _normalize_key_text(ville)
-    if not (norm_title and norm_org and norm_ville):
-        return None
-
-    min_date = date_publication - timedelta(days=DEDUP_WINDOW_DAYS)
-    max_date = date_publication + timedelta(days=DEDUP_WINDOW_DAYS)
-
-    candidates = Opportunite.objects.select_for_update().filter(
-        type_opportunite=type_opportunite,
-        date_publication__gte=min_date,
-        date_publication__lte=max_date,
-    ).only(
-        "id",
-        "titre",
-        "organisation_nom",
-        "ville",
-        "contract_type",
-        "experience_min",
-        "experience_max",
-        "education_level",
-        "availability",
-        "source_item_url",
-        "description",
-        "salary",
-        "experience_years",
-        "skills",
-        "languages",
-        "languages_fallback",
-        "statut",
-        "date_limite",
-        "organisation",
-    )
-
-    for candidate in candidates:
-        if _normalize_key_text(candidate.titre) != norm_title:
-            continue
-        if _normalize_key_text(candidate.organisation_nom) != norm_org:
-            continue
-        if _normalize_key_text(candidate.ville) != norm_ville:
-            continue
-        return candidate
-
-    return None
+def _build_external_id(source_item_url: str) -> str:
+    url = canonicalize_source_item_url(source_item_url)
+    if not url:
+        return ""
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()
 
 
 def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) -> list[str]:
@@ -190,6 +141,11 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
         opportunity.description = incoming_description
         update_fields.append("description")
 
+    incoming_description_html = _persist_text(defaults.get("description_html", "")).strip()
+    if len(incoming_description_html) > len(_persist_text(getattr(opportunity, "description_html", "")).strip()):
+        opportunity.description_html = incoming_description_html
+        update_fields.append("description_html")
+
     incoming_ville = defaults.get("ville", "")
     if not opportunity.ville and incoming_ville:
         opportunity.ville = incoming_ville
@@ -198,10 +154,28 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
         opportunity.ville = incoming_ville
         update_fields.append("ville")
 
+    source_obj = defaults.get("source") or getattr(opportunity, "source", None)
+    source_name = _persist_text(getattr(source_obj, "nom", "")).strip().lower()
+    is_keejob_source = source_name == "keejob"
+
     incoming_status = defaults.get("statut")
-    if incoming_status and opportunity.statut != incoming_status and incoming_status == StatutOpportunite.ACTIVE:
-        opportunity.statut = incoming_status
-        update_fields.append("statut")
+    def _status_rank(value: Any) -> int:
+        if value == StatutOpportunite.EXPIREE:
+            return 3
+        if value == StatutOpportunite.ARCHIVEE:
+            return 2
+        if value == StatutOpportunite.ACTIVE:
+            return 1
+        return 0
+
+    if incoming_status:
+        if is_keejob_source:
+            if incoming_status != opportunity.statut:
+                opportunity.statut = incoming_status
+                update_fields.append("statut")
+        elif _status_rank(incoming_status) > _status_rank(opportunity.statut):
+            opportunity.statut = incoming_status
+            update_fields.append("statut")
 
     incoming_deadline = defaults.get("date_limite")
     if opportunity.date_limite is None and incoming_deadline is not None:
@@ -212,6 +186,17 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
     if incoming_source_item_url and not _persist_text(getattr(opportunity, "source_item_url", "")).strip():
         opportunity.source_item_url = incoming_source_item_url
         update_fields.append("source_item_url")
+
+    incoming_external_id = _persist_text(defaults.get("external_id", "")).strip()
+    if incoming_external_id and not _persist_text(getattr(opportunity, "external_id", "")).strip():
+        opportunity.external_id = incoming_external_id
+        update_fields.append("external_id")
+
+    incoming_company_logo = _persist_text(defaults.get("company_logo", "")).strip()
+    current_company_logo = _persist_text(getattr(opportunity, "company_logo", "")).strip()
+    if incoming_company_logo and incoming_company_logo != current_company_logo:
+        opportunity.company_logo = incoming_company_logo
+        update_fields.append("company_logo")
 
     incoming_contract_type = _persist_text(defaults.get("contract_type", "")).strip()
     if incoming_contract_type and not _persist_text(getattr(opportunity, "contract_type", "")).strip():
@@ -346,7 +331,7 @@ def _apply_quality_policy(
     source_name = getattr(source, "nom", "")
     type_opportunite = normalized_data.get("type_opportunite")
     statut = normalized_data.get("statut")
-    source_item_url = _persist_text(normalized_data.get("source_item_url", ""))
+    source_item_url = _persist_text(normalized_data.get("source_item_url", "")).strip()
 
     if len((description or "").strip()) < MIN_DESCRIPTION_LENGTH:
         raise _build_validation_error(
@@ -470,6 +455,19 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         )
     ville = _truncate(ville_value, ville_max_length)
 
+    description_html = _persist_text(normalized_data.get("description_html", "")).strip()
+
+    company_logo_max_length = Opportunite._meta.get_field("company_logo").max_length
+    company_logo_value = _persist_text(normalized_data.get("company_logo", "")).strip()
+    if len(company_logo_value) > company_logo_max_length:
+        logger.warning(
+            "raw_id=%s company_logo truncated for DB safety (len=%s, max=%s).",
+            _trace_id(raw_id),
+            len(company_logo_value),
+            company_logo_max_length,
+        )
+    company_logo = _truncate(company_logo_value, company_logo_max_length)
+
     salary_max_length = Opportunite._meta.get_field("salary").max_length
     salary_value = _persist_text(normalized_data.get("salary", "")).strip()
     if len(salary_value) > salary_max_length:
@@ -545,7 +543,8 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         )
     date_publication = normalized_data["date_publication"]
     date_confidence = normalize_date_confidence(normalized_data.get("date_confidence"))
-    source_item_url = _persist_text(normalized_data.get("source_item_url", ""))
+    source_item_url = canonicalize_source_item_url(normalized_data.get("source_item_url", ""))
+    external_id = _build_external_id(source_item_url)
     incoming_quality_score = normalized_data.get("quality_score")
     if incoming_quality_score is None:
         quality_score = compute_quality_score(
@@ -568,9 +567,12 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
 
     defaults = {
         "description": description,
+        "description_html": description_html,
         "organisation_nom": organisation_nom,
+        "company_logo": company_logo,
         "ville": ville,
         "source_item_url": source_item_url or None,
+        "external_id": external_id,
         "contract_type": contract_type,
         "experience_min": experience_min,
         "experience_max": experience_max,
@@ -589,33 +591,28 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         "organisation": normalized_data.get("organisation"),
     }
 
-    # Rolling dedup policy for multi-source ingestion:
-    # title + company + city + type within a short date window.
-    # Falls back to legacy canonical key if triad is incomplete.
+    # Canonical identity policy:
+    # source + source_item_url is the only reliable matching key.
+    # Title/company-based matching is intentionally disabled.
     with transaction.atomic():
-        hard_duplicate = _find_hard_duplicate(
-            titre=titre,
-            organisation_nom=organisation_nom,
-            ville=ville,
-            type_opportunite=normalized_data["type_opportunite"],
-            date_publication=date_publication,
-        )
-        if hard_duplicate is not None:
-            update_fields = _merge_duplicate_fields(hard_duplicate, defaults)
-            if update_fields:
-                hard_duplicate.save(update_fields=update_fields)
-            return hard_duplicate
+        same_source_url = None
+        if source_item_url:
+            same_source_url = Opportunite.objects.select_for_update().filter(
+                source=source,
+                source_item_url=source_item_url,
+            ).first()
 
-        same_key = Opportunite.objects.select_for_update().filter(
-            titre=titre,
-            source=source,
-            date_publication=date_publication,
-        ).first()
-        if same_key is not None:
-            update_fields = _merge_duplicate_fields(same_key, defaults)
+        if same_source_url is None and external_id:
+            same_source_url = Opportunite.objects.select_for_update().filter(
+                source=source,
+                external_id=external_id,
+            ).first()
+
+        if same_source_url is not None:
+            update_fields = _merge_duplicate_fields(same_source_url, defaults)
             if update_fields:
-                same_key.save(update_fields=update_fields)
-            return same_key
+                same_source_url.save(update_fields=update_fields)
+            return same_source_url
 
         opportunity = Opportunite.objects.create(
             titre=titre,

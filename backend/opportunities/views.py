@@ -33,7 +33,7 @@ class OpportuniteViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = OpportuniteFilterSet
-    search_fields = ["titre", "description"]
+    search_fields = ["titre", "description", "organisation_nom", "ville"]
     pagination_class = OpportunityPagination
 
     ordering_fields = [

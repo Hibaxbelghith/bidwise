@@ -12,6 +12,7 @@ from opportunities.models import (
     RawOpportuniteProcessingStatus,
     SourceOpportunite,
 )
+from opportunities.scraping.scraper_utils import canonicalize_source_item_url
 
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,9 @@ def _shadow_store_raw_record(raw_record, source, *, payload_hash, content_finger
         "raw_status": _as_text(raw_record.get("statut") or raw_record.get("status")),
         "raw_date_publication": _as_text(raw_record.get("date_publication") or raw_record.get("publication_date")),
         "raw_date_limite": _as_text(raw_record.get("date_limite") or raw_record.get("deadline")),
-        "source_item_url": raw_record.get("source_item_url") or raw_record.get("item_url") or raw_record.get("url"),
+        "source_item_url": canonicalize_source_item_url(
+            raw_record.get("source_item_url") or raw_record.get("item_url") or raw_record.get("url")
+        ),
         "source_listing_url": raw_record.get("source_listing_url") or raw_record.get("listing_url"),
         "source_record_id": _as_text(
             raw_record.get("source_record_id") or raw_record.get("record_id") or raw_record.get("external_id")
@@ -99,15 +102,15 @@ def _shadow_store_raw_record(raw_record, source, *, payload_hash, content_finger
     # guarantees on source_record_id / source_item_url without changing the
     # existing canonical Opportunite flow yet.
     identity_lookup = None
-    if raw_data["source_record_id"]:
-        identity_lookup = {
-            "source": source,
-            "source_record_id": raw_data["source_record_id"],
-        }
-    elif raw_data["source_item_url"]:
+    if raw_data["source_item_url"]:
         identity_lookup = {
             "source": source,
             "source_item_url": raw_data["source_item_url"],
+        }
+    elif raw_data["source_record_id"]:
+        identity_lookup = {
+            "source": source,
+            "source_record_id": raw_data["source_record_id"],
         }
 
     if identity_lookup:

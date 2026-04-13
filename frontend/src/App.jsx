@@ -6,6 +6,7 @@ import NotFound from './pages/NotFoundPage.jsx';
 import LoginPage from './features/auth/LoginPage.jsx';
 import Onboarding from './features/onboarding/OnboardingPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
+import ScrollManager from './components/layout/ScrollManager.jsx';
 import Dashboard from './features/dashboard/DashboardPage.jsx';
 import Profile from './features/profile/ProfilePage.jsx';
 import ProtectedRoute from './features/auth/ProtectedRoute.jsx';
@@ -13,6 +14,7 @@ import './App.css';
 
 const App = () => (
   <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <ScrollManager />
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Home />} />

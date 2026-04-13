@@ -4,7 +4,10 @@ import api from './api';
  * Request a one-time password for the given email.
  */
 export async function requestOTP(email: string) {
-  const response = await api.post('/auth/passwordless/request/', { email });
+  const response = await api.post('/auth/passwordless/request/', {
+    email,
+    client_type: 'mobile',
+  });
   return response.data;
 }
 

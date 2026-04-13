@@ -20,6 +20,10 @@ export default function DashboardScreen() {
     router.replace('/login');
   };
 
+  const handleOpenOpportunities = () => {
+    router.push('/opportunities');
+  };
+
   return (
     <View style={[styles.container, { backgroundColor }]}>
       {/* Header */}
@@ -49,8 +53,15 @@ export default function DashboardScreen() {
       <View style={[styles.section, { backgroundColor: cardColor, borderColor }]}>
         <Text style={[styles.sectionTitle, { color: textColor }]}>Recent Opportunities</Text>
         <Text style={[styles.emptyText, { color: mutedColor }]}>
-          No opportunities yet. Start exploring!
+          Explore live opportunities from BidWise sources.
         </Text>
+        <TouchableOpacity
+          style={[styles.primaryButton, { backgroundColor: tintColor }]}
+          onPress={handleOpenOpportunities}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.primaryButtonText}>Browse opportunities</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -113,6 +124,17 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
-    paddingVertical: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  primaryButton: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

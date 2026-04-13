@@ -16,7 +16,10 @@ import { saveTokens, removeTokens, getRefreshToken } from '../../lib/tokenManage
  */
 export const requestOTP = async (email) => {
   try {
-    const response = await api.post('/auth/passwordless/request/', { email });
+    const response = await api.post('/auth/passwordless/request/', {
+      email,
+      client_type: 'web',
+    });
     return response.data;
   } catch (error) {
     const errorMessage =

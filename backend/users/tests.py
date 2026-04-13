@@ -12,6 +12,7 @@ from datetime import timedelta
 from unittest.mock import patch, MagicMock
 
 from django.core.cache import cache
+from django.core import mail
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password
@@ -317,6 +318,15 @@ class OTPRequestSerializerTests(TestCase):
     def test_valid_email(self):
         s = OTPRequestSerializer(data={"email": "valid@example.com"})
         self.assertTrue(s.is_valid())
+        self.assertEqual(s.validated_data["client_type"], "web")
+
+    def test_valid_mobile_client_type(self):
+        s = OTPRequestSerializer(data={"email": "valid@example.com", "client_type": "mobile"})
+        self.assertTrue(s.is_valid())
+
+    def test_invalid_client_type(self):
+        s = OTPRequestSerializer(data={"email": "valid@example.com", "client_type": "desktop"})
+        self.assertFalse(s.is_valid())
 
     def test_invalid_email(self):
         s = OTPRequestSerializer(data={"email": "not-an-email"})
@@ -463,6 +473,43 @@ class RequestOTPViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("message", response.data)
         self.assertEqual(OTPChallenge.objects.filter(email="new@example.com").count(), 1)
+
+    def test_request_otp_web_sends_email_and_logs(self):
+        with self.assertLogs("users.otp_service", level="INFO") as logs:
+            response = self.client.post(
+                self.url,
+                {"email": "web@example.com", "client_type": "web"},
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Un code de connexion a ete envoye a votre adresse email.")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertTrue(any("OTP sent via email" in line for line in logs.output))
+
+    def test_request_otp_mobile_simulates_without_email_and_logs(self):
+        with self.assertLogs("users.otp_service", level="INFO") as logs:
+            response = self.client.post(
+                self.url,
+                {"email": "mobile@example.com", "client_type": "mobile"},
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "OTP simulated for mobile")
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertTrue(any("OTP simulated (mobile)" in line for line in logs.output))
+
+    def test_request_otp_mobile_header_overrides_body(self):
+        with self.assertLogs("users.otp_service", level="INFO") as logs:
+            response = self.client.post(
+                self.url,
+                {"email": "mobile-header@example.com", "client_type": "web"},
+                HTTP_X_CLIENT_TYPE="mobile",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "OTP simulated for mobile")
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertTrue(any("OTP simulated (mobile)" in line for line in logs.output))
 
     def test_request_otp_invalid_email(self):
         response = self.client.post(self.url, {"email": "not-email"})

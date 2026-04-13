@@ -27,7 +27,7 @@ Champs métier couverts (Keejob) :
 
 ---
 
-## 2. Architecture Sprint 2 (réelle dans le code)
+## 2. Architecture Sprint 2
 
 Pipeline complet :
 

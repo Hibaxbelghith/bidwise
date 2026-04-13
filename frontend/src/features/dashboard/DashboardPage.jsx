@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
+import PipelineMetrics from '../../components/PipelineMetrics.jsx';
 import { Briefcase, Clock, Bookmark, Building2, MapPin, DollarSign, Calendar, TrendingUp } from 'lucide-react';
 
 const Dashboard = () => {
@@ -127,7 +128,10 @@ const Dashboard = () => {
 					</Card>
 				</div>
 
-				{/* Main Content */}
+				{/* Main Content 
+				<PipelineMetrics />
+				*/}
+
 				<Tabs defaultValue="saved" className="space-y-6">
 					<TabsList aria-label="Opportunity categories">
 						<TabsTrigger value="saved">Saved Opportunities</TabsTrigger>

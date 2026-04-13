@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Opportunite, SourceOpportunite
+from .scraping.normalization import normalize_city_name
 
 
 class SourceOpportuniteSerializer(serializers.ModelSerializer):
@@ -9,7 +10,9 @@ class SourceOpportuniteSerializer(serializers.ModelSerializer):
 
 
 class OpportuniteSerializer(serializers.ModelSerializer):
+    external_id = serializers.CharField(read_only=True)
     source_item_url = serializers.URLField(read_only=True, allow_null=True)
+    company_logo = serializers.SerializerMethodField(read_only=True)
     contract_type = serializers.SerializerMethodField(read_only=True)
     education_level = serializers.SerializerMethodField(read_only=True)
     availability = serializers.SerializerMethodField(read_only=True)
@@ -29,7 +32,9 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "id",
             "titre",
             "description",
+            "description_html",
             "organisation_nom",
+            "company_logo",
             "ville",
             "date_confidence",
             "quality_score",
@@ -37,6 +42,7 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "statut",
             "date_publication",
             "date_limite",
+            "external_id",
             "source_item_url",
             "contract_type",
             "experience",
@@ -84,6 +90,9 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             return None
         text = str(value).strip()
         return text or None
+
+    def get_company_logo(self, obj):
+        return self._get_optional_text(obj, "company_logo")
 
     def get_contract_type(self, obj):
         return self._get_optional_text(obj, "contract_type")
@@ -138,6 +147,11 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             })
 
         return attrs
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["ville"] = normalize_city_name(data.get("ville"))
+        return data
 
 
 class SimilarOpportunitySerializer(serializers.ModelSerializer):

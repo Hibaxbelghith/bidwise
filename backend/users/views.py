@@ -1,7 +1,5 @@
 import logging
 
-from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated, AllowAny
@@ -9,8 +7,8 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from .emails import otp_email_html, otp_email_plaintext
 from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
+from .otp_service import deliver_otp, otp_response_message, resolve_client_type
 from .serializers import (
     UtilisateurSerializer,
     ProfilUpdateSerializer,
@@ -61,10 +59,6 @@ def profile_detail(request):
 # Passwordless OTP endpoints
 # ══════════════════════════════════════════════════════════
 
-# Constant response — prevents user enumeration.
-_OTP_SENT_MSG = "Un code de connexion a été envoyé à votre adresse email."
-
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([OTPRequestThrottle])
@@ -86,6 +80,10 @@ def request_otp(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     email = serializer.validated_data['email'].lower()
+    client_type = resolve_client_type(
+        request,
+        serializer.validated_data.get('client_type'),
+    )
 
     # Housekeeping — delete expired/used rows globally
     OTPChallenge.purge_expired()
@@ -97,7 +95,10 @@ def request_otp(request):
 
     # Per-email cooldown (only if an unused, non-expired OTP exists)
     if OTPChallenge.is_on_cooldown(email):
-        return Response({"message": _OTP_SENT_MSG}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": otp_response_message(client_type)},
+            status=status.HTTP_200_OK,
+        )
 
     # Invalidate any previous challenges for this email
     OTPChallenge.purge_for_email(email)
@@ -105,20 +106,14 @@ def request_otp(request):
     # Create new challenge (hashed)
     _challenge, plaintext_otp = OTPChallenge.create_for_email(email)
 
-        # Send the code by email (HTML + plain-text fallback)
+    # Send or simulate based on client type.
     try:
-        subject = "Your BidWise login code"
-        plaintext = otp_email_plaintext(plaintext_otp, OTPChallenge.OTP_EXPIRY_MINUTES)
-        html = otp_email_html(plaintext_otp, OTPChallenge.OTP_EXPIRY_MINUTES)
-
-        msg = EmailMultiAlternatives(
-            subject=subject,
-            body=plaintext,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[email],
+        deliver_otp(
+            email=email,
+            otp_code=plaintext_otp,
+            expiry_minutes=OTPChallenge.OTP_EXPIRY_MINUTES,
+            client_type=client_type,
         )
-        msg.attach_alternative(html, "text/html")
-        msg.send(fail_silently=False)
     except Exception:
         # Delete the orphaned challenge — user never received the code
         # so it must not remain as a valid (but undeliverable) credential.
@@ -129,7 +124,10 @@ def request_otp(request):
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
-    return Response({"message": _OTP_SENT_MSG}, status=status.HTTP_200_OK)
+    return Response(
+        {"message": otp_response_message(client_type)},
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(['POST'])

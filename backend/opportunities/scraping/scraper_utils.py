@@ -1,7 +1,7 @@
 import os
 import re
 import unicodedata
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 
 def get_env_bool(name, default=False):
@@ -182,6 +182,11 @@ _STAGE_KEYWORDS_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+_SAISONNIER_KEYWORDS_RE = re.compile(
+    r"\b(saisonnier|saisonniere|saisonnieres|seasonal)\b",
+    flags=re.IGNORECASE,
+)
+
 _CLOSED_KEYWORDS = {
     "cloture",
     "cloturee",
@@ -192,6 +197,18 @@ _CLOSED_KEYWORDS = {
     "expired",
     "close",
     "closed",
+}
+
+_TRACKING_QUERY_KEYS = {
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "gclid",
+    "fbclid",
+    "ref",
+    "referrer",
 }
 
 
@@ -365,7 +382,7 @@ def infer_city_from_text(*texts):
 
 
 def classify_source_item_url(url):
-    value = "" if url is None else str(url).strip()
+    value = canonicalize_source_item_url(url)
     if not value:
         return "missing"
 
@@ -386,12 +403,52 @@ def classify_source_item_url(url):
     return "detail_like"
 
 
+def canonicalize_source_item_url(url):
+    value = "" if url is None else str(url).strip()
+    if not value:
+        return ""
+
+    try:
+        parsed = urlparse(value)
+    except Exception:
+        return value
+
+    if not parsed.scheme or not parsed.netloc:
+        return value
+
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+
+    path = parsed.path or "/"
+    path = re.sub(r"/{2,}", "/", path)
+    if path != "/":
+        path = path.rstrip("/")
+    if not path:
+        path = "/"
+
+    cleaned_pairs = []
+    for key, raw_query_value in parse_qsl(parsed.query, keep_blank_values=True):
+        normalized_key = (key or "").strip()
+        if not normalized_key:
+            continue
+        if normalized_key.lower() in _TRACKING_QUERY_KEYS:
+            continue
+        cleaned_pairs.append((normalized_key, (raw_query_value or "").strip()))
+
+    cleaned_pairs.sort(key=lambda item: (item[0].lower(), item[1]))
+    query = urlencode(cleaned_pairs, doseq=True)
+
+    return urlunparse((scheme, netloc, path, "", query, ""))
+
+
 def infer_opportunity_type(*texts, default="EMPLOI"):
     candidates = [str(text) for text in texts if text]
     if not candidates:
         return default
 
     normalized_blob = _normalize_for_match(" ".join(candidates))
+    if _SAISONNIER_KEYWORDS_RE.search(normalized_blob):
+        return "SAISONNIER"
     if _STAGE_KEYWORDS_RE.search(normalized_blob):
         return "STAGE"
     return default

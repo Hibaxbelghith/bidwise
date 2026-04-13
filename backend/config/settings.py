@@ -38,10 +38,24 @@ def _split_env_list(name, default):
     return [item.strip() for item in raw_value.split(',') if item.strip()]
 
 
+def _env_flag(name, default=False):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 ALLOWED_HOSTS = _split_env_list(
     'DJANGO_ALLOWED_HOSTS',
-    ['localhost', '127.0.0.1','192.168.49.130'],
+    ['localhost', '127.0.0.1','192.168.1.4'],
 )
+
+ALLOW_ALL_HOSTS_IN_DEBUG = _env_flag('DJANGO_ALLOW_ALL_HOSTS_IN_DEBUG', True)
+
+# Mobile LAN development changes host/IP frequently. Allow all hosts in DEBUG
+# to prevent DisallowedHost interruptions while keeping production strict.
+if DEBUG and ALLOW_ALL_HOSTS_IN_DEBUG:
+    ALLOWED_HOSTS = ['*']
 
 # CORS configuration
 CORS_ALLOWED_ORIGINS = _split_env_list(
@@ -49,8 +63,20 @@ CORS_ALLOWED_ORIGINS = _split_env_list(
     [
         "http://localhost:5173",  # Vite dev server
         "http://127.0.0.1:5173",
+        "http://localhost:8081",  # Expo web / Metro
+        "http://127.0.0.1:8081",
+        "http://localhost:19006",  # Expo web classic
+        "http://127.0.0.1:19006",
     ],
 )
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https?://localhost(?::\d+)?$",
+    r"^https?://127\.0\.0\.1(?::\d+)?$",
+    r"^https?://10(?:\.\d{1,3}){3}(?::\d+)?$",
+    r"^https?://192\.168(?:\.\d{1,3}){2}(?::\d+)?$",
+    r"^https?://172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}(?::\d+)?$",
+]
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -224,8 +250,8 @@ SIMPLE_JWT = {
 }
 # Email Configuration
 # Strategy: try Gmail SMTP → Console fallback
-_GMAIL_APP_PASSWORD = os.getenv('GMAIL_APP_PASSWORD', '')
-_GMAIL_ADDRESS = os.getenv('GMAIL_ADDRESS', '')
+_GMAIL_APP_PASSWORD = os.getenv('GMAIL_APP_PASSWORD', '').strip()
+_GMAIL_ADDRESS = os.getenv('GMAIL_ADDRESS', '').strip()
 
 if  _GMAIL_APP_PASSWORD and _GMAIL_ADDRESS:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

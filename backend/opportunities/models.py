@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 class TypeOpportunite(models.TextChoices):
     EMPLOI = "EMPLOI", "Emploi"
     STAGE = "STAGE", "Stage"
+    SAISONNIER = "SAISONNIER", "Saisonnier"
     PROJET = "PROJET", "Projet"
     FINANCEMENT = "FINANCEMENT", "Financement"
     RECHERCHE = "RECHERCHE", "Recherche"
@@ -16,7 +17,6 @@ class StatutOpportunite(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
     EXPIREE = "EXPIREE", "Expirée"
     ARCHIVEE = "ARCHIVEE", "Archivée"
-
 
 class DateConfidence(models.TextChoices):
     EXACT = "EXACT", "Exacte"
@@ -179,7 +179,9 @@ class SimilarityMetrics(models.Model):
 class Opportunite(models.Model):
     titre = models.CharField(max_length=255)
     description = models.TextField()
+    description_html = models.TextField(blank=True, default="")
     organisation_nom = models.CharField(max_length=255, blank=True, default="")
+    company_logo = models.URLField(max_length=1000, blank=True, default="")
     ville = models.CharField(max_length=120, blank=True, default="", db_index=True)
     contract_type = models.CharField(max_length=64, blank=True, default="")
     experience_min = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -216,6 +218,7 @@ class Opportunite(models.Model):
     date_publication = models.DateField()
     date_limite = models.DateField(null=True, blank=True)
     source_item_url = models.URLField(max_length=1000, null=True, blank=True)
+    external_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
 
     organisation = models.ForeignKey(
         Utilisateur,
@@ -237,8 +240,9 @@ class Opportunite(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["titre", "source", "date_publication"],
-                name="uniq_opp_title_source_pub",
+                fields=["source", "source_item_url"],
+                condition=Q(source_item_url__isnull=False) & ~Q(source_item_url=""),
+                name="uniq_opp_source_item_url",
             ),
         ]
         indexes = [
