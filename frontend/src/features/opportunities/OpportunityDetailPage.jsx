@@ -1,142 +1,90 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Calendar, ExternalLink } from 'lucide-react';
+import {
+  ArrowLeft,
+  Bookmark,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Lock,
+} from 'lucide-react';
 
 import { Badge } from '../../components/ui/badge.jsx';
 import { Button } from '../../components/ui/button.jsx';
 import { Separator } from '../../components/ui/separator.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { useOpportunityDetail, useSimilarOpportunities } from './useOpportunities';
-import SimilarOpportunities from './SimilarOpportunities.jsx';
-import { cleanDescription } from './utils/text.js';
-
-const TYPE_LABELS = {
-  EMPLOI: 'Job',
-  STAGE: 'Internship',
-  SAISONNIER: 'Seasonal',
-  RECHERCHE: 'Research',
-  PROJET: 'Project',
-  FINANCEMENT: 'Funding',
-};
-
-const STATUS_LABELS = {
-  ACTIVE: 'Active',
-  EXPIREE: 'Expired',
-  ARCHIVEE: 'Archived',
-};
-
-const formatDate = (value) => {
-  if (!value) return 'N/A';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString();
-};
-
-const formatOrganizationLabel = (opportunity) => {
-  const organization = (opportunity?.organisation_nom || '').trim();
-  if (/entreprise\s+anonyme/i.test(organization)) {
-    return 'Entreprise confidentielle';
-  }
-  return organization || opportunity?.source?.nom || 'Unknown organization';
-};
-
-const getCompanyLogoUrl = (opportunity) => {
-  const rawLogo =
-    opportunity?.logo_url || opportunity?.organisation_logo || opportunity?.company_logo || '';
-  return String(rawLogo).trim();
-};
-
-const escapeHtml = (value) =>
-  String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-
-const formatPlainDescriptionAsHtml = (value) => {
-  const cleaned = cleanDescription(value);
-  return escapeHtml(cleaned).replace(/\n+/g, '<br />');
-};
-
-const buildDescriptionMarkup = (opportunity) => {
-  const html = String(opportunity?.description_html || '').trim();
-  if (html) return html;
-  return formatPlainDescriptionAsHtml(opportunity?.description);
-};
-
-const OpportunityDetailSkeleton = () => (
-  <div className="min-h-screen bg-white">
-    <div className="border-b border-neutral-200 bg-neutral-50">
-      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-4 w-44 rounded bg-neutral-200" />
-
-          <div className="flex items-start gap-6">
-            <div className="h-16 w-16 flex-shrink-0 rounded-lg bg-neutral-200" />
-
-            <div className="min-w-0 flex-1 space-y-3">
-              <div className="h-8 w-4/5 rounded bg-neutral-200" />
-              <div className="h-5 w-1/2 rounded bg-neutral-100" />
-
-              <div className="flex flex-wrap gap-3">
-                <div className="h-4 w-40 rounded bg-neutral-100" />
-                <div className="h-4 w-36 rounded bg-neutral-100" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="grid gap-8 lg:grid-cols-3">
-        <div className="space-y-8 lg:col-span-2">
-          <section className="rounded-lg border border-neutral-200 bg-white p-6">
-            <div className="animate-pulse space-y-4">
-              <div className="h-6 w-48 rounded bg-neutral-200" />
-              <div className="h-4 w-full rounded bg-neutral-100" />
-              <div className="h-4 w-11/12 rounded bg-neutral-100" />
-              <div className="h-4 w-full rounded bg-neutral-100" />
-              <div className="h-4 w-10/12 rounded bg-neutral-100" />
-              <div className="h-4 w-3/4 rounded bg-neutral-100" />
-            </div>
-          </section>
-
-          <section className="rounded-lg border border-neutral-200 bg-white p-6">
-            <div className="animate-pulse space-y-4">
-              <div className="h-6 w-56 rounded bg-neutral-200" />
-              <div className="h-20 rounded-lg bg-neutral-100" />
-              <div className="h-20 rounded-lg bg-neutral-100" />
-            </div>
-          </section>
-        </div>
-
-        <div className="lg:col-span-1">
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-6">
-            <div className="animate-pulse space-y-4">
-              <div className="h-5 w-40 rounded bg-neutral-200" />
-              <div className="h-3 w-16 rounded bg-neutral-100" />
-              <div className="h-4 w-32 rounded bg-neutral-100" />
-              <div className="h-3 w-12 rounded bg-neutral-100" />
-              <div className="h-4 w-24 rounded bg-neutral-100" />
-              <div className="h-3 w-16 rounded bg-neutral-100" />
-              <div className="h-4 w-28 rounded bg-neutral-100" />
-              <div className="h-10 w-full rounded bg-neutral-200" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-);
+import { dedupeSimilarOpportunities, formatSimilarityScore } from './utils/similarity.js';
+import {
+  buildAIDraft,
+  buildDescriptionMarkup,
+  buildDescriptionText,
+  buildMatchBullets,
+  DESCRIPTION_COLLAPSE_HEIGHT,
+  formatExperienceLabel,
+  formatOrganizationLabel,
+  getLanguagePreview,
+  getProjectDocuments,
+  getSkills,
+  getSemanticMatchScore,
+  QUICK_SCAN_SKILLS_LIMIT,
+  readSavedOpportunityIds,
+  TYPE_LABELS,
+  writeSavedOpportunityIds,
+} from './OpportunityDetail.utils';
+import OpportunityDetailSkeleton from './OpportunityDetailSkeleton.jsx';
+import OpportunityHeader from './OpportunityHeader.jsx';
+import OpportunityMeta from './OpportunityMeta.jsx';
+import OpportunityExtraData from './OpportunityExtraData.jsx';
+import OpportunityDocuments from './OpportunityDocuments.jsx';
+import OpportunitySnapshot from './OpportunitySnapshot.jsx';
+import LockPreviewCard from './LockPreviewCard.jsx';
 
 const OpportunityDetail = () => {
   const { id } = useParams();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const { opportunity, loading, error } = useOpportunityDetail(id);
 
-  const {
-    similarOpportunities,
-    loading: similarLoading,
-  } = useSimilarOpportunities(opportunity?.id, 5, Boolean(opportunity?.id));
+  const isUserAuthenticated = !authLoading && isAuthenticated;
+
+  const { similarOpportunities, loading: similarLoading, error: similarError } = useSimilarOpportunities(
+    opportunity?.id,
+    8,
+    Boolean(opportunity?.id && isUserAuthenticated)
+  );
+
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [showAllSkills, setShowAllSkills] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    setIsDescriptionExpanded(false);
+    setShowAllSkills(false);
+  }, [opportunity?.id]);
+
+  useEffect(() => {
+    if (!opportunity?.id || !isUserAuthenticated) {
+      setIsSaved(false);
+      return;
+    }
+
+    const savedIds = readSavedOpportunityIds();
+    setIsSaved(savedIds.has(String(opportunity.id)));
+  }, [opportunity?.id, isUserAuthenticated]);
+
+  const dedupedSimilar = useMemo(() => {
+    if (!isUserAuthenticated) return [];
+
+    return dedupeSimilarOpportunities(similarOpportunities).filter(
+      (item) => Number(item?.id) !== Number(opportunity?.id)
+    );
+  }, [isUserAuthenticated, similarOpportunities, opportunity?.id]);
+
+  const semanticMatchScore = useMemo(() => {
+    if (!isUserAuthenticated) return null;
+    return getSemanticMatchScore(dedupedSimilar);
+  }, [dedupedSimilar, isUserAuthenticated]);
 
   if (loading) {
     return <OpportunityDetailSkeleton />;
@@ -156,127 +104,445 @@ const OpportunityDetail = () => {
     );
   }
 
-  const visitSourceUrl = opportunity.source_item_url || '';
-  const companyLogoUrl = getCompanyLogoUrl(opportunity);
+  const sourceUrl = String(opportunity.source_item_url || '').trim();
   const descriptionMarkup = buildDescriptionMarkup(opportunity);
+  const descriptionText = buildDescriptionText(opportunity);
+  const isLongDescription = descriptionText.length > 480;
+  const isProject = opportunity.type_opportunite === 'PROJET';
+  const extraData =
+    opportunity?.extra_data && typeof opportunity.extra_data === 'object' ? opportunity.extra_data : {};
+  const hasExtraData = Object.keys(extraData).length > 0;
+  const structuredProjectData =
+    extraData?.structured && typeof extraData.structured === 'object' ? extraData.structured : {};
+  const projectLots = Array.isArray(extraData.lots) ? extraData.lots.filter(Boolean) : [];
+  const projectDocuments = getProjectDocuments(opportunity);
+  const hasProjectDocuments = Boolean(extraData.has_pdf) || projectDocuments.length > 0;
+  const skills = getSkills(opportunity);
+  const visibleSkills = showAllSkills ? skills : skills.slice(0, QUICK_SCAN_SKILLS_LIMIT);
+  const hiddenSkillsCount = Math.max(0, skills.length - QUICK_SCAN_SKILLS_LIMIT);
+
+  const salaryLabel = String(opportunity.salary || '').trim();
+  const locationLabel = String(opportunity.ville || '').trim();
+  const projectRegionLabel =
+    String(extraData.region || extraData.region_execution || opportunity.ville || '').trim();
+  const contractLabel = String(opportunity.contract_type || '').trim();
+  const availabilityLabel = String(opportunity.availability || '').trim();
+  const educationLabel = String(opportunity.education_level || '').trim();
+  const experienceLabel = formatExperienceLabel(opportunity);
+  const languagesLabel = getLanguagePreview(opportunity);
+  const projectProcedureLabel =
+    String(structuredProjectData.procedure || extraData.procedure || '').trim();
+  const projectFinancementLabel =
+    String(structuredProjectData.financement || extraData.financement || '').trim();
+  const projectTypeCommandeLabel =
+    String(structuredProjectData.type_commande || extraData.type_commande || '').trim();
+  const projectDelaiValiditeLabel =
+    String(structuredProjectData.delai_validite || extraData.delai_validite || '').trim();
+  const projectCautionLabel = String(
+    extraData.caution ||
+      projectLots.find((lot) => String(lot?.caution || '').trim())?.caution ||
+      '',
+  ).trim();
+  const primaryActionLabel = isProject ? 'Open source' : 'Apply';
+
+  const matchBullets = buildMatchBullets(opportunity, semanticMatchScore);
+  const aiDraft = buildAIDraft(opportunity);
+
+  const handleApply = () => {
+    if (!isUserAuthenticated || !sourceUrl) return;
+    window.open(sourceUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleSave = () => {
+    if (!isUserAuthenticated) return;
+
+    const opportunityId = String(opportunity.id);
+    const savedIds = readSavedOpportunityIds();
+    const nextSaved = !savedIds.has(opportunityId);
+
+    if (nextSaved) {
+      savedIds.add(opportunityId);
+    } else {
+      savedIds.delete(opportunityId);
+    }
+
+    writeSavedOpportunityIds(savedIds);
+    setIsSaved(nextSaved);
+  };
+
+  const canApply = isUserAuthenticated && Boolean(sourceUrl);
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="border-b border-neutral-200 bg-neutral-50">
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-          <Link
-            to="/opportunities"
-            className="mb-6 inline-flex items-center gap-2 text-neutral-600 hover:text-neutral-900"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to opportunities
-          </Link>
+    <div className="min-h-screen bg-neutral-50 pb-32">
+      <OpportunityHeader
+        opportunity={opportunity}
+        isUserAuthenticated={isUserAuthenticated}
+        semanticMatchScore={semanticMatchScore}
+        projectRegionLabel={projectRegionLabel}
+      />
 
-          <div className="flex items-start gap-6">
-            <div className="relative flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white">
-              <Building2 className="h-8 w-8 text-neutral-400" />
-              {companyLogoUrl && (
-                <img
-                  src={companyLogoUrl}
-                  alt={`${formatOrganizationLabel(opportunity)} logo`}
-                  className="absolute inset-0 h-full w-full rounded-lg bg-white object-contain"
-                  loading="lazy"
-                  onError={(event) => {
-                    event.currentTarget.remove();
-                  }}
-                />
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="mb-2 flex flex-wrap items-center gap-3">
-                <h1 className="text-3xl font-bold text-neutral-900">
-                  {opportunity.titre || 'Untitled opportunity'}
-                </h1>
-                <Badge>{TYPE_LABELS[opportunity.type_opportunite] || opportunity.type_opportunite}</Badge>
-                <Badge variant={opportunity.statut === 'ACTIVE' ? 'default' : 'outline'}>
-                  {STATUS_LABELS[opportunity.statut] || opportunity.statut}
-                </Badge>
-              </div>
-              <p className="text-lg text-neutral-600">
-                {formatOrganizationLabel(opportunity)}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-4 text-sm text-neutral-600">
-                <span className="inline-flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Published: {formatDate(opportunity.date_publication)}
-                </span>
-                {opportunity.date_limite && (
-                  <span className="inline-flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
-                    Deadline: {formatDate(opportunity.date_limite)}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <OpportunityMeta
+          opportunity={opportunity}
+          isProject={isProject}
+          projectRegionLabel={projectRegionLabel}
+          projectProcedureLabel={projectProcedureLabel}
+          projectFinancementLabel={projectFinancementLabel}
+          salaryLabel={salaryLabel}
+          locationLabel={locationLabel}
+          contractLabel={contractLabel}
+          availabilityLabel={availabilityLabel}
+          educationLabel={educationLabel}
+        />
 
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-3">
-          <div className="space-y-8 lg:col-span-2">
-            <section>
-              <h2 className="mb-4 text-2xl font-semibold text-neutral-900">Description</h2>
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-neutral-900">Description</h2>
+                {isLongDescription ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsDescriptionExpanded((prev) => !prev)}
+                  >
+                    {isDescriptionExpanded ? (
+                      <>
+                        Show less <ChevronUp className="h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        Show more <ChevronDown className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                ) : null}
+              </div>
+
               <div
-                className="leading-relaxed text-neutral-700"
-                dangerouslySetInnerHTML={{ __html: descriptionMarkup }}
-              />
+                className="relative rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3"
+                style={
+                  isDescriptionExpanded || !isLongDescription
+                    ? undefined
+                    : { maxHeight: DESCRIPTION_COLLAPSE_HEIGHT, overflow: 'hidden' }
+                }
+              >
+                <div
+                  className="whitespace-pre-wrap text-sm leading-7 text-neutral-700"
+                  dangerouslySetInnerHTML={{ __html: descriptionMarkup }}
+                />
+
+                {!isDescriptionExpanded && isLongDescription ? (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-neutral-50 to-transparent" />
+                ) : null}
+              </div>
             </section>
 
-            <Separator />
+            <OpportunityExtraData
+              opportunity={opportunity}
+              isProject={isProject}
+              hasExtraData={hasExtraData}
+              extraData={extraData}
+              structuredProjectData={structuredProjectData}
+              projectRegionLabel={projectRegionLabel}
+              projectProcedureLabel={projectProcedureLabel}
+              projectFinancementLabel={projectFinancementLabel}
+              projectTypeCommandeLabel={projectTypeCommandeLabel}
+              projectDelaiValiditeLabel={projectDelaiValiditeLabel}
+              projectCautionLabel={projectCautionLabel}
+              projectLots={projectLots}
+            />
 
-            <section>
-              <h2 className="mb-4 text-2xl font-semibold text-neutral-900">
-                Similar Opportunities
-              </h2>
-              <SimilarOpportunities opportunities={similarOpportunities} loading={similarLoading} />
-            </section>
-          </div>
+            {!isProject && projectDocuments.length ? (
+              <OpportunityDocuments documents={projectDocuments} />
+            ) : null}
 
-          <div className="lg:col-span-1">
-            <div className="sticky top-24 rounded-lg border border-neutral-200 bg-neutral-50 p-6">
-              <h3 className="mb-4 font-semibold text-neutral-900">Opportunity Details</h3>
-              <dl className="space-y-4">
-                <div>
-                  <dt className="mb-1 text-sm text-neutral-500">Source</dt>
-                  <dd className="text-neutral-900">{opportunity.source?.nom || 'Unknown source'}</dd>
+            {isProject && hasProjectDocuments ? (
+              <div className="mt-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-semibold text-neutral-900">Documents</h3>
+                  <p className="text-xs text-neutral-500">
+                    Open the official source files attached to this tender.
+                  </p>
                 </div>
-                <div>
-                  <dt className="mb-1 text-sm text-neutral-500">Type</dt>
-                  <dd className="text-neutral-900">
-                    {TYPE_LABELS[opportunity.type_opportunite] || opportunity.type_opportunite || 'N/A'}
-                  </dd>
+                <OpportunityDocuments documents={projectDocuments} />
+              </div>
+            ) : null}
+
+            {!isProject ? (
+              <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold text-neutral-900">Skills</h2>
+                  {skills.length > QUICK_SCAN_SKILLS_LIMIT ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowAllSkills((prev) => !prev)}
+                    >
+                      {showAllSkills ? 'Show less' : `+${hiddenSkillsCount} more`}
+                    </Button>
+                  ) : null}
                 </div>
-                <div>
-                  <dt className="mb-1 text-sm text-neutral-500">Published</dt>
-                  <dd className="text-neutral-900">{formatDate(opportunity.date_publication)}</dd>
-                </div>
-                {opportunity.date_limite && (
-                  <div>
-                    <dt className="mb-1 text-sm text-neutral-500">Deadline</dt>
-                    <dd className="text-neutral-900">{formatDate(opportunity.date_limite)}</dd>
+
+                {visibleSkills.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {visibleSkills.map((skill) => (
+                      <Badge key={skill} variant="outline" className="bg-white font-medium">
+                        {skill}
+                      </Badge>
+                    ))}
                   </div>
+                ) : (
+                  <p className="text-sm text-neutral-600">No structured skills provided.</p>
                 )}
-              </dl>
+              </section>
+            ) : null}
 
-              {visitSourceUrl && (
+            {isUserAuthenticated ? (
+              <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="mb-4 text-lg font-semibold text-neutral-900">AI Insights</h2>
+
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Match score</p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <p className="text-3xl font-bold text-neutral-900">
+                        {semanticMatchScore !== null ? `${semanticMatchScore}%` : 'N/A'}
+                      </p>
+                      <div className="h-2 w-24 overflow-hidden rounded-full bg-neutral-200">
+                        <div
+                          className="h-full rounded-full bg-blue-600"
+                          style={{ width: `${semanticMatchScore ?? 0}%` }}
+                        />
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-neutral-600">
+                      Based on semantic similarity between this opportunity and related listings.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                      Why this matches you
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-neutral-800">
+                      {matchBullets.map((bullet) => (
+                        <li key={bullet}>{bullet}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                      AI-generated application draft
+                    </p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-800">{aiDraft}</p>
+                    <p className="mt-2 text-xs text-neutral-600">
+                      CV and cover letter automation will expand in Sprint 3.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="mb-2 text-lg font-semibold text-neutral-900">Unlock AI Intelligence</h2>
+                <p className="mb-4 text-sm leading-6 text-neutral-600">
+                  Core opportunity data stays open. Login to unlock match score, recommendation
+                  intelligence, and AI application support.
+                </p>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <LockPreviewCard
+                    title="Match score"
+                    body="See a numeric fit score to quickly prioritize the best opportunities."
+                  />
+                  <LockPreviewCard
+                    title="Why this matches"
+                    body="Understand fit drivers such as skills overlap, experience, and location."
+                  />
+                  <LockPreviewCard
+                    title="AI draft assistant"
+                    body="Generate a tailored application draft and iterate faster."
+                  />
+                </div>
+
+                <Button asChild className="mt-4 w-full sm:w-auto">
+                  <Link to="/login">Login to unlock AI features</Link>
+                </Button>
+              </section>
+            )}
+
+            <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-neutral-900">Similar opportunities</h2>
+                <Badge variant="outline">{isUserAuthenticated ? 'Available' : 'Locked preview'}</Badge>
+              </div>
+
+              {isUserAuthenticated ? (
                 <>
-                  <Separator className="my-6" />
-                  <Button asChild className="w-full">
-                    <a href={visitSourceUrl} target="_blank" rel="noopener noreferrer">
-                      Visit Source
-                      <ExternalLink className="ml-2 h-4 w-4" />
-                    </a>
+                  {similarLoading ? (
+                    <div className="space-y-3">
+                      <div className="h-16 animate-pulse rounded-2xl border border-neutral-200 bg-neutral-100" />
+                      <div className="h-16 animate-pulse rounded-2xl border border-neutral-200 bg-neutral-100" />
+                    </div>
+                  ) : null}
+
+                  {!similarLoading && similarError ? (
+                    <p className="text-sm text-neutral-600">
+                      Similar opportunities are currently unavailable. Please retry later.
+                    </p>
+                  ) : null}
+
+                  {!similarLoading && !similarError && !dedupedSimilar.length ? (
+                    <p className="text-sm text-neutral-600">No similar opportunities found.</p>
+                  ) : null}
+
+                  {!similarLoading && !similarError && dedupedSimilar.length ? (
+                    <div className="space-y-3">
+                      {dedupedSimilar.map((similarItem) => {
+                        const score = formatSimilarityScore(similarItem?.similarity_score);
+                        const companyName =
+                          String(similarItem?.organisation_nom || '').trim() ||
+                          'BidWise recommendation';
+
+                        return (
+                          <Link
+                            key={similarItem.id}
+                            to={`/opportunities/${similarItem.id}`}
+                            className="block rounded-2xl border border-neutral-200 bg-white px-4 py-3 transition-colors hover:border-blue-300"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="font-medium text-neutral-900">
+                                  {similarItem.titre || `Opportunity #${similarItem.id}`}
+                                </p>
+                                <p className="mt-1 text-xs text-neutral-600">{companyName}</p>
+                              </div>
+                              <Badge variant="secondary">Match {score.percentage}%</Badge>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    <LockPreviewCard
+                      title="Ranked recommendations"
+                      body="Get a personalized ranking of similar opportunities based on your profile."
+                    />
+                    <LockPreviewCard
+                      title="One-click comparison"
+                      body="Compare opportunities side by side to pick the strongest applications."
+                    />
+                    <LockPreviewCard
+                      title="Continuous discovery"
+                      body="Receive fresh similar opportunities as new listings are indexed."
+                    />
+                  </div>
+
+                  <Button asChild className="mt-4 w-full sm:w-auto" variant="outline">
+                    <Link to="/login">Login to view similar opportunities</Link>
                   </Button>
                 </>
               )}
-            </div>
+            </section>
           </div>
+
+          <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+              <h3 className="mb-4 text-base font-semibold text-neutral-900">Opportunity snapshot</h3>
+
+              <OpportunitySnapshot
+                opportunity={opportunity}
+                isProject={isProject}
+                typeLabel={TYPE_LABELS[opportunity.type_opportunite] || opportunity.type_opportunite || 'N/A'}
+                projectRegionLabel={projectRegionLabel}
+                projectProcedureLabel={projectProcedureLabel}
+                projectFinancementLabel={projectFinancementLabel}
+                projectTypeCommandeLabel={projectTypeCommandeLabel}
+                projectCautionLabel={projectCautionLabel}
+                organizationLabel={formatOrganizationLabel(opportunity)}
+                contractLabel={contractLabel}
+                availabilityLabel={availabilityLabel}
+                experienceLabel={experienceLabel}
+                educationLabel={educationLabel}
+                languagesLabel={languagesLabel}
+              />
+
+              <Separator className="my-5" />
+
+              {isUserAuthenticated ? (
+                <div className="space-y-2">
+                  <Button onClick={handleApply} disabled={!canApply} className="w-full">
+                    {primaryActionLabel}
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" onClick={handleSave} className="w-full">
+                    {isSaved ? (
+                      <>
+                        Saved
+                        <Check className="h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        Save
+                        <Bookmark className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button asChild className="w-full">
+                    <Link to="/login">Login to unlock actions</Link>
+                  </Button>
+                  <Button variant="outline" disabled className="w-full">
+                    <Lock className="h-4 w-4" />
+                    Save and Apply locked
+                  </Button>
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+      </main>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 backdrop-blur lg:hidden">
+        <div className="mx-auto flex max-w-6xl gap-3 px-4 py-3 sm:px-6 lg:px-8">
+          {isUserAuthenticated ? (
+            <>
+              <Button variant="outline" onClick={handleSave} className="flex-1">
+                {isSaved ? (
+                  <>
+                    Saved
+                    <Check className="h-4 w-4" />
+                  </>
+                ) : (
+                  <>
+                    Save
+                    <Bookmark className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+              <Button onClick={handleApply} disabled={!canApply} className="flex-1">
+                {primaryActionLabel}
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button asChild className="flex-1">
+                <Link to="/login">Login to unlock</Link>
+              </Button>
+              <Button variant="outline" disabled className="flex-1">
+                <Lock className="h-4 w-4" />
+                Actions locked
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </div>

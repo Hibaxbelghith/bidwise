@@ -1,180 +1,155 @@
-# Sprint 2 — Testing Guide (Focus Keejob)
+# Sprint 2 - Testing guide
 
-Objectif : démontrer le pipeline Sprint 2 en live en 3 minutes, de la collecte à l'API.
+Last updated: 2026-04-26
 
----
+This guide is the fastest way to validate the Sprint 2 opportunities pipeline before a release or a demo.
 
-## 1. Pré-requis
+## 1. Preconditions
 
-Depuis la racine du projet :
+From the repository root:
 
-- Lancer les services
-  docker compose up -d
+```bash
+docker compose up -d
+docker compose ps
+```
 
-- Vérifier l'état
-  docker compose ps
+Expected:
+- `backend` is `Up`
+- `db` is healthy
 
-Attendu :
-- backend en état Up
-- db en état healthy
+Active source keys in the current registry:
+- `keejob`
+- `emploitunisie`
+- `linkedin`
+- `marchespublics`
 
----
+## 2. Five-minute pipeline smoke test
 
-## 2. Script de démo live (3 minutes)
+### Step 1 - Collect source data
 
-### Étape 1 — Lancer la collecte Keejob
+```bash
+docker compose run --rm backend python manage.py collect_opportunities --source emploitunisie
+```
 
-docker compose run --rm backend python manage.py collect_opportunities --source keejob
+Expected:
+- `Created` or `Updated` is greater than zero
+- no crash
 
-Attendu :
-- Created ou Updated > 0
-- pas de crash
+### Step 2 - Process pending raw records
 
-### Étape 2 — Traiter les raws NEW vers canonique
+```bash
+docker compose run --rm backend python manage.py shell -c "from opportunities.processing import process_pending_raw_opportunities; print(process_pending_raw_opportunities(limit=1000))"
+```
 
-docker compose run --rm backend python manage.py shell -c "from opportunities.processing import process_pending_raw_opportunities; print(process_pending_raw_opportunities(limit=500))"
+Expected:
+- `materialized > 0`
+- `errors = 0` or a very small explainable number
 
-Attendu :
-- materialized > 0
-- errors = 0 (ou très faible)
+### Step 3 - Check pipeline metrics
 
-### Étape 3 — Vérifier les métriques pipeline
-
+```bash
 docker compose run --rm backend python manage.py shell -c "from opportunities.dataset_metrics import compute_pipeline_metrics; print(compute_pipeline_metrics())"
+```
 
-Attendu :
-- backlog raisonnable
-- success rate élevé
+Expected:
+- controlled backlog,
+- high processing success rate,
+- no unexpected rise in rejected records.
 
-### Étape 4 — Vérifier une annonce Keejob clé
+### Step 4 - Check dataset metrics
 
-docker compose run --rm backend python manage.py shell -c "from rest_framework.test import APIClient; c=APIClient(); r=c.get('/api/opportunities/4996/', SERVER_NAME='localhost'); print({'status': r.status_code, 'contract_type': r.data.get('contract_type'), 'ville': r.data.get('ville'), 'salary': r.data.get('salary'), 'experience': r.data.get('experience')})"
+```bash
+docker compose run --rm backend python manage.py dataset_metrics
+```
 
-Attendu :
-- status = 200
-- contract_type non null (ex: CDI)
-- ville détaillée
-- expérience structurée
+Expected:
+- HTML coverage is visible,
+- invalid URL exclusions are visible,
+- metrics match the real database state.
 
----
+### Step 5 - Run dataset audit
 
-## 3. Commandes de tests Sprint 2 validés
-
-## 3.1 Tests scraping Keejob
-
-docker compose run --rm backend python manage.py test tests.test_scrapers
-
-Vérifie :
-- extraction HTML simulée réaliste
-- contrat, salaire, langues, localisation
-- robustesse extraction sidebar/detail
-- déduplication description
-
-## 3.2 Tests pipeline + API + enrichment
-
-docker compose run --rm backend python manage.py test opportunities.tests
-
-Vérifie :
-- enrichment salary/skills/languages/experience
-- shape API (experience min/max)
-- materialization et merge
-- comportement fallback legacy
-
-## 3.3 Tests ciblés ensemble
-
-docker compose run --rm backend python manage.py test tests.test_scrapers opportunities.tests
-
----
-
-## 4. Vérifications de qualité de données (Keejob)
-
-## 4.1 Vérifier qu'il ne reste pas d'opportunités sans source_item_url
-
-docker compose run --rm backend python manage.py shell -c "from opportunities.models import Opportunite; print({'null': Opportunite.objects.filter(source_item_url__isnull=True).count(), 'empty': Opportunite.objects.filter(source_item_url='').count()})"
-
-Attendu :
-- null = 0
-- empty = 0
-
-## 4.2 Vérifier les champs critiques manquants
-
-docker compose run --rm backend python manage.py shell -c "from opportunities.models import Opportunite; qs=Opportunite.objects.filter(source__nom__iexact='Keejob'); print({'organisation_empty': qs.filter(organisation_nom='').count(), 'ville_empty': qs.filter(ville='').count(), 'contract_empty': qs.filter(contract_type='').count()})"
-
-Attendu :
-- organisation_empty proche de 0
-- ville_empty proche de 0
-- contract_empty faible
-
-## 4.3 Audit dataset
-
+```bash
 docker compose run --rm backend python manage.py audit_opportunities_dataset
+```
 
-Attendu :
-- cohérence globale dataset
-- pas d'anomalies critiques
+Expected:
+- no critical anomaly reported
 
----
+## 3. Recommended test suites
 
-## 5. Endpoints API à tester
+### Targeted Sprint 2 suites
 
-- Liste opportunités
-  GET /api/opportunities/
+```bash
+docker compose run --rm backend python manage.py test tests.tests.RawNormalizationTests
+docker compose run --rm backend python manage.py test tests.tests.EmploiTunisieScraperStructuredParsingTests
+docker compose run --rm backend python manage.py test tests.tests.OpportunityTextEnrichmentTests
+docker compose run --rm backend python manage.py test tests.tests.OpportunityMaterializationTests
+docker compose run --rm backend python manage.py test tests.tests.OpportuniteAPITests
+docker compose run --rm backend python manage.py test tests.tests.PipelineTests
+```
 
-- Détail opportunité
-  GET /api/opportunities/{id}/
+### Extended regression suites
 
-- Similarité
-  GET /api/opportunities/{id}/similar/?k=5
+```bash
+docker compose run --rm backend python manage.py test tests.test_scrapers
+docker compose run --rm backend python manage.py test tests.test_linkedin_scraper
+docker compose run --rm backend python manage.py test tests.tests_quality
+docker compose run --rm backend python manage.py test tests.tests_embeddings
+docker compose run --rm backend python manage.py test tests.tests_marchespublics
+docker compose run --rm backend python manage.py test tests.test_nlp_preprocessing
+```
 
-- Sources
-  GET /api/sources/
+### Full backend validation pass
 
-- Métriques pipeline (auth requise)
-  GET /api/metrics/pipeline/
+```bash
+docker compose run --rm backend python manage.py test tests.tests tests.test_scrapers tests.test_linkedin_scraper tests.tests_quality tests.tests_embeddings tests.tests_marchespublics tests.test_nlp_preprocessing
+```
 
----
+## 4. Data quality spot checks
 
-## 6. Exemples curl
+### EmploiTunisie source URL completeness
 
-- Liste opportunités
-  curl -X GET http://localhost:8000/api/opportunities/
+```bash
+docker compose run --rm backend python manage.py shell -c "from opportunities.models import Opportunite; qs=Opportunite.objects.filter(source__nom__iexact='EmploiTunisie'); print({'null': qs.filter(source_item_url__isnull=True).count(), 'empty': qs.filter(source_item_url='').count()})"
+```
 
-- Détail annonce
-  curl -X GET http://localhost:8000/api/opportunities/4996/
+### EmploiTunisie critical field coverage
 
-- Similarité
-  curl -X GET "http://localhost:8000/api/opportunities/4996/similar/?k=5"
+```bash
+docker compose run --rm backend python manage.py shell -c "from opportunities.models import Opportunite; qs=Opportunite.objects.filter(source__nom__iexact='EmploiTunisie'); print({'organisation_empty': qs.filter(organisation_nom='').count(), 'ville_empty': qs.filter(ville='').count(), 'contract_empty': qs.filter(contract_type='').count(), 'description_html_empty': qs.filter(description_html='').count()})"
+```
 
-- Sources
-  curl -X GET http://localhost:8000/api/sources/
+### EmploiTunisie structured experience and skills coverage
 
-- Pipeline metrics (avec token JWT)
-  curl -X GET http://localhost:8000/api/metrics/pipeline/ -H "Authorization: Bearer <ACCESS_TOKEN>"
+```bash
+docker compose run --rm backend python manage.py shell -c "from django.db.models import Q; from opportunities.models import Opportunite; qs=Opportunite.objects.filter(source__nom__iexact='EmploiTunisie'); total=qs.count(); exp=qs.filter(Q(experience_min__isnull=False) | Q(experience_max__isnull=False)).count(); skills=qs.exclude(skills=[]).count(); print({'total': total, 'with_experience_bounds': exp, 'with_skills': skills})"
+```
 
----
+## 5. API endpoints to verify
 
-## 7. Démonstration conseillée devant jury (chrono)
+- `GET /api/opportunities/`
+- `GET /api/opportunities/{id}/`
+- `GET /api/opportunities/{id}/similar/?k=5`
+- `GET /api/sources/`
+- `GET /api/metrics/pipeline/` (authenticated)
 
-Minute 1 : collect + processing
-- collect_opportunities keejob
-- process_pending_raw_opportunities
+Example curl calls:
 
-Minute 2 : preuve qualité
-- pipeline metrics
-- vérification no null source_item_url
-- vérification record 4996
+```bash
+curl -X GET http://localhost:8000/api/opportunities/
+curl -X GET http://localhost:8000/api/opportunities/<ID>/
+curl -X GET "http://localhost:8000/api/opportunities/<ID>/similar/?k=5"
+curl -X GET http://localhost:8000/api/sources/
+curl -X GET http://localhost:8000/api/metrics/pipeline/ -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
 
-Minute 3 : preuve produit
-- GET /api/opportunities/4996/
-- montrer contract_type, ville détaillée, experience min/max
-- GET similar pour montrer la couche IA prête
+## 6. Release sign-off checklist
 
----
-
-## 8. Messages à dire pendant la démo
-
-- Nous avons séparé acquisition brute et intelligence métier.
-- RawOpportunite garantit audit, replay et robustesse.
-- Le pipeline garde la qualité même quand le HTML source évolue.
-- L'API est stable pour frontend et prête pour Sprint 3.
-- pgvector prépare la montée en charge sans casser l'existant (fallback Python).
+Sprint 2 is ready for release when:
+- collection runs without blocking errors,
+- raw backlog stays under control,
+- targeted Sprint 2 tests pass,
+- dataset metrics remain coherent,
+- list/detail/similar API endpoints respond correctly,
+- docs match the current code paths and test modules.

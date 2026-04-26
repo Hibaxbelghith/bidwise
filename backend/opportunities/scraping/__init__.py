@@ -1,1 +1,1 @@
-# Scraping package for opportunity collection and normalization.
+"""Scraping package for source ingestion and raw snapshot persistence."""

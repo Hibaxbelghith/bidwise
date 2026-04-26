@@ -1,4 +1,6 @@
 import logging
+import ipaddress
+from urllib.parse import urlparse
 
 from django.db.models import Avg, Count, Max, Min, Q
 from django.db.models.functions import Length
@@ -11,6 +13,36 @@ from opportunities.models import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_valid_web_url(value: str) -> bool:
+    if not value:
+        return False
+
+    try:
+        parsed = urlparse(str(value).strip())
+    except Exception:
+        return False
+
+    if parsed.scheme not in {"http", "https"}:
+        return False
+
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+
+    if host == "localhost" or host.endswith(".local") or host.endswith(".localdomain"):
+        return False
+
+    try:
+        ip = ipaddress.ip_address(host)
+        if not ip.is_global:
+            return False
+    except ValueError:
+        # Hostname (non-IP): accepted.
+        pass
+
+    return True
 
 
 def compute_dataset_metrics():
@@ -66,6 +98,33 @@ def compute_dataset_metrics():
         len_300_plus=Count("id", filter=Q(description_length__gte=300)),
     )
 
+    html_coverage_total_with_any_url = 0
+    html_coverage_total_valid_urls = 0
+    html_coverage_with_html_valid_urls = 0
+
+    for source_item_url, description_html in queryset.values_list("source_item_url", "description_html"):
+        source_item_url = (source_item_url or "").strip()
+        description_html = (description_html or "").strip()
+
+        if source_item_url:
+            html_coverage_total_with_any_url += 1
+
+        if not _is_valid_web_url(source_item_url):
+            continue
+
+        html_coverage_total_valid_urls += 1
+        if description_html:
+            html_coverage_with_html_valid_urls += 1
+
+    html_coverage_excluded_invalid_urls = (
+        html_coverage_total_with_any_url - html_coverage_total_valid_urls
+    )
+    html_coverage_rate_valid_urls = (
+        (html_coverage_with_html_valid_urls / html_coverage_total_valid_urls) * 100
+        if html_coverage_total_valid_urls
+        else 0.0
+    )
+
     return {
         "total": total,
         "empty_description": empty_description,
@@ -83,6 +142,13 @@ def compute_dataset_metrics():
             "50-149": int(length_buckets["len_50_149"] or 0),
             "150-299": int(length_buckets["len_150_299"] or 0),
             "300+": int(length_buckets["len_300_plus"] or 0),
+        },
+        "html_coverage": {
+            "total_with_any_url": int(html_coverage_total_with_any_url),
+            "valid_web_urls": int(html_coverage_total_valid_urls),
+            "excluded_invalid_urls": int(html_coverage_excluded_invalid_urls),
+            "with_description_html": int(html_coverage_with_html_valid_urls),
+            "rate_valid_web_urls": float(html_coverage_rate_valid_urls),
         },
     }
 

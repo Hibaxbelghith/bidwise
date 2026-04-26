@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from opportunities.models import Opportunite, RawOpportunite, StatutOpportunite, TypeOpportunite
-from opportunities.scraping.quality import (
+from opportunities.scoring.quality import (
     compute_quality_score,
     infer_date_confidence,
     normalize_date_confidence,
@@ -22,8 +22,6 @@ class Command(BaseCommand):
         "Backfill organization/city/status/type/date_confidence/quality_score using "
         "current quality policy."
     )
-    HIINTERNS_STAGE_MIN_QUALITY_SCORE = 0.85
-
     def add_arguments(self, parser):
         parser.add_argument(
             "--apply",
@@ -59,6 +57,10 @@ class Command(BaseCommand):
                     return text
             return ""
 
+        def _drop_anonymous_placeholder(value):
+            text = str(value or "").strip()
+            return "" if text.lower() == "entreprise anonyme" else text
+
         queryset = Opportunite.objects.select_related("source").all()
         if active_only:
             queryset = queryset.filter(statut=StatutOpportunite.ACTIVE)
@@ -87,10 +89,9 @@ class Command(BaseCommand):
         date_confidence_updated = 0
         quality_scored = 0
         status_closed_corrected = 0
-        hiinterns_low_quality_archived = 0
 
         pending_updates = []
-        fields = ["organisation_nom", "ville", "statut", "type_opportunite", "date_confidence", "quality_score"]
+        fields = ["organisation_nom", "ville", "statut", "type_opportunite", "date_confidence", "quality_score", "skills"]
         type_corrected = 0
 
         for opportunity in queryset.iterator(chunk_size=batch_size):
@@ -98,24 +99,27 @@ class Command(BaseCommand):
             original_city = (opportunity.ville or "").strip()
             original_status = opportunity.statut
             source_name = getattr(opportunity.source, "nom", "")
+            source_status_is_authoritative = source_name in {"Keejob", "EmploiTunisie", "MarchesPublics"}
 
             raw_snapshot = latest_raw_by_canonical.get(opportunity.id, {})
             payload = raw_snapshot.get("raw_payload") or {}
-            raw_org = str(raw_snapshot.get("raw_organisation_nom") or "").strip()
+            raw_org = _drop_anonymous_placeholder(raw_snapshot.get("raw_organisation_nom"))
             raw_titre = str(raw_snapshot.get("raw_titre") or "").strip()
             raw_description = str(raw_snapshot.get("raw_description") or "").strip()
             payload_org = normalize_organization_name(
-                _pick_payload_value(
-                    payload,
-                    "organisation_nom",
-                    "organisation",
-                    "organization",
-                    "organization_name",
-                    "company",
-                    "employer",
-                    "buyer",
-                    "acheteur",
-                    "organisme",
+                _drop_anonymous_placeholder(
+                    _pick_payload_value(
+                        payload,
+                        "organisation_nom",
+                        "organisation",
+                        "organization",
+                        "organization_name",
+                        "company",
+                        "employer",
+                        "buyer",
+                        "acheteur",
+                        "organisme",
+                    )
                 )
             )
             payload_city = _pick_payload_value(
@@ -130,7 +134,7 @@ class Command(BaseCommand):
             payload_url = str(raw_snapshot.get("source_item_url") or _pick_payload_value(payload, "url")).strip()
             raw_date_value = str(raw_snapshot.get("raw_date_publication") or "").strip()
 
-            cleaned_org = normalize_organization_name(original_org)
+            cleaned_org = normalize_organization_name(_drop_anonymous_placeholder(original_org))
             inferred_org_title = infer_organization_from_title(opportunity.titre or raw_titre)
             inferred_org_text = infer_organization_from_text(
                 opportunity.titre,
@@ -141,19 +145,14 @@ class Command(BaseCommand):
                 raw_org,
             )
 
-            if source_name == "TunisieTenders":
-                # For this source, placeholder orgs (Tunisie/TUN/International)
-                # should not be retained when no specific buyer is extractable.
-                normalized_org = cleaned_org or payload_org or inferred_org_title or inferred_org_text
-            else:
-                normalized_org = (
-                    cleaned_org
-                    or payload_org
-                    or inferred_org_title
-                    or inferred_org_text
-                    or original_org
-                    or raw_org
-                )
+            normalized_org = (
+                cleaned_org
+                or payload_org
+                or inferred_org_title
+                or inferred_org_text
+                or original_org
+                or raw_org
+            )
 
             normalized_city = clean_location_for_ml(original_city)
             if not normalized_city:
@@ -173,10 +172,7 @@ class Command(BaseCommand):
 
             next_status = original_status
             next_type = opportunity.type_opportunite
-            if (
-                source_name in {"TunisieTravail", "EmploiTunisie"}
-                and opportunity.type_opportunite == TypeOpportunite.STAGE
-            ):
+            if source_name == "EmploiTunisie" and opportunity.type_opportunite == TypeOpportunite.STAGE:
                 inferred_type = infer_opportunity_type(
                     opportunity.titre,
                     opportunity.description,
@@ -186,7 +182,7 @@ class Command(BaseCommand):
                 if inferred_type == TypeOpportunite.EMPLOI:
                     next_type = TypeOpportunite.EMPLOI
 
-            if looks_closed_opportunity(
+            if not source_status_is_authoritative and looks_closed_opportunity(
                 opportunity.titre,
                 opportunity.description,
                 raw_titre,
@@ -202,13 +198,6 @@ class Command(BaseCommand):
                     and not (has_org or has_city)
                 ):
                     next_status = StatutOpportunite.ARCHIVEE
-                if (
-                    source_name == "TunisieTenders"
-                    and next_type == TypeOpportunite.PROJET
-                    and not (has_org or has_city)
-                ):
-                    next_status = StatutOpportunite.ARCHIVEE
-
             changed = False
             if normalized_org != original_org:
                 opportunity.organisation_nom = normalized_org
@@ -232,6 +221,10 @@ class Command(BaseCommand):
                 type_corrected += 1
                 changed = True
 
+            if next_type == TypeOpportunite.PROJET and opportunity.skills:
+                opportunity.skills = []
+                changed = True
+
             payload_confidence = _pick_payload_value(payload, "date_confidence", "publication_date_confidence")
             inferred_confidence = normalize_date_confidence(
                 payload_confidence
@@ -247,25 +240,23 @@ class Command(BaseCommand):
                 changed = True
 
             computed_quality_score = compute_quality_score(
+                titre=opportunity.titre,
                 organisation_nom=normalized_org,
                 ville=normalized_city,
                 description=opportunity.description,
                 source_item_url=payload_url,
                 date_confidence=inferred_confidence,
+                skills=opportunity.skills,
+                source_name=getattr(opportunity.source, "nom", ""),
+                description_html=getattr(opportunity, "description_html", ""),
+                contract_type=getattr(opportunity, "contract_type", ""),
+                availability=getattr(opportunity, "availability", ""),
+                education_level=getattr(opportunity, "education_level", ""),
+                type_opportunite=getattr(opportunity, "type_opportunite", ""),
+                date_publication=getattr(opportunity, "date_publication", None),
+                date_limite=getattr(opportunity, "date_limite", None),
+                extra_data=getattr(opportunity, "extra_data", None),
             )
-
-            if (
-                next_status == StatutOpportunite.ACTIVE
-                and source_name == "HiInterns"
-                and next_type == TypeOpportunite.STAGE
-                and float(computed_quality_score) <= self.HIINTERNS_STAGE_MIN_QUALITY_SCORE
-            ):
-                next_status = StatutOpportunite.ARCHIVEE
-                if opportunity.statut != next_status:
-                    opportunity.statut = next_status
-                    archived_low_info += 1
-                    hiinterns_low_quality_archived += 1
-                    changed = True
 
             if abs(float(opportunity.quality_score or 0.0) - float(computed_quality_score)) > 1e-9:
                 opportunity.quality_score = computed_quality_score
@@ -295,7 +286,6 @@ class Command(BaseCommand):
         self.stdout.write(f"city_backfilled={city_backfilled}")
         self.stdout.write(f"archived_low_info={archived_low_info}")
         self.stdout.write(f"status_closed_corrected={status_closed_corrected}")
-        self.stdout.write(f"hiinterns_low_quality_archived={hiinterns_low_quality_archived}")
         self.stdout.write(f"type_corrected={type_corrected}")
         self.stdout.write(f"date_confidence_updated={date_confidence_updated}")
         self.stdout.write(f"quality_scored={quality_scored}")

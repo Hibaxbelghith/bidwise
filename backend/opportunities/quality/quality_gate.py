@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from opportunities.scraping.quality import compute_quality_score
+from opportunities.scoring.quality import compute_quality_score
 
 
 def _as_text(value: Any) -> str:
@@ -63,11 +63,24 @@ def evaluate_opportunity(opportunity: Any) -> Any:
     is_usable = not bool(unusable_reason)
 
     quality_score = compute_quality_score(
+        titre=title,
         organisation_nom=_as_text(_get(opportunity, "organisation_nom") or _get(opportunity, "organization")),
         ville=_as_text(_get(opportunity, "ville") or _get(opportunity, "location")),
         description=description,
         source_item_url=source_item_url,
         date_confidence=_as_text(_get(opportunity, "date_confidence") or "FALLBACK"),
+        skills=_get(opportunity, "skills"),
+        source_name=_as_text(
+            _get(opportunity, "source_name")
+            or _get(_get(opportunity, "source"), "nom", "")
+        ),
+        description_html=_as_text(_get(opportunity, "description_html")),
+        contract_type=_as_text(_get(opportunity, "contract_type")),
+        availability=_as_text(_get(opportunity, "availability")),
+        education_level=_as_text(_get(opportunity, "education_level")),
+        type_opportunite=_as_text(_get(opportunity, "type_opportunite") or _get(opportunity, "type")),
+        date_limite=_get(opportunity, "date_limite"),
+        extra_data=_get(opportunity, "extra_data"),
     )
 
     _set(opportunity, "quality_score", float(quality_score))

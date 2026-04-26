@@ -1,6 +1,10 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
-from .views import OpportuniteViewSet, SourceOpportuniteViewSet, pipeline_metrics_view
+from .views import (
+    OpportuniteViewSet,
+    SourceOpportuniteViewSet,
+    pipeline_metrics_view,
+)
 
 router = DefaultRouter()
 router.register(r'opportunities', OpportuniteViewSet, basename='opportunity')

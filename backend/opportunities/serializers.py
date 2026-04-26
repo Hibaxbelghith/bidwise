@@ -1,6 +1,7 @@
 from rest_framework import serializers
+
 from .models import Opportunite, SourceOpportunite
-from .scraping.normalization import normalize_city_name
+from .normalization import normalize_city_name
 
 
 class SourceOpportuniteSerializer(serializers.ModelSerializer):
@@ -21,6 +22,7 @@ class OpportuniteSerializer(serializers.ModelSerializer):
     skills = serializers.SerializerMethodField(read_only=True)
     languages = serializers.SerializerMethodField(read_only=True)
     languages_fallback = serializers.SerializerMethodField(read_only=True)
+    extra_data = serializers.JSONField(read_only=True)
     source = SourceOpportuniteSerializer(read_only=True)
     source_id = serializers.PrimaryKeyRelatedField(
         queryset=SourceOpportunite.objects.all(), source='source', write_only=True
@@ -52,6 +54,7 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "skills",
             "languages",
             "languages_fallback",
+            "extra_data",
             "source",
             "source_id",
             "date_creation",
@@ -156,11 +159,19 @@ class OpportuniteSerializer(serializers.ModelSerializer):
 
 class SimilarOpportunitySerializer(serializers.ModelSerializer):
     similarity_score = serializers.SerializerMethodField(read_only=True)
+    organisation_nom = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Opportunite
-        fields = ["id", "titre", "similarity_score"]
-        read_only_fields = ["id", "titre", "similarity_score"]
+        fields = ["id", "titre", "organisation_nom", "similarity_score"]
+        read_only_fields = ["id", "titre", "organisation_nom", "similarity_score"]
+
+    def get_organisation_nom(self, obj):
+        value = getattr(obj, "organisation_nom", None)
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     def get_similarity_score(self, obj):
         score = getattr(obj, "similarity_score", None)

@@ -25,9 +25,6 @@ MIN_SIMILARITY = 0.52
 MAX_SIMILAR_PER_SOURCE_RATIO = 0.6
 MIN_SIMILAR_PER_SOURCE = 2
 STAGE_KEEJOB_BIAS = 0.03
-STAGE_HIINTERNS_BIAS = -0.03
-STAGE_HIINTERNS_MAX_RATIO = 0.25
-HIINTERNS_STAGE_MIN_QUALITY_SCORE = 0.85
 
 
 def _to_float_vector(vector):
@@ -102,33 +99,25 @@ def _recency_bonus(publication_date):
 
 
 @lru_cache(maxsize=1)
-def _stage_source_ids():
-    mapping = dict(
-        SourceOpportunite.objects.filter(nom__in=["Keejob", "HiInterns"]).values_list("nom", "id")
+def _keejob_source_id():
+    return (
+        SourceOpportunite.objects.filter(nom="Keejob")
+        .values_list("id", flat=True)
+        .first()
     )
-    return mapping.get("Keejob"), mapping.get("HiInterns")
 
 
 def _stage_source_bias(opportunity_type, source_id):
     if opportunity_type != TypeOpportunite.STAGE or source_id is None:
         return 0.0
 
-    keejob_id, hiinterns_id = _stage_source_ids()
+    keejob_id = _keejob_source_id()
     if source_id == keejob_id:
         return STAGE_KEEJOB_BIAS
-    if source_id == hiinterns_id:
-        return STAGE_HIINTERNS_BIAS
     return 0.0
 
 
 def _source_cap_for_row(*, limit, default_cap, opportunity_type, source_id):
-    if source_id is None or opportunity_type != TypeOpportunite.STAGE:
-        return default_cap
-
-    _, hiinterns_id = _stage_source_ids()
-    if source_id == hiinterns_id:
-        return max(1, int(math.floor(limit * STAGE_HIINTERNS_MAX_RATIO)))
-
     return default_cap
 
 
@@ -168,11 +157,6 @@ def find_similar_opportunities(opportunity, top_k=5, queryset=None, enforce_same
         candidates.exclude(pk=opportunity.pk)
         .exclude(embedding_vector__isnull=True)
         .filter(statut=StatutOpportunite.ACTIVE)
-        .exclude(
-            source__nom="HiInterns",
-            type_opportunite=TypeOpportunite.STAGE,
-            quality_score__lte=HIINTERNS_STAGE_MIN_QUALITY_SCORE,
-        )
     )
     if enforce_same_type and getattr(opportunity, "type_opportunite", None):
         candidates = candidates.filter(type_opportunite=opportunity.type_opportunite)
@@ -287,11 +271,6 @@ def find_similar_opportunities_pgvector(opportunity, top_k=5, queryset=None, enf
         candidates.exclude(pk=opportunity.pk)
         .exclude(embedding_vector_pg__isnull=True)
         .filter(statut=StatutOpportunite.ACTIVE)
-        .exclude(
-            source__nom="HiInterns",
-            type_opportunite=TypeOpportunite.STAGE,
-            quality_score__lte=HIINTERNS_STAGE_MIN_QUALITY_SCORE,
-        )
     )
     if enforce_same_type and getattr(opportunity, "type_opportunite", None):
         candidates = candidates.filter(type_opportunite=opportunity.type_opportunite)
@@ -433,10 +412,6 @@ def find_similar_opportunities_with_fallback(opportunity, top_k=5, queryset=None
             embedding_vector__isnull=True
         ).filter(
             statut=StatutOpportunite.ACTIVE
-        ).exclude(
-            source__nom="HiInterns",
-            type_opportunite=TypeOpportunite.STAGE,
-            quality_score__lte=HIINTERNS_STAGE_MIN_QUALITY_SCORE,
         )
         if enforce_same_type and getattr(opportunity, "type_opportunite", None):
             fallback_candidates = fallback_candidates.filter(type_opportunite=opportunity.type_opportunite)

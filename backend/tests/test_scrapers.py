@@ -16,7 +16,7 @@ import django
 
 django.setup()
 
-from opportunities.scraping.keejob_scraper import KeejobScraper
+from opportunities.scraping.sources import KeejobScraper
 from opportunities.scraping.scraper_utils import clean_description_for_ml
 
 

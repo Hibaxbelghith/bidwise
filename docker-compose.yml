@@ -13,14 +13,6 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    environment:
-      HIINTERNS_USE_SITEMAP: ${HIINTERNS_USE_SITEMAP:-true}
-      HIINTERNS_USE_RSC: ${HIINTERNS_USE_RSC:-true}
-      HIINTERNS_USE_PLAYWRIGHT: ${HIINTERNS_USE_PLAYWRIGHT:-false}
-      HIINTERNS_SITEMAP_URL: ${HIINTERNS_SITEMAP_URL:-https://hi-interns.com/sitemap.xml}
-      HIINTERNS_TRACE_API: ${HIINTERNS_TRACE_API:-false}
-      HIINTERNS_TRACE_STDOUT: ${HIINTERNS_TRACE_STDOUT:-false}
-      HIINTERNS_TRACE_FIRST_PARTY_ONLY: ${HIINTERNS_TRACE_FIRST_PARTY_ONLY:-true}
     depends_on:
       db:
         condition: service_healthy

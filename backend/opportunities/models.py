@@ -193,6 +193,7 @@ class Opportunite(models.Model):
     skills = ArrayField(models.CharField(max_length=64), blank=True, default=list)
     languages = ArrayField(models.CharField(max_length=64), blank=True, default=list)
     languages_fallback = ArrayField(models.CharField(max_length=64), blank=True, default=list)
+    extra_data = models.JSONField(blank=True, default=dict)
     date_confidence = models.CharField(
         max_length=16,
         choices=DateConfidence.choices,

@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@radix-ui/react-switch": "^1.2.6",
+    "expo": "^55.0.17"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.10",
+    "typescript": "~5.9.2"
+  }
+}

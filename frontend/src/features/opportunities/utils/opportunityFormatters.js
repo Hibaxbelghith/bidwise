@@ -1,0 +1,236 @@
+import { STATUS_LABELS, TYPE_LABELS } from '../constants/opportunityOptions.js';
+
+const ANONYMOUS_ORGANIZATION_PATTERN = /entreprise\s+anonyme/i;
+const NLP_METADATA_KEY_PATTERN = /\b(?:type|organization|organisation|title|location)\s*:\s*/gi;
+const LEADING_TYPE_VALUE_PATTERN =
+  /^\s*(?:job|stage|internship|research|project|funding)\b[\s,;:|.-]*/i;
+const API_BASE_URL = String(import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+
+const cleanDescription = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return 'No description available';
+
+  const cleaned = raw
+    .replace(NLP_METADATA_KEY_PATTERN, ' ')
+    .replace(LEADING_TYPE_VALUE_PATTERN, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned || 'No description available';
+};
+
+const escapeHtml = (value) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const stripHtmlTags = (value) =>
+  String(value || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const decodeHtmlEntities = (value) => {
+  const rawValue = String(value || '');
+  if (!rawValue.includes('&')) return rawValue;
+  if (typeof window === 'undefined' || typeof DOMParser === 'undefined') {
+    return rawValue;
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<!doctype html><body>${rawValue}`, 'text/html');
+  return String(doc.body?.textContent || '').trim();
+};
+
+const truncateText = (text, max = 220) => {
+  const normalizedText = String(text || '').trim();
+  if (!normalizedText) return '';
+
+  return normalizedText.length > max ? `${normalizedText.slice(0, max)}...` : normalizedText;
+};
+
+const sanitizeCompanyLogoUrl = (rawLogo) => {
+  const value = String(rawLogo || '').trim();
+  if (!value) return '';
+
+  try {
+    const url = new URL(value);
+    if (url.hostname.includes('media.licdn.com')) {
+      url.searchParams.delete('t');
+      return url.toString();
+    }
+  } catch {
+    return value;
+  }
+
+  return value;
+};
+
+const getBackendOrigin = () => {
+  try {
+    return new URL(API_BASE_URL, window.location.origin).origin;
+  } catch {
+    return window.location.origin;
+  }
+};
+
+const toSafeNonNegativeInt = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.floor(parsed);
+};
+
+export const formatDate = (value) => {
+  if (!value) return 'N/A';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString();
+};
+
+export const formatOrganizationLabel = (opportunity) => {
+  const organization = String(opportunity?.organisation_nom || '').trim();
+  if (!organization || ANONYMOUS_ORGANIZATION_PATTERN.test(organization)) {
+    return '';
+  }
+
+  return organization;
+};
+
+export const buildCompanyInitialsAvatar = (label) => {
+  const words = String(label || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  const initials = words.map((word) => word[0]?.toUpperCase() || '').join('') || 'BW';
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+      <rect width="96" height="96" rx="20" fill="#f1f5f9" />
+      <text x="50%" y="52%" dominant-baseline="middle" text-anchor="middle"
+        font-family="Arial, sans-serif" font-size="32" font-weight="700" fill="#0f172a">${initials}</text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+};
+
+export const getCompanyLogoAsset = (opportunity) => {
+  const rawLogo =
+    opportunity?.logo_url || opportunity?.organisation_logo || opportunity?.company_logo || '';
+  const sanitizedUrl = sanitizeCompanyLogoUrl(rawLogo);
+
+  if (!sanitizedUrl) {
+    return { src: '', fallbackSrc: '' };
+  }
+
+  if (sanitizedUrl.startsWith('/media/')) {
+    return {
+      src: `${getBackendOrigin()}${sanitizedUrl}`,
+      fallbackSrc: '',
+    };
+  }
+
+  try {
+    const url = new URL(sanitizedUrl);
+    if (url.hostname.includes('media.licdn.com')) {
+      return {
+        src: sanitizedUrl,
+        fallbackSrc: '',
+      };
+    }
+  } catch {
+    return { src: sanitizedUrl, fallbackSrc: '' };
+  }
+
+  return { src: sanitizedUrl, fallbackSrc: '' };
+};
+
+export const formatExperienceLabel = (opportunity) => {
+  const experience = opportunity?.experience;
+  if (!experience || typeof experience !== 'object') return '';
+
+  const min = toSafeNonNegativeInt(experience.min);
+  const max = toSafeNonNegativeInt(experience.max);
+
+  if (min === null && max === null) return '';
+  if (min === 0 && (max === null || max <= 1)) return 'Entry level';
+  if (min !== null && max !== null) return min === max ? `${min} years` : `${min}-${max} years`;
+  if (min !== null) return `${min}+ years`;
+
+  return `Up to ${max} years`;
+};
+
+export const formatProjectDocumentType = (type, fallbackLabel) => {
+  const normalizedType = String(type || '').trim().toLowerCase();
+
+  if (normalizedType === 'cahier_des_charges') return 'Cahier des charges';
+  if (normalizedType === 'avis_appel_offres') return "Avis d'appel d'offres";
+  if (normalizedType === 'autres') return 'Autres documents';
+
+  return String(fallbackLabel || 'Document').trim() || 'Document';
+};
+
+export const buildDescriptionMarkup = (opportunity) => {
+  const html = String(opportunity?.description_html || '').trim();
+  if (html) return html;
+
+  return escapeHtml(cleanDescription(opportunity?.description)).replace(/\n+/g, '<br />');
+};
+
+export const buildDescriptionText = (opportunity) => {
+  const html = String(opportunity?.description_html || '').trim();
+  if (!html) return cleanDescription(opportunity?.description);
+
+  return decodeHtmlEntities(stripHtmlTags(html));
+};
+
+export const buildDescriptionPreview = (opportunity, max = 240) => {
+  const htmlDescription = String(opportunity?.description_html || '').trim();
+  const sourceText = htmlDescription
+    ? decodeHtmlEntities(stripHtmlTags(htmlDescription))
+    : cleanDescription(opportunity?.description);
+
+  return truncateText(sourceText, max);
+};
+
+export const getOpportunityTypeLabel = (value) => TYPE_LABELS[value] || value || 'N/A';
+export const getOpportunityStatusLabel = (value) => STATUS_LABELS[value] || value || 'N/A';
+
+export const getCardAiHint = (opportunity, isUserAuthenticated) => {
+  if (!isUserAuthenticated) {
+    return 'AI Match locked';
+  }
+
+  const raw = Number(opportunity?.similarity_score);
+  if (!Number.isFinite(raw)) {
+    return 'AI Match in detail';
+  }
+
+  const clamped = Math.max(0, Math.min(raw, 1));
+  return `AI Match ${Math.round(clamped * 100)}%`;
+};
+
+export const formatSimilarityScore = (rawScore) => {
+  const score = typeof rawScore === 'number' && !Number.isNaN(rawScore) ? rawScore : 0;
+  const clamped = Math.max(0, Math.min(score, 1));
+  const percentage = Math.round(clamped * 100);
+  let label = 'Related';
+
+  if (percentage >= 80) {
+    label = 'Very relevant';
+  } else if (percentage >= 60) {
+    label = 'Relevant';
+  }
+
+  return {
+    percentage,
+    label,
+    raw: clamped.toFixed(2),
+  };
+};

@@ -13,8 +13,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--source",
-            default="TunisieTenders",
-            help="Source name to rebalance (default: TunisieTenders).",
+            default="MarchesPublics",
+            help="Source name to rebalance (default: MarchesPublics).",
         )
         parser.add_argument(
             "--type-opportunite",

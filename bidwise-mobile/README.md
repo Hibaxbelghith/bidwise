@@ -1,50 +1,30 @@
-# Welcome to your Expo app 👋
+# BidWise Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo Router mobile client for BidWise.
 
-## Get started
+## Architecture
 
-1. Install dependencies
+- `app/`: route entry points
+- `src/features/`: feature modules (`auth`, `dashboard`, `opportunities`, `profile`)
+- `src/shared/`: shared components, hooks, services, and theme utilities
 
-   ```bash
-   npm install
-   ```
+The mobile app consumes the same backend API as the web client and currently includes:
+- login with OTP and Google Sign-In,
+- onboarding and dashboard entry flows,
+- public opportunity browsing,
+- authenticated detail actions and recommendation surfaces.
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run locally
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Optional environment variable:
 
-## Learn more
+```env
+EXPO_PUBLIC_API_BASE_URL=http://<your-lan-ip>:8000/api
+```
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+If `EXPO_PUBLIC_API_BASE_URL` is not set, the app tries to detect the local development host automatically and falls back to `http://127.0.0.1:8000/api` when needed.

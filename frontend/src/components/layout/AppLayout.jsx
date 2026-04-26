@@ -25,10 +25,9 @@ const AppLayout = () => {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <Link to="/" className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-                <Briefcase className="h-5 w-5 text-white" />
-              </div>
-              <span className="text-xl font-semibold text-neutral-900">BidWise</span>
+              
+              <img src="favicon.png" alt="BidWise Logo"  className="h-9"/>
+              
             </Link>
 
             {!isHome && (
@@ -95,10 +94,7 @@ const AppLayout = () => {
           <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             <div>
               <div className="mb-4 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-                  <Briefcase className="h-5 w-5 text-white" />
-                </div>
-                <span className="text-lg font-semibold text-neutral-900">BidWise</span>
+                <img src="favicon.png" alt="BidWise Logo" className="h-8" />
               </div>
               <p className="text-sm text-neutral-600">
                 Discover and track professional opportunities with ease.

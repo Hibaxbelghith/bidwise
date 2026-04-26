@@ -47,7 +47,7 @@ def _env_flag(name, default=False):
 
 ALLOWED_HOSTS = _split_env_list(
     'DJANGO_ALLOWED_HOSTS',
-    ['localhost', '127.0.0.1','192.168.1.4'],
+    ['localhost', '127.0.0.1','192.168.0.147','172.16.0.141'],
 )
 
 ALLOW_ALL_HOSTS_IN_DEBUG = _env_flag('DJANGO_ALLOW_ALL_HOSTS_IN_DEBUG', True)

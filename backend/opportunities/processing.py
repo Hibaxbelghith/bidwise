@@ -17,9 +17,9 @@ from opportunities.embeddings.service import (
     generate_opportunity_embedding,
 )
 from opportunities.enrichment.text_enrichment import enrich_opportunity_text
+from opportunities.materialization import materialize_opportunity
+from opportunities.normalization import normalize_raw_opportunity
 from opportunities.quality.quality_gate import evaluate_opportunity
-from opportunities.scraping.materialization import materialize_opportunity
-from opportunities.scraping.normalization import normalize_raw_opportunity
 
 
 logger = logging.getLogger(__name__)

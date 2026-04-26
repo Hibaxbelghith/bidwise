@@ -1,0 +1,169 @@
+import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+
+import { useAuth } from '../../auth/AuthContext.jsx';
+import OpportunityActionBar from '../components/detail/OpportunityActionBar.jsx';
+import OpportunityActionPanel from '../components/detail/OpportunityActionPanel.jsx';
+import OpportunityDescriptionSection from '../components/detail/OpportunityDescriptionSection.jsx';
+import OpportunityDetailSkeleton from '../components/detail/OpportunityDetailSkeleton.jsx';
+import OpportunityDocuments from '../components/detail/OpportunityDocuments.jsx';
+import OpportunityExtraData from '../components/detail/OpportunityExtraData.jsx';
+import OpportunityHeader from '../components/detail/OpportunityHeader.jsx';
+import OpportunityInsightsSection from '../components/detail/OpportunityInsightsSection.jsx';
+import OpportunityMeta from '../components/detail/OpportunityMeta.jsx';
+import OpportunitySimilarSection from '../components/detail/OpportunitySimilarSection.jsx';
+import OpportunitySkillsSection from '../components/detail/OpportunitySkillsSection.jsx';
+import { useOpportunityDetailPage } from '../hooks/useOpportunityDetailPage.js';
+
+const OpportunityDetailPage = () => {
+  const { id } = useParams();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const isUserAuthenticated = !authLoading && isAuthenticated;
+  const detailPage = useOpportunityDetailPage({
+    opportunityId: id,
+    isUserAuthenticated,
+  });
+
+  if (detailPage.loading) {
+    return <OpportunityDetailSkeleton />;
+  }
+
+  if (detailPage.error || !detailPage.viewModel) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+        <Link to="/opportunities" className="inline-flex items-center gap-2 text-neutral-600">
+          <ArrowLeft className="h-4 w-4" />
+          Back to opportunities
+        </Link>
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
+          {detailPage.error || 'Opportunity not found'}
+        </div>
+      </div>
+    );
+  }
+
+  const { viewModel } = detailPage;
+
+  return (
+    <div className="min-h-screen bg-neutral-50 pb-32">
+      <OpportunityHeader
+        title={viewModel.title}
+        typeLabel={viewModel.typeLabel}
+        statusLabel={viewModel.statusLabel}
+        statusBadgeVariant={viewModel.statusBadgeVariant}
+        organizationLabel={viewModel.organizationLabel}
+        displayLocationLabel={viewModel.displayLocationLabel}
+        publishedDateLabel={viewModel.publishedDateLabel}
+        deadlineDateLabel={viewModel.deadlineDateLabel}
+        companyLogo={viewModel.companyLogo}
+        isUserAuthenticated={isUserAuthenticated}
+        semanticMatchScore={viewModel.semanticMatchScore}
+      />
+
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <OpportunityMeta
+          isProject={viewModel.isProject}
+          organizationLabel={viewModel.organizationLabel}
+          projectRegionLabel={viewModel.projectRegionLabel}
+          projectProcedureLabel={viewModel.projectProcedureLabel}
+          projectFinancementLabel={viewModel.projectFinancementLabel}
+          salaryLabel={viewModel.salaryLabel}
+          locationLabel={viewModel.locationLabel}
+          contractLabel={viewModel.contractLabel}
+          availabilityLabel={viewModel.availabilityLabel}
+          experienceLabel={viewModel.experienceLabel}
+          educationLabel={viewModel.educationLabel}
+        />
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <OpportunityDescriptionSection
+              descriptionMarkup={viewModel.descriptionMarkup}
+              isLongDescription={viewModel.isLongDescription}
+              isDescriptionExpanded={detailPage.isDescriptionExpanded}
+              onToggleDescription={detailPage.toggleDescription}
+            />
+
+            <OpportunityExtraData
+              isProject={viewModel.isProject}
+              additionalInfoItems={viewModel.additionalInfoItems}
+              organizationLabel={viewModel.organizationLabel}
+              publishedDateLabel={viewModel.publishedDateLabel}
+              deadlineDateLabel={viewModel.deadlineDateLabel}
+              projectRegionLabel={viewModel.projectRegionLabel}
+              projectProcedureLabel={viewModel.projectProcedureLabel}
+              projectFinancementLabel={viewModel.projectFinancementLabel}
+              projectTypeCommandeLabel={viewModel.projectTypeCommandeLabel}
+              projectDelaiValiditeLabel={viewModel.projectDelaiValiditeLabel}
+              projectCautionLabel={viewModel.projectCautionLabel}
+              projectLots={viewModel.projectLots}
+            />
+
+            {!viewModel.isProject && viewModel.projectDocuments.length ? (
+              <OpportunityDocuments documents={viewModel.projectDocuments} />
+            ) : null}
+
+            {viewModel.isProject && viewModel.hasProjectDocuments ? (
+              <div className="mt-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-semibold text-neutral-900">Documents</h3>
+                  <p className="text-xs text-neutral-500">
+                    Open the official source files attached to this tender.
+                  </p>
+                </div>
+                <OpportunityDocuments documents={viewModel.projectDocuments} />
+              </div>
+            ) : null}
+
+            {!viewModel.isProject ? (
+              <OpportunitySkillsSection
+                skills={viewModel.skills}
+                visibleSkills={viewModel.visibleSkills}
+                hiddenSkillsCount={viewModel.hiddenSkillsCount}
+                showAllSkills={detailPage.showAllSkills}
+                onToggleSkills={detailPage.toggleSkills}
+              />
+            ) : null}
+
+            <OpportunityInsightsSection
+              isUserAuthenticated={isUserAuthenticated}
+              semanticMatchScore={viewModel.semanticMatchScore}
+              matchBullets={viewModel.matchBullets}
+              aiDraft={viewModel.aiDraft}
+            />
+
+            <OpportunitySimilarSection
+              isUserAuthenticated={isUserAuthenticated}
+              similarOpportunities={viewModel.dedupedSimilar}
+              loading={detailPage.similarLoading}
+              error={detailPage.similarError}
+            />
+          </div>
+
+          <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
+            <OpportunityActionPanel
+              snapshotProps={viewModel.snapshotProps}
+              isUserAuthenticated={isUserAuthenticated}
+              isSaved={detailPage.isSaved}
+              canApply={detailPage.canApply}
+              primaryActionLabel={viewModel.primaryActionLabel}
+              onApply={detailPage.handleApply}
+              onSave={detailPage.handleSave}
+            />
+          </aside>
+        </div>
+      </main>
+
+      <OpportunityActionBar
+        isUserAuthenticated={isUserAuthenticated}
+        isSaved={detailPage.isSaved}
+        canApply={detailPage.canApply}
+        primaryActionLabel={viewModel.primaryActionLabel}
+        onApply={detailPage.handleApply}
+        onSave={detailPage.handleSave}
+      />
+    </div>
+  );
+};
+
+export default OpportunityDetailPage;

@@ -3,7 +3,7 @@ from django.db.models import F, Func, IntegerField, Value
 from django.db.models.functions import Cast, NullIf
 
 from .models import Opportunite, StatutOpportunite, TypeOpportunite
-from .scraping.normalization import normalize_city_name
+from .normalization import normalize_city_name
 
 
 class OpportuniteFilterSet(django_filters.FilterSet):

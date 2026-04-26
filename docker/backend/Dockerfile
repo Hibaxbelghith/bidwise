@@ -7,7 +7,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-# Required OS libs for Playwright Chromium used by JS-rendered scrapers.
+# Runtime OS libraries for scraper dependencies.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		fonts-liberation \
@@ -36,10 +36,8 @@ RUN apt-get update \
 		libxkbcommon0 \
 		libxrandr2 \
 	&& rm -rf /var/lib/apt/lists/*
-
 RUN pip install --upgrade pip \
-	&& pip install --no-cache-dir -r requirements.txt \
-	&& python -m playwright install chromium
+	&& pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

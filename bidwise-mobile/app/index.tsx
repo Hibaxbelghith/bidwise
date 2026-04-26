@@ -1,6 +1,7 @@
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
-import { useAuth } from '@/src/context/AuthContext';
+
+import { useAuth } from '@/src/features/auth/context/AuthContext';
 
 export default function Index() {
   const { isAuthenticated, loading } = useAuth();
@@ -13,5 +14,5 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={isAuthenticated ? '/dashboard' : '/login'} />;
+  return <Redirect href={isAuthenticated ? '/dashboard' : '/opportunities'} />;
 }

@@ -48,6 +48,15 @@ class Command(BaseCommand):
             f"({_fmt_pct(metrics['structured_rate'])})"
         )
 
+        html_cov = metrics["html_coverage"]
+        self.stdout.write("\nHTML COVERAGE (valid web URLs only)")
+        self.stdout.write(
+            f"- description_html coverage: {html_cov['with_description_html']}/{html_cov['valid_web_urls']} "
+            f"({_fmt_pct(html_cov['rate_valid_web_urls'])})"
+        )
+        self.stdout.write(f"- Excluded invalid/non-web URLs: {html_cov['excluded_invalid_urls']}")
+        self.stdout.write(f"- Total records with any URL: {html_cov['total_with_any_url']}")
+
         self.stdout.write("\nTOP ORGANIZATIONS")
         if metrics["top_organizations"]:
             for row in metrics["top_organizations"]:

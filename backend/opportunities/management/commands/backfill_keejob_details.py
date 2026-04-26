@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from opportunities.models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
-from opportunities.scraping.keejob_scraper import KeejobScraper
+from opportunities.scraping.sources import KeejobScraper
 from opportunities.scraping.scraper_utils import canonicalize_source_item_url
 
 
