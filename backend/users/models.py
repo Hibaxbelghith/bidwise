@@ -14,6 +14,11 @@ class Utilisateur(AbstractUser):
     Hérite du système d'authentification Django.
     """
 
+    is_admin = models.BooleanField(
+        default=False,
+        help_text="Can access BidWise admin backoffice APIs.",
+    )
+
     def __str__(self):
         return self.username
 

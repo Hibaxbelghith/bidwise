@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './AuthContext.jsx';
 
-const FETCHING_SKELETON_DELAY_MS = 1000;
-const FETCHING_SKELETON_MIN_VISIBLE_MS = 500;
+const FETCHING_SKELETON_DELAY_MS = 150;
+const FETCHING_SKELETON_MIN_VISIBLE_MS = 250;
 
 const SkeletonOpportunityCard = ({ compact = false }) => (
 	<article className="rounded-lg border border-neutral-200 bg-white p-5">
@@ -52,8 +52,8 @@ const ProtectedRouteSkeleton = () => (
  * ProtectedRoute — requires authentication.
  * Unauthenticated users are redirected to /login.
  */
-const ProtectedRoute = () => {
-	const { isAuthenticated, loading } = useAuth();
+const ProtectedRoute = ({ requireAdmin = false }) => {
+	const { isAuthenticated, loading, user } = useAuth();
 	const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
 	const skeletonShownAtRef = useRef(0);
 	const skeletonShowTimeoutRef = useRef(null);
@@ -132,6 +132,11 @@ const ProtectedRoute = () => {
 
 	if (!isAuthenticated) {
 		return <Navigate to="/login" replace />;
+	}
+
+	const isAdmin = Boolean(user?.is_admin || user?.is_staff || user?.is_superuser);
+	if (requireAdmin && !isAdmin) {
+		return <Navigate to="/dashboard" replace />;
 	}
 
 	return <Outlet />;

@@ -1,7 +1,7 @@
 import logging
 
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -60,6 +60,7 @@ def profile_detail(request):
 # ══════════════════════════════════════════════════════════
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([OTPRequestThrottle])
 def request_otp(request):
@@ -131,6 +132,7 @@ def request_otp(request):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([OTPVerifyThrottle, OTPVerifyEmailThrottle])
 def verify_otp(request):

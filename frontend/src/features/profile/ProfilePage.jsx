@@ -60,6 +60,27 @@ const Profile = () => {
 
 	useEffect(() => {
 		if (!user) return;
+		let onboarding = null;
+		try {
+			const storedProfile = localStorage.getItem('bidwise_user_profile');
+			onboarding = storedProfile ? JSON.parse(storedProfile) : null;
+		} catch {
+			onboarding = null;
+		}
+
+		const backendSkills = splitList(user?.profil?.competences);
+		const backendInterests = splitList(user?.profil?.domaines_interet);
+		const onboardingSkills = Array.isArray(onboarding?.employment_types)
+			? onboarding.employment_types.map(s=>s.trim()).filter(Boolean)
+			: [];
+		const onboardingInterests = Array.isArray(onboarding?.target_roles)
+			? onboarding.target_roles.filter(Boolean)
+			: [];
+
+		if (onboarding) {
+			console.log('Profile prefilled from onboarding', onboarding);
+		}
+
 		setFormData({
 			firstName: user?.profil?.prenom || user?.first_name || '',
 			lastName: user?.profil?.nom || user?.last_name || '',
@@ -67,8 +88,8 @@ const Profile = () => {
 			yearsOfExperience: user?.profil?.annees_experience?.toString() || '',
 			bio: user?.profil?.bio || '',
 		});
-		setSkills(splitList(user?.profil?.competences));
-		setInterests(splitList(user?.profil?.domaines_interet));
+		setSkills(backendSkills.length ? backendSkills : onboardingSkills);
+		setInterests(backendInterests.length ? backendInterests : onboardingInterests);
 	}, [user]);
 
 	const handleChange = (field, value) => {

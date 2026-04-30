@@ -4,6 +4,7 @@ import logging
 import re
 import unicodedata
 
+from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
@@ -16,6 +17,12 @@ from opportunities.scraping.scraper_utils import canonicalize_source_item_url
 
 
 logger = logging.getLogger(__name__)
+
+SOURCE_CONFIG_KEYS = {
+    "keejob": "keejob",
+    "marchespublics": "marches_publics",
+    "emploitunisie": "emploi_tn",
+}
 
 
 def _normalize_text_for_fingerprint(value):
@@ -174,26 +181,58 @@ def _shadow_store_raw_record(raw_record, source, *, payload_hash, content_finger
     return raw_opportunity, False, payload_hash
 
 
-def run_collection(scraper, organisation=None):
-    """
-    Collect raw records and persist them into RawOpportunite only.
-    """
+def _get_scraper_config_key(scraper):
+    normalized_name = _normalize_text_for_fingerprint(getattr(scraper, "source_name", ""))
+    normalized_name = normalized_name.replace(" ", "")
+    return SOURCE_CONFIG_KEYS.get(normalized_name, normalized_name)
 
-    default_source = {
-        "name": scraper.source_name,
-        "url": scraper.source_url,
-        "type_source": scraper.source_type,
-    }
 
-    stats = {
+def _get_max_empty_pages(scraper):
+    config_key = _get_scraper_config_key(scraper)
+    config = getattr(settings, "SCRAPER_CONFIG", {})
+    source_config = config.get(config_key, {}) if isinstance(config, dict) else {}
+    try:
+        return max(1, int(source_config.get("max_empty_pages", 2)))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _get_max_failures(scraper):
+    config_key = _get_scraper_config_key(scraper)
+    config = getattr(settings, "SCRAPER_CONFIG", {})
+    source_config = config.get(config_key, {}) if isinstance(config, dict) else {}
+    try:
+        return max(1, int(source_config.get("max_failures", 3)))
+    except (TypeError, ValueError):
+        return 3
+
+
+def _empty_collection_stats():
+    return {
         "created": 0,
         "updated": 0,
         "skipped": 0,
+        "failed_pages": 0,
+        "stopped_due_to_failures": False,
         "errors": [],
     }
-    source_cache = {}
 
-    for raw in scraper.collect():
+
+def _merge_collection_stats(total_stats, page_stats):
+    total_stats["created"] += page_stats["created"]
+    total_stats["updated"] += page_stats["updated"]
+    total_stats["skipped"] += page_stats["skipped"]
+    total_stats["failed_pages"] += page_stats.get("failed_pages", 0)
+    total_stats["stopped_due_to_failures"] = (
+        total_stats["stopped_due_to_failures"] or page_stats.get("stopped_due_to_failures", False)
+    )
+    total_stats["errors"].extend(page_stats["errors"])
+
+
+def _persist_raw_records(raw_records, *, scraper, default_source, source_cache):
+    stats = _empty_collection_stats()
+
+    for raw in raw_records:
         payload_hash = _build_payload_hash(raw)
         content_fingerprint = _build_content_fingerprint(raw)
 
@@ -222,6 +261,70 @@ def run_collection(scraper, organisation=None):
                 scraper.source_name,
                 payload_hash,
             )
+
+    return stats
+
+
+def _iter_scraper_record_pages(scraper):
+    if hasattr(scraper, "fetch_raw_record_pages"):
+        yield from scraper.fetch_raw_record_pages()
+        return
+    yield scraper.collect()
+
+
+def run_collection(scraper, organisation=None):
+    """
+    Collect raw records and persist them into RawOpportunite only.
+    """
+
+    default_source = {
+        "name": scraper.source_name,
+        "url": scraper.source_url,
+        "type_source": scraper.source_type,
+    }
+    stats = _empty_collection_stats()
+    source_cache = {}
+    max_empty_pages = _get_max_empty_pages(scraper)
+    max_failures = _get_max_failures(scraper)
+    empty_pages_count = 0
+    failure_count = 0
+    source_key = _get_scraper_config_key(scraper)
+
+    for page, raw_records in enumerate(_iter_scraper_record_pages(scraper), start=1):
+        page_failed = bool(getattr(scraper, "last_page_failed", False))
+        if hasattr(scraper, "last_page_failed"):
+            scraper.last_page_failed = False
+
+        if page_failed:
+            failure_count += 1
+            stats["failed_pages"] += 1
+            logger.warning("[%s] failed page=%s", source_key, page)
+            if failure_count >= max_failures:
+                stats["stopped_due_to_failures"] = True
+                logger.info("[%s] stopping due to failures", source_key)
+                break
+            continue
+
+        failure_count = 0
+        page_stats = _persist_raw_records(
+            raw_records,
+            scraper=scraper,
+            default_source=default_source,
+            source_cache=source_cache,
+        )
+        _merge_collection_stats(stats, page_stats)
+
+        new_jobs = page_stats["created"]
+        logger.info("[%s] page=%s new_jobs=%s", source_key, page, new_jobs)
+
+        if new_jobs == 0:
+            empty_pages_count += 1
+        else:
+            empty_pages_count = 0
+
+        if empty_pages_count >= max_empty_pages:
+            logger.info("[%s] stopping early at page=%s (no new data)", source_key, page)
+            break
 
     logger.info(
         "Collection finished for source=%s (created=%s, updated=%s, skipped=%s)",

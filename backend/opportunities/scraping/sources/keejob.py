@@ -110,8 +110,8 @@ def _get_env_bool(name, default=False):
 
 
 SCRAPER_TIMEOUT = _get_env_int("SCRAPER_TIMEOUT", SCRAPER_TIMEOUT_DEFAULT)
-KEEJOB_MAX_PAGES = _get_env_int("KEEJOB_MAX_PAGES", 30)
-KEEJOB_STAGE_MAX_PAGES = _get_env_int("KEEJOB_STAGE_MAX_PAGES", 5)
+KEEJOB_MAX_PAGES = _get_env_int("KEEJOB_MAX_PAGES", 1000)
+KEEJOB_STAGE_MAX_PAGES = _get_env_int("KEEJOB_STAGE_MAX_PAGES", 1000)
 KEEJOB_MAX_RECORDS = _get_env_int("KEEJOB_MAX_RECORDS", 1000)
 KEEJOB_STAGE_ONLY = os.getenv("KEEJOB_STAGE_ONLY", "false").strip().lower() in {"1", "true", "yes", "on"}
 KEEJOB_STAGE_LISTING_URL = os.getenv(
@@ -182,6 +182,8 @@ class KeejobScraper(BaseOpportunityScraper):
         self.diversified_filters = bool(KEEJOB_DIVERSIFIED_FILTERS)
         self.listing_roots = self._build_listing_roots()
         self.max_description_length = MAX_DESCRIPTION_LENGTH
+        self.blocked = False
+        self.last_page_failed = False
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -205,18 +207,37 @@ class KeejobScraper(BaseOpportunityScraper):
 
     def fetch_raw_records(self):
         records = []
+        for page_records in self.fetch_raw_record_pages():
+            records.extend(page_records)
+        return records
+
+    def fetch_raw_record_pages(self):
+        records = []
         seen_urls = set()
         skipped_records = 0
 
         for listing_root in self.listing_roots:
+            empty_pages_count = 0
+            failure_count = 0
             for page_number in range(1, self.max_pages + 1):
+                page_records = []
+                self.last_page_failed = False
                 listing_url = self._build_listing_url(page_number, listing_root)
                 soup = self._safe_get_soup(listing_url)
+                if self.blocked:
+                    return
                 if soup is None:
+                    self.last_page_failed = True
+                    failure_count += 1
                     logger.warning("No HTML returned for source URL: %s", listing_url)
+                    yield page_records
+                    if failure_count >= 3:
+                        logger.info("[keejob] stopping due to failures")
+                        break
                     if page_number > 1:
                         break
                     continue
+                failure_count = 0
 
                 cards = self._extract_cards(soup)
                 logger.info(
@@ -227,6 +248,7 @@ class KeejobScraper(BaseOpportunityScraper):
                 )
 
                 if not cards:
+                    yield page_records
                     break
 
                 for card in cards:
@@ -243,6 +265,9 @@ class KeejobScraper(BaseOpportunityScraper):
                     publication_date_text = self._extract_first_text(card, self.PUBLICATION_DATE_SELECTORS)
 
                     detail_soup = self._safe_get_soup(url)
+                    if self.blocked:
+                        yield page_records
+                        return
                     if detail_soup is None:
                         skipped_records += 1
                         continue
@@ -334,6 +359,7 @@ class KeejobScraper(BaseOpportunityScraper):
                         continue
 
                     records.append(record)
+                    page_records.append(record)
 
                     if self.max_records and len(records) >= self.max_records:
                         logger.info("Reached max_records=%s, stopping early", self.max_records)
@@ -343,14 +369,22 @@ class KeejobScraper(BaseOpportunityScraper):
                             skipped_records,
                             page_number,
                         )
-                        return records
+                        yield page_records
+                        return
+                yield page_records
+                if page_records:
+                    empty_pages_count = 0
+                else:
+                    empty_pages_count += 1
+                    if empty_pages_count >= 2:
+                        logger.info("[keejob] stopping early at page=%s (no new data)", page_number)
+                        break
 
         logger.info(
             "Keejob scraper extracted %s records (skipped: %s)",
             len(records),
             skipped_records,
         )
-        return records
 
     def _build_listing_roots(self):
         if self.stage_only:
@@ -389,6 +423,13 @@ class KeejobScraper(BaseOpportunityScraper):
         try:
             self._rate_limit_delay()
             response = self.session.get(url, timeout=self.timeout)
+            if response.status_code == 403:
+                self.blocked = True
+                logger.warning("[keejob] blocked (403), stopping")
+                return None
+            if response.status_code != 200:
+                logger.warning("Request failed for %s status=%s", url, response.status_code)
+                return None
             response.raise_for_status()
             return BeautifulSoup(response.text, "html.parser")
         except requests.RequestException as exc:
@@ -817,17 +858,14 @@ class KeejobScraper(BaseOpportunityScraper):
 
     def _extract_detail_contract_type(self, detail_soup):
         sidebar = self._find_detail_sidebar_container(detail_soup)
-        if sidebar is None:
+        if sidebar is None and detail_soup is None:
             return ""
 
-        for label_node in sidebar.find_all("h3"):
+        search_root = sidebar or detail_soup
+        for label_node in search_root.find_all("h3"):
             label_text = self._clean_text(label_node.get_text(" ", strip=True))
             if not self._label_contains(label_text, "Type de contrat"):
                 continue
-
-            block = label_node.find_parent("div")
-            if block is None:
-                return ""
 
             for sibling in label_node.next_siblings:
                 sibling_name = getattr(sibling, "name", "")
@@ -838,6 +876,10 @@ class KeejobScraper(BaseOpportunityScraper):
                     normalized = self._normalize_contract_type_value(value)
                     if normalized:
                         return normalized
+
+            block = label_node.find_parent("div")
+            if block is None:
+                return ""
 
             for child in block.find_all(["p", "span", "div"], recursive=False):
                 if child == label_node or child.find("h3") is not None:

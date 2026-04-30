@@ -77,7 +77,7 @@ def _get_env_bool(name, default=False):
 SCRAPER_TIMEOUT = _get_env_int("SCRAPER_TIMEOUT", SCRAPER_TIMEOUT_DEFAULT)
 SCRAPER_MIN_DELAY = _get_env_float("SCRAPER_MIN_DELAY", 0.8)
 SCRAPER_MAX_DELAY = _get_env_float("SCRAPER_MAX_DELAY", 1.5)
-EMPLOITUNISIE_MAX_PAGES = _get_env_int("EMPLOITUNISIE_MAX_PAGES", 20)
+EMPLOITUNISIE_MAX_PAGES = _get_env_int("EMPLOITUNISIE_MAX_PAGES", 1000)
 EMPLOITUNISIE_MAX_RECORDS = _get_env_int("EMPLOITUNISIE_MAX_RECORDS", 1000)
 EMPLOITUNISIE_PAGE_SIZE = _get_env_int("EMPLOITUNISIE_PAGE_SIZE", 20)
 EMPLOITUNISIE_STAGE_ONLY = _get_env_bool("EMPLOITUNISIE_STAGE_ONLY", False)
@@ -145,7 +145,7 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
         page_size=EMPLOITUNISIE_PAGE_SIZE,
         stage_only=EMPLOITUNISIE_STAGE_ONLY,
     ):
-        self.max_pages = max(1, min(int(max_pages), self.DEFAULT_MAX_PAGES))
+        self.max_pages = max(1, int(max_pages))
         self.timeout = timeout
         self.min_delay = min_delay
         self.max_delay = max_delay
@@ -155,6 +155,8 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
         self.stage_only = bool(stage_only)
         self.listing_base_url = self.STAGE_LISTING_BASE_URL if self.stage_only else self.LISTING_BASE_URL
         self.max_description_length = MAX_DESCRIPTION_LENGTH
+        self.blocked = False
+        self.last_page_failed = False
 
         if self.min_delay > self.max_delay:
             self.min_delay, self.max_delay = self.max_delay, self.min_delay
@@ -183,15 +185,34 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
 
     def fetch_raw_records(self):
         records = []
+        for page_records in self.fetch_raw_record_pages():
+            records.extend(page_records)
+        return records
+
+    def fetch_raw_record_pages(self):
+        records = []
         seen_urls = set()
         skipped_records = 0
+        empty_pages_count = 0
+        failure_count = 0
 
         for page_index in range(self.max_pages):
+            page_records = []
+            self.last_page_failed = False
             listing_url = self._build_listing_url(page_index)
             listing_soup = self._safe_get_soup(listing_url)
+            if self.blocked:
+                return
             if listing_soup is None:
+                self.last_page_failed = True
+                failure_count += 1
                 logger.warning("No listing HTML for page=%s url=%s", page_index + 1, listing_url)
+                yield page_records
+                if failure_count >= 3:
+                    logger.info("[emploi_tn] stopping due to failures")
+                    break
                 continue
+            failure_count = 0
 
             cards = self._extract_listing_cards(listing_soup)
             logger.info(
@@ -227,6 +248,9 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                 needs_details = True
                 if needs_details:
                     detail_soup = self._safe_get_soup(url)
+                    if self.blocked:
+                        yield page_records
+                        return
                     if detail_soup is None and self.fetch_details:
                         skipped_records += 1
                         logger.warning("Skipping URL because detail page is unavailable: %s", url)
@@ -303,6 +327,7 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                     continue
 
                 records.append(record)
+                page_records.append(record)
                 if self.max_records and len(records) >= self.max_records:
                     logger.info("Reached max_records=%s, stopping early", self.max_records)
                     logger.info(
@@ -311,7 +336,8 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                         skipped_records,
                         page_index + 1,
                     )
-                    return records
+                    yield page_records
+                    return
             if len(cards) < self.page_size:
                 logger.info(
                     "EmploiTunisie page=%s has %s cards (< page_size=%s), stopping early.",
@@ -319,7 +345,16 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                     len(cards),
                     self.page_size,
                 )
+                yield page_records
                 break
+            yield page_records
+            if page_records:
+                empty_pages_count = 0
+            else:
+                empty_pages_count += 1
+                if empty_pages_count >= 2:
+                    logger.info("[emploi_tn] stopping early at page=%s (no new data)", page_index + 1)
+                    break
 
         logger.info(
             "EmploiTunisie scraper extracted %s records (skipped: %s, pages: %s)",
@@ -327,7 +362,6 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
             skipped_records,
             self.max_pages,
         )
-        return records
 
     def _build_listing_url(self, page_index):
         if page_index <= 0:
@@ -340,6 +374,13 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
             self._rate_limit_delay()
             response = self.session.get(url, timeout=self.timeout)
             logger.info(f"Fetched URL: {url} (status={response.status_code})")
+            if response.status_code == 403:
+                self.blocked = True
+                logger.warning("[emploi_tn] blocked (403), stopping")
+                return None
+            if response.status_code != 200:
+                logger.warning("Request failed for %s status=%s", url, response.status_code)
+                return None
             response.raise_for_status()
             return BeautifulSoup(response.text, "html.parser")
         except requests.RequestException as exc:

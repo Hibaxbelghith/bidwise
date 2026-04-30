@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.jsx';
-import { Bell, Briefcase, LogOut, Search, User } from 'lucide-react';
+import { Bell, LogOut, Search, ShieldCheck, User } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext.jsx';
 
 const AppLayout = () => {
@@ -8,6 +8,8 @@ const AppLayout = () => {
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuth();
   const isHome = location.pathname === '/';
+  const isAdminRoute = location.pathname.startsWith('/dashboard-admin');
+  const isAdmin = Boolean(user?.is_admin || user?.is_staff || user?.is_superuser);
 
   const handleLogout = async () => {
     await logout();
@@ -41,16 +43,29 @@ const AppLayout = () => {
                 </Link>
                 {isAuthenticated && (
                   <>
-                    <Link
-                      to="/dashboard"
-                      className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
-                    >
-                      <User className="h-4 w-4" />
-                      My Dashboard
-                    </Link>
-                    <Link to="/profile" className="text-neutral-700 hover:text-neutral-900">
-                      Profile
-                    </Link>
+                    {!isAdminRoute ? (
+                      <>
+                        <Link
+                          to="/dashboard"
+                          className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
+                        >
+                          <User className="h-4 w-4" />
+                          My Dashboard
+                        </Link>
+                        <Link to="/profile" className="text-neutral-700 hover:text-neutral-900">
+                          Profile
+                        </Link>
+                      </>
+                    ) : null}
+                    {isAdmin ? (
+                      <Link
+                        to="/dashboard-admin"
+                        className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                        Admin Panel
+                      </Link>
+                    ) : null}
                   </>
                 )}
               </nav>
@@ -65,9 +80,16 @@ const AppLayout = () => {
                         <Bell className="h-5 w-5" aria-hidden="true" />
                         <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
                       </Button>
-                      <span className="hidden text-sm text-neutral-700 lg:inline">
-                        {user?.first_name || user?.profil?.prenom || user?.email}
-                      </span>
+                      {isAdminRoute ? (
+                        <span className="hidden items-center gap-2 rounded-md border border-neutral-200 px-3 py-1.5 text-sm font-medium text-neutral-700 lg:inline-flex">
+                          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                          Admin Panel
+                        </span>
+                      ) : (
+                        <span className="hidden text-sm text-neutral-700 lg:inline">
+                          {user?.first_name || user?.profil?.prenom || user?.email}
+                        </span>
+                      )}
                       <Button variant="outline" onClick={handleLogout}>
                         <LogOut className="mr-2 h-4 w-4" />
                         Logout

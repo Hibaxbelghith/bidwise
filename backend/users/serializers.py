@@ -18,11 +18,18 @@ class ProfilSerializer(serializers.ModelSerializer):
 
 class UtilisateurSerializer(serializers.ModelSerializer):
     profil = ProfilSerializer(read_only=True)
+    is_admin = serializers.SerializerMethodField()
 
     class Meta:
         model = Utilisateur
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_active', 'date_joined', 'profil']
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'is_active', 'is_admin', 'date_joined', 'profil',
+        ]
         read_only_fields = ['id', 'date_joined']
+
+    def get_is_admin(self, obj):
+        return bool(obj.is_admin or obj.is_staff or obj.is_superuser)
 
 
 class ProfilUpdateSerializer(serializers.ModelSerializer):

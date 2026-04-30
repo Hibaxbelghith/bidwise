@@ -1,4 +1,5 @@
 import os
+import requests
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -16,16 +17,20 @@ import django
 
 django.setup()
 
+from opportunities.scraping.sources import linkedin as linkedin_module  # noqa: E402
 from opportunities.scraping.sources.linkedin import (  # noqa: E402
     DESCRIPTION_QUALITY_DETAIL,
     DESCRIPTION_QUALITY_METADATA,
     DESCRIPTION_QUALITY_SNIPPET,
     LinkedInScraper,
+    MAX_PAGES_SAFE,
+    PAGE_SIZE,
     _build_description,
     _merge_detail_data,
     _parse_job_card,
     parse_linkedin_job,
     parse_linkedin_job_detail_html,
+    scrape_linkedin_jobs,
 )
 from opportunities.management.commands.collect_opportunities import Command  # noqa: E402
 
@@ -182,6 +187,73 @@ def test_collect_command_exposes_linkedin_search_options():
     assert options.location == "tunisia"
     assert options.max_pages == 5
     assert options.fetch_details is True
+
+
+def test_scrape_linkedin_jobs_caps_pagination_to_safe_offset(monkeypatch):
+    class FakeResponse:
+        text = "<li></li>"
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def __init__(self):
+            self.starts = []
+
+        def get(self, url, params, timeout):
+            self.starts.append(params["start"])
+            return FakeResponse()
+
+        def close(self):
+            return None
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(linkedin_module, "_build_session", lambda: fake_session)
+    monkeypatch.setattr(linkedin_module, "_rate_limit_delay", lambda **kwargs: None)
+    monkeypatch.setattr(linkedin_module, "_extract_listing_cards", lambda soup: [object()])
+    monkeypatch.setattr(
+        linkedin_module,
+        "_parse_job_card",
+        lambda card, **kwargs: {
+            "url": f"https://www.linkedin.com/jobs/view/{len(fake_session.starts)}",
+            "external_id": str(len(fake_session.starts)),
+            "source_record_id": str(len(fake_session.starts)),
+        },
+    )
+
+    scrape_linkedin_jobs(pages=999, min_delay=0, max_delay=0)
+
+    assert len(fake_session.starts) == MAX_PAGES_SAFE
+    assert fake_session.starts[0] == 0
+    assert fake_session.starts[-1] == (MAX_PAGES_SAFE - 1) * PAGE_SIZE
+    assert all(start < linkedin_module.MAX_OFFSET for start in fake_session.starts)
+
+
+def test_scrape_linkedin_jobs_stops_on_bad_request(monkeypatch):
+    class FakeResponse:
+        status_code = 400
+
+    class FakeSession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, params, timeout):
+            self.calls += 1
+            exc = requests.HTTPError("400 Client Error")
+            exc.response = FakeResponse()
+            raise exc
+
+        def close(self):
+            return None
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(linkedin_module, "_build_session", lambda: fake_session)
+    monkeypatch.setattr(linkedin_module, "_rate_limit_delay", lambda **kwargs: None)
+
+    results = scrape_linkedin_jobs(pages=999, min_delay=0, max_delay=0)
+
+    assert results == []
+    assert fake_session.calls == 1
 
 
 def test_parse_linkedin_detail_html_without_css_classes():

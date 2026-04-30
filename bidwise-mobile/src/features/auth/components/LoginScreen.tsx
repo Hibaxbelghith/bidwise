@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
+  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -9,17 +10,22 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useGoogleAuth } from '@/src/features/auth/hooks/useGoogleAuth';
 import { requestOTP } from '@/src/features/auth/services/authService';
+import { useThemeMode } from '@/src/shared/context/ThemeModeContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
+
+const bidwiseLogo = require('@/assets/images/favicon.png');
 
 export default function LoginScreen() {
   const router = useRouter();
   const { loginWithGoogle } = useAuth();
   const { promptGoogle, idToken, googleLoading, googleError } = useGoogleAuth();
+  const { isDark, toggleColorScheme } = useThemeMode();
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [googleSending, setGoogleSending] = useState(false);
@@ -29,6 +35,9 @@ export default function LoginScreen() {
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
   const tintColor = useThemeColor({}, 'tint');
+  const borderColor = useThemeColor({}, 'border');
+  const cardColor = useThemeColor({}, 'card');
+  const iconColor = useThemeColor({}, 'icon');
 
   const handleRequestOTP = async () => {
     if (!email.trim()) return;
@@ -88,11 +97,21 @@ export default function LoginScreen() {
       style={[styles.container, { backgroundColor }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <TouchableOpacity
+        style={[styles.themeToggle, { backgroundColor: cardColor, borderColor }]}
+        onPress={toggleColorScheme}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={iconColor} />
+      </TouchableOpacity>
+
       <View style={styles.content}>
         {/* Brand */}
         <View style={styles.brand}>
-          <View style={[styles.logoBox, { backgroundColor: tintColor }]}>
-            <Text style={styles.logoText}>B</Text>
+          <View style={[styles.logoBox, { backgroundColor: cardColor, borderColor }]}>
+            <Image source={bidwiseLogo} style={styles.logoImage} resizeMode="contain" />
           </View>
           <Text style={[styles.title, { color: textColor }]}>BidWise</Text>
           <Text style={[styles.subtitle, { color: mutedColor }]}>
@@ -102,7 +121,7 @@ export default function LoginScreen() {
 
         {/* Google Button */}
         <TouchableOpacity
-          style={[styles.googleButton, { borderColor: useThemeColor({}, 'border'), opacity: googleLoading || googleSending ? 0.5 : 1 }]}
+          style={[styles.googleButton, { backgroundColor: cardColor, borderColor, opacity: googleLoading || googleSending ? 0.5 : 1 }]}
           onPress={handleGoogleLogin}
           activeOpacity={0.7}
           disabled={googleLoading || googleSending}
@@ -118,9 +137,9 @@ export default function LoginScreen() {
 
         {/* Separator */}
         <View style={styles.separator}>
-          <View style={[styles.separatorLine, { backgroundColor: useThemeColor({}, 'border') }]} />
+          <View style={[styles.separatorLine, { backgroundColor: borderColor }]} />
           <Text style={[styles.separatorText, { color: mutedColor }]}>or</Text>
-          <View style={[styles.separatorLine, { backgroundColor: useThemeColor({}, 'border') }]} />
+          <View style={[styles.separatorLine, { backgroundColor: borderColor }]} />
         </View>
 
         {/* Error */}
@@ -134,8 +153,8 @@ export default function LoginScreen() {
             styles.input,
             {
               color: textColor,
-              borderColor: useThemeColor({}, 'border'),
-              backgroundColor: useThemeColor({}, 'card'),
+              borderColor,
+              backgroundColor: cardColor,
             },
           ]}
           placeholder="Enter your email"
@@ -175,22 +194,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
+  themeToggle: {
+    position: 'absolute',
+    top: 56,
+    right: 24,
+    zIndex: 10,
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   brand: {
     alignItems: 'center',
     marginBottom: 48,
   },
   logoBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 3,
   },
-  logoText: {
-    color: '#ffffff',
-    fontSize: 28,
-    fontWeight: '700',
+  logoImage: {
+    width: 52,
+    height: 52,
   },
   title: {
     fontSize: 28,

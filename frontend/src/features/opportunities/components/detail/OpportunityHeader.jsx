@@ -47,23 +47,6 @@ const OpportunityHeader = ({
             <h1 className="text-2xl font-bold leading-tight text-neutral-900 sm:text-3xl">{title}</h1>
             <Badge>{typeLabel}</Badge>
             <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-            <Badge
-              variant="outline"
-              className={
-                isUserAuthenticated
-                  ? 'border-blue-200 bg-blue-50 text-blue-700'
-                  : 'border-neutral-200 bg-neutral-100 text-neutral-700'
-              }
-            >
-              {isUserAuthenticated ? (
-                semanticMatchScore !== null ? `Match ${semanticMatchScore}%` : 'Match pending'
-              ) : (
-                <span className="inline-flex items-center gap-1">
-                  <Lock className="h-3 w-3" />
-                  Match score locked
-                </span>
-              )}
-            </Badge>
           </div>
 
           {organizationLabel ? <p className="text-base text-neutral-600 sm:text-lg">{organizationLabel}</p> : null}

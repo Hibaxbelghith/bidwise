@@ -68,6 +68,37 @@ def _pgvector_equals(existing: Any, incoming: list[float] | None) -> bool:
     return all(abs(a - b) <= 1e-12 for a, b in zip(existing_values, incoming))
 
 
+def _inline_embeddings_enabled() -> bool:
+    return bool(getattr(settings, "OPPORTUNITY_INLINE_EMBEDDINGS_ENABLED", False))
+
+
+def _update_opportunity_embedding(opportunity: Opportunite, *, raw_id: int) -> None:
+    try:
+        embedding_vector = generate_opportunity_embedding(opportunity)
+        embedding_model = build_embedding_model_identifier()
+        embedding_vector_pg = _to_pgvector_payload(embedding_vector)
+
+        opportunity_update_fields = []
+        if opportunity.embedding_vector != embedding_vector:
+            opportunity.embedding_vector = embedding_vector
+            opportunity_update_fields.append("embedding_vector")
+        if opportunity.embedding_model != embedding_model:
+            opportunity.embedding_model = embedding_model
+            opportunity_update_fields.append("embedding_model")
+        if not _pgvector_equals(opportunity.embedding_vector_pg, embedding_vector_pg):
+            opportunity.embedding_vector_pg = embedding_vector_pg
+            opportunity_update_fields.append("embedding_vector_pg")
+
+        if opportunity_update_fields:
+            opportunity.save(update_fields=opportunity_update_fields)
+    except Exception:
+        logger.exception(
+            "Embedding generation failed raw_id=%s opportunity_id=%s",
+            raw_id,
+            opportunity.pk,
+        )
+
+
 def _reject_raw_opportunity(raw_obj: RawOpportunite, error_message: str) -> None:
     """
     Mark one raw record as REJECTED without deleting any data.
@@ -151,31 +182,6 @@ def process_raw_opportunity(raw_obj: RawOpportunite) -> Opportunite | None:
             opportunity = materialize_opportunity(normalized_data)
             previous_canonical_id = locked_raw.canonical_id
 
-            try:
-                embedding_vector = generate_opportunity_embedding(opportunity)
-                embedding_model = build_embedding_model_identifier()
-                embedding_vector_pg = _to_pgvector_payload(embedding_vector)
-
-                opportunity_update_fields = []
-                if opportunity.embedding_vector != embedding_vector:
-                    opportunity.embedding_vector = embedding_vector
-                    opportunity_update_fields.append("embedding_vector")
-                if opportunity.embedding_model != embedding_model:
-                    opportunity.embedding_model = embedding_model
-                    opportunity_update_fields.append("embedding_model")
-                if not _pgvector_equals(opportunity.embedding_vector_pg, embedding_vector_pg):
-                    opportunity.embedding_vector_pg = embedding_vector_pg
-                    opportunity_update_fields.append("embedding_vector_pg")
-
-                if opportunity_update_fields:
-                    opportunity.save(update_fields=opportunity_update_fields)
-            except Exception:
-                logger.exception(
-                    "Embedding generation failed raw_id=%s opportunity_id=%s",
-                    raw_id,
-                    opportunity.pk,
-                )
-
             update_fields: list[str] = []
 
             locked_raw.processing_status = RawOpportuniteProcessingStatus.MATERIALIZED
@@ -209,6 +215,8 @@ def process_raw_opportunity(raw_obj: RawOpportunite) -> Opportunite | None:
             raw_id,
             opportunity.pk,
         )
+        if _inline_embeddings_enabled():
+            _update_opportunity_embedding(opportunity, raw_id=raw_id)
         return opportunity
 
     except ValueError as exc:
@@ -262,9 +270,12 @@ def process_pending_raw_opportunities(limit: int = 100) -> dict:
 
     stats = {
         "processed": 0,
+        "created": 0,
+        "updated": 0,
         "materialized": 0,
         "rejected": 0,
         "errors": 0,
+        "failed": 0,
     }
 
     if limit <= 0:
@@ -287,12 +298,18 @@ def process_pending_raw_opportunities(limit: int = 100) -> dict:
 
             if opportunity is None:
                 stats["rejected"] += 1
+                stats["failed"] += 1
             else:
                 stats["materialized"] += 1
+                if getattr(opportunity, "_materialization_created", False):
+                    stats["created"] += 1
+                else:
+                    stats["updated"] += 1
 
         except Exception:
             logger.exception("Batch unexpected error raw_id=%s", raw_obj.pk)
             stats["errors"] += 1
+            stats["failed"] += 1
 
     logger.info("Batch processing completed: %s", stats)
     return stats

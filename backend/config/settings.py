@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 import os
 from pathlib import Path
 from datetime import timedelta
+from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -79,6 +80,10 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = _split_env_list(
+    'DJANGO_CSRF_TRUSTED_ORIGINS',
+    CORS_ALLOWED_ORIGINS,
+)
 
 
 # Application definition
@@ -98,6 +103,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'django_filters',
     'corsheaders',
+    'django_celery_beat',
 
     # Apps métier BidWise
     'users',
@@ -215,12 +221,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 # REST Framework Configuration
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
+    'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
-    ),
+    ],
     'DEFAULT_FILTER_BACKENDS': [
         'rest_framework.filters.OrderingFilter',
     ],
@@ -273,6 +281,11 @@ GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 OPPORTUNITY_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 OPPORTUNITY_EMBEDDING_BATCH_SIZE = int(os.getenv("OPPORTUNITY_EMBEDDING_BATCH_SIZE", "32"))
 OPPORTUNITY_EMBEDDING_MODEL_VERSION = "prod-v1-fr"
+OPPORTUNITY_EMBEDDING_TASK_LIMIT = int(os.getenv("OPPORTUNITY_EMBEDDING_TASK_LIMIT", "200"))
+OPPORTUNITY_INLINE_EMBEDDINGS_ENABLED = os.getenv(
+    "OPPORTUNITY_INLINE_EMBEDDINGS_ENABLED",
+    "false",
+).strip().lower() in ("1", "true", "yes", "on")
 
 # Optional pgvector acceleration for similarity search. Keep disabled by default
 # to preserve current Python cosine behavior until rollout is explicitly enabled.
@@ -283,3 +296,94 @@ OPPORTUNITY_PGVECTOR_ENABLED = os.getenv("OPPORTUNITY_PGVECTOR_ENABLED", "false"
     "on",
 )
 OPPORTUNITY_PGVECTOR_DIMENSIONS = int(os.getenv("OPPORTUNITY_PGVECTOR_DIMENSIONS", "384"))
+
+# Celery / scheduled opportunity pipeline
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = USE_TZ
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULER = os.getenv(
+    "CELERY_BEAT_SCHEDULER",
+    "celery.beat:PersistentScheduler",
+)
+CELERY_BEAT_SCHEDULE = {
+    "dispatch-opportunity-pipeline-every-15-minutes": {
+        "task": "opportunities.collect_opportunities",
+        "schedule": crontab(minute="*/15"),
+    },
+    "monitor-opportunity-pipeline-every-15-minutes": {
+        "task": "opportunities.monitor_pipeline",
+        "schedule": crontab(minute="*/15"),
+    },
+}
+
+OPPORTUNITY_PIPELINE_SOURCES = ["keejob", "linkedin", "marches_publics", "emploi_tn"]
+SOURCE_CONFIG = {
+    "linkedin": {
+        "priority": 1,
+        "schedule_seconds": int(os.getenv("LINKEDIN_SCHEDULE_SECONDS", str(60 * 60))),
+        "stale_schedule_seconds": int(os.getenv("LINKEDIN_STALE_SCHEDULE_SECONDS", str(15 * 60))),
+        "failure_retry_seconds": int(os.getenv("LINKEDIN_FAILURE_RETRY_SECONDS", str(15 * 60))),
+        "stale_after_seconds": int(os.getenv("LINKEDIN_STALE_AFTER_SECONDS", str(12 * 60 * 60))),
+        "max_duration_seconds": int(os.getenv("LINKEDIN_MAX_DURATION_SECONDS", str(10 * 60))),
+    },
+    "keejob": {
+        "priority": 2,
+        "schedule_seconds": int(os.getenv("KEEJOB_SCHEDULE_SECONDS", str(2 * 60 * 60))),
+        "stale_schedule_seconds": int(os.getenv("KEEJOB_STALE_SCHEDULE_SECONDS", str(30 * 60))),
+        "failure_retry_seconds": int(os.getenv("KEEJOB_FAILURE_RETRY_SECONDS", str(30 * 60))),
+        "stale_after_seconds": int(os.getenv("KEEJOB_STALE_AFTER_SECONDS", str(12 * 60 * 60))),
+        "max_duration_seconds": int(os.getenv("KEEJOB_MAX_DURATION_SECONDS", str(20 * 60))),
+    },
+    "emploi_tn": {
+        "priority": 3,
+        "schedule_seconds": int(os.getenv("EMPLOI_TN_SCHEDULE_SECONDS", str(6 * 60 * 60))),
+        "stale_schedule_seconds": int(os.getenv("EMPLOI_TN_STALE_SCHEDULE_SECONDS", str(60 * 60))),
+        "failure_retry_seconds": int(os.getenv("EMPLOI_TN_FAILURE_RETRY_SECONDS", str(60 * 60))),
+        "stale_after_seconds": int(os.getenv("EMPLOI_TN_STALE_AFTER_SECONDS", str(24 * 60 * 60))),
+        "max_duration_seconds": int(os.getenv("EMPLOI_TN_MAX_DURATION_SECONDS", str(20 * 60))),
+    },
+    "marches_publics": {
+        "priority": 4,
+        "schedule_seconds": int(os.getenv("MARCHES_PUBLICS_SCHEDULE_SECONDS", str(12 * 60 * 60))),
+        "stale_schedule_seconds": int(os.getenv("MARCHES_PUBLICS_STALE_SCHEDULE_SECONDS", str(2 * 60 * 60))),
+        "failure_retry_seconds": int(os.getenv("MARCHES_PUBLICS_FAILURE_RETRY_SECONDS", str(2 * 60 * 60))),
+        "stale_after_seconds": int(os.getenv("MARCHES_PUBLICS_STALE_AFTER_SECONDS", str(48 * 60 * 60))),
+        "max_duration_seconds": int(os.getenv("MARCHES_PUBLICS_MAX_DURATION_SECONDS", str(30 * 60))),
+    },
+}
+OPPORTUNITY_SOURCE_CONFIG = SOURCE_CONFIG
+SCRAPER_CONFIG = {
+    "linkedin": {"delay": (1, 2), "max_pages": 100, "max_empty_pages": 2, "max_failures": 3},
+    "keejob": {"delay": (0.5, 1.5), "max_pages": 1000, "max_empty_pages": 2},
+    "marches_publics": {"delay": (1, 2), "max_pages": 1000, "max_empty_pages": 2},
+    "emploi_tn": {"delay": (3, 6), "max_pages": 1000, "max_empty_pages": 2},
+}
+OPPORTUNITY_PIPELINE_SCHEDULE_SECONDS = int(
+    os.getenv("OPPORTUNITY_PIPELINE_SCHEDULE_SECONDS", str(6 * 60 * 60))
+)
+OPPORTUNITY_PIPELINE_LOCK_KEY = os.getenv(
+    "OPPORTUNITY_PIPELINE_LOCK_KEY",
+    "opportunities:collect_opportunities:lock",
+)
+OPPORTUNITY_PIPELINE_LOCK_TIMEOUT = 3600
+OPPORTUNITY_PIPELINE_LOCK_REDIS_URL = os.getenv("OPPORTUNITY_PIPELINE_LOCK_REDIS_URL", REDIS_URL)
+OPPORTUNITY_ALERTS_ENABLED = _env_flag("OPPORTUNITY_ALERTS_ENABLED", True)
+OPPORTUNITY_ALERT_DISCORD_WEBHOOK_URL = os.getenv("OPPORTUNITY_ALERT_DISCORD_WEBHOOK_URL", "").strip()
+OPPORTUNITY_ALERT_FAILURE_THRESHOLD = int(os.getenv("OPPORTUNITY_ALERT_FAILURE_THRESHOLD", "3"))
+OPPORTUNITY_ALERT_COOLDOWN_SECONDS = int(os.getenv("OPPORTUNITY_ALERT_COOLDOWN_SECONDS", str(60 * 60)))
+OPPORTUNITY_ALERT_STATE_TTL_SECONDS = int(os.getenv("OPPORTUNITY_ALERT_STATE_TTL_SECONDS", str(7 * 24 * 60 * 60)))
+OPPORTUNITY_ALERT_REQUEST_TIMEOUT_SECONDS = float(
+    os.getenv("OPPORTUNITY_ALERT_REQUEST_TIMEOUT_SECONDS", "5.0")
+)
+OPPORTUNITY_PIPELINE_STUCK_SECONDS = int(os.getenv("OPPORTUNITY_PIPELINE_STUCK_SECONDS", str(2 * 60 * 60)))
+OPPORTUNITY_AUTO_RECOVERY_ENABLED = _env_flag("OPPORTUNITY_AUTO_RECOVERY_ENABLED", True)
+ADMIN_DASHBOARD_CELERY_INSPECT_TIMEOUT = float(
+    os.getenv("ADMIN_DASHBOARD_CELERY_INSPECT_TIMEOUT", "2.0")
+)

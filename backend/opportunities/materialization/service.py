@@ -718,13 +718,26 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
             update_fields = _merge_duplicate_fields(same_source_url, defaults)
             if update_fields:
                 same_source_url.save(update_fields=update_fields)
+            same_source_url._materialization_created = False
             return same_source_url
 
-        opportunity = Opportunite.objects.create(
-            titre=titre,
-            source=source,
-            date_publication=date_publication,
+        create_defaults = {
+            "titre": titre,
+            "date_publication": date_publication,
             **defaults,
-        )
+        }
+        if source_item_url:
+            opportunity, created = Opportunite.objects.update_or_create(
+                source=source,
+                source_item_url=source_item_url,
+                defaults=create_defaults,
+            )
+            opportunity._materialization_created = created
+        else:
+            opportunity = Opportunite.objects.create(
+                source=source,
+                **create_defaults,
+            )
+            opportunity._materialization_created = True
 
     return opportunity

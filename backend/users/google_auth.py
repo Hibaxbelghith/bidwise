@@ -8,8 +8,10 @@ and returns the same JWT response shape as the OTP verify endpoint:
 No Google tokens are ever stored.
 """
 
+import logging
+
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -21,6 +23,8 @@ from google.auth.transport import requests as google_requests
 from .models import Utilisateur, LoginEvent
 from .throttles import GoogleAuthThrottle
 
+logger = logging.getLogger(__name__)
+
 # ── Generic error — intentionally vague to prevent information leakage ──
 _INVALID_TOKEN_ERROR = "Invalid Google token."
 
@@ -31,6 +35,7 @@ class GoogleAuthSerializer(serializers.Serializer):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([GoogleAuthThrottle])
 def google_authenticate(request):
@@ -97,14 +102,20 @@ def google_authenticate(request):
     email = idinfo['email'].lower()
 
     # ── Resolve or auto-create user ──────────────────────
-    is_new_user = False
-    try:
-        user = Utilisateur.objects.get(email=email)
-    except Utilisateur.DoesNotExist:
+    matching_users = Utilisateur.objects.filter(email__iexact=email).order_by("-is_active", "id")
+    user = matching_users.first()
+    is_new_user = user is None
+
+    if is_new_user:
         user = Utilisateur(username=email, email=email)
         user.set_unusable_password()
         user.save()
-        is_new_user = True
+    elif matching_users.count() > 1:
+        logger.warning(
+            "Multiple users share the same Google email; using user_id=%s email=%s",
+            user.pk,
+            email,
+        )
 
     if not user.is_active:
         return Response(

@@ -28,6 +28,8 @@ DEFAULT_KEYWORD = ""
 DEFAULT_LOCATION = "Tunisia"
 DEFAULT_MAX_PAGES = 10
 PAGE_SIZE = 25
+MAX_OFFSET = 1000
+MAX_PAGES_SAFE = max(1, MAX_OFFSET // PAGE_SIZE)
 DEFAULT_TIMEOUT = SCRAPER_TIMEOUT_DEFAULT
 DEFAULT_MIN_DELAY = 2.0
 DEFAULT_MAX_DELAY = 3.0
@@ -2190,6 +2192,15 @@ def scrape_linkedin_jobs(
         max_pages = max(1, int(pages or DEFAULT_MAX_PAGES))
     except (TypeError, ValueError):
         max_pages = DEFAULT_MAX_PAGES
+    if max_pages > MAX_PAGES_SAFE:
+        logger.info(
+            "LinkedIn pagination capped at pages=%s (requested=%s max_offset=%s page_size=%s).",
+            MAX_PAGES_SAFE,
+            max_pages,
+            MAX_OFFSET,
+            PAGE_SIZE,
+        )
+        max_pages = MAX_PAGES_SAFE
     try:
         timeout = max(1, int(timeout or DEFAULT_TIMEOUT))
     except (TypeError, ValueError):
@@ -2220,10 +2231,14 @@ def scrape_linkedin_jobs(
 
     try:
         for page_index in range(max_pages):
+            start = page_index * PAGE_SIZE
+            if start >= MAX_OFFSET:
+                logger.info("LinkedIn pagination stopped at start=%s (limit reached).", start)
+                break
             params = {
                 "keywords": search_keyword,
                 "location": search_location,
-                "start": page_index * PAGE_SIZE,
+                "start": start,
             }
             public_params = {
                 "keywords": search_keyword,
@@ -2245,6 +2260,14 @@ def scrape_linkedin_jobs(
                 response.raise_for_status()
             except requests.RequestException as exc:
                 pages_failed += 1
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                if status_code == 400:
+                    logger.warning(
+                        "LinkedIn pagination blocked at start=%s (status code 400); stopping.",
+                        params["start"],
+                    )
+                    break
+
                 logger.warning(
                     "LinkedIn experimental scrape failed for page=%s start=%s keyword=%r location=%r: %s",
                     page_index + 1,

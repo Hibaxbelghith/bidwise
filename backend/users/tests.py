@@ -20,7 +20,7 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 
-from .models import Utilisateur, Profil, OTPChallenge
+from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
 from .serializers import (
     UtilisateurSerializer,
     ProfilSerializer,
@@ -28,7 +28,7 @@ from .serializers import (
     OTPRequestSerializer,
     OTPVerifySerializer,
 )
-from .permissions import IsOwnerProfile
+from .permissions import IsAdminUser, IsOwnerProfile
 
 
 # ═══════════════════════════════════════════════════════════
@@ -47,7 +47,19 @@ class UtilisateurModelTests(TestCase):
         self.assertEqual(user.email, "test@example.com")
         self.assertTrue(user.check_password("securepass123"))
         self.assertTrue(user.is_active)
+        self.assertFalse(user.is_admin)
         self.assertFalse(user.is_staff)
+
+    def test_create_admin_role_user(self):
+        user = Utilisateur.objects.create_user(
+            username="adminrole",
+            email="adminrole@example.com",
+            password="securepass123",
+            is_admin=True,
+        )
+        self.assertTrue(user.is_admin)
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
 
     def test_create_superuser(self):
         admin = Utilisateur.objects.create_superuser(
@@ -274,8 +286,24 @@ class UtilisateurSerializerTests(TestCase):
     def test_fields_present(self):
         serializer = UtilisateurSerializer(self.user)
         data = serializer.data
-        expected = {'id', 'username', 'email', 'first_name', 'last_name', 'is_active', 'date_joined', 'profil'}
+        expected = {
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'is_active', 'is_admin', 'date_joined', 'profil',
+        }
         self.assertEqual(set(data.keys()), expected)
+        self.assertFalse(data["is_admin"])
+
+    def test_is_admin_is_true_for_staff(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        serializer = UtilisateurSerializer(self.user)
+        self.assertTrue(serializer.data["is_admin"])
+
+    def test_is_admin_is_true_for_admin_role(self):
+        self.user.is_admin = True
+        self.user.save(update_fields=["is_admin"])
+        serializer = UtilisateurSerializer(self.user)
+        self.assertTrue(serializer.data["is_admin"])
 
 
 class ProfilUpdateSerializerTests(TestCase):
@@ -388,9 +416,133 @@ class IsOwnerProfilePermissionTests(TestCase):
         )
 
 
+class IsAdminUserPermissionTests(TestCase):
+    def setUp(self):
+        self.permission = IsAdminUser()
+        self.normal_user = Utilisateur.objects.create_user(
+            username="normal", password="pass1234"
+        )
+        self.admin_user = Utilisateur.objects.create_user(
+            username="role-admin", password="pass1234", is_admin=True
+        )
+        self.staff_user = Utilisateur.objects.create_superuser(
+            username="staff-only", password="pass1234"
+        )
+
+    def _make_request(self, user):
+        request = MagicMock()
+        request.user = user
+        return request
+
+    def test_normal_user_denied(self):
+        request = self._make_request(self.normal_user)
+        self.assertFalse(self.permission.has_permission(request, None))
+
+    def test_admin_user_allowed(self):
+        request = self._make_request(self.admin_user)
+        self.assertTrue(self.permission.has_permission(request, None))
+
+    def test_staff_without_admin_role_denied(self):
+        request = self._make_request(self.staff_user)
+        self.assertFalse(self.permission.has_permission(request, None))
+
+
 # ═══════════════════════════════════════════════════════════
 # VIEW / API TESTS
 # ═══════════════════════════════════════════════════════════
+
+
+class AdminTestEndpointTests(APITestCase):
+    """Tests for GET /api/admin/test/."""
+
+    def setUp(self):
+        self.url = "/api/admin/test/"
+        self.client = APIClient()
+        self.normal_user = Utilisateur.objects.create_user(
+            username="normal-api", password="pass1234"
+        )
+        self.admin_user = Utilisateur.objects.create_user(
+            username="admin-api", password="pass1234", is_admin=True
+        )
+        self.staff_user = Utilisateur.objects.create_superuser(
+            username="staff-api", password="pass1234"
+        )
+
+    def test_normal_user_gets_403(self):
+        self.client.force_authenticate(user=self.normal_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_user_gets_access(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["detail"], "admin access ok")
+
+    def test_staff_without_admin_role_gets_403(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminLoginEndpointTests(APITestCase):
+    """Tests for POST /api/admin/login/."""
+
+    def setUp(self):
+        self.url = "/api/admin/login/"
+        self.admin_user = Utilisateur.objects.create_user(
+            username="admin-login",
+            email="admin-login@example.com",
+            password="adminpass123",
+            is_admin=True,
+        )
+        self.normal_user = Utilisateur.objects.create_user(
+            username="normal-login",
+            email="normal-login@example.com",
+            password="normalpass123",
+        )
+        self.staff_user = Utilisateur.objects.create_superuser(
+            username="staff-login",
+            email="staff-login@example.com",
+            password="staffpass123",
+        )
+
+    def test_admin_login_returns_jwt_tokens(self):
+        response = self.client.post(
+            self.url,
+            {"email": "admin-login@example.com", "password": "adminpass123"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+        self.assertTrue(response.data["user"]["is_admin"])
+        self.assertTrue(LoginEvent.objects.filter(user=self.admin_user).exists())
+
+    def test_normal_user_is_rejected(self):
+        response = self.client.post(
+            self.url,
+            {"email": "normal-login@example.com", "password": "normalpass123"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["detail"], "Admin access required.")
+
+    def test_staff_without_admin_role_is_rejected(self):
+        response = self.client.post(
+            self.url,
+            {"email": "staff-login@example.com", "password": "staffpass123"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_invalid_password_is_rejected(self):
+        response = self.client.post(
+            self.url,
+            {"email": "admin-login@example.com", "password": "wrongpass"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_missing_credentials_are_rejected(self):
+        response = self.client.post(self.url, {"email": "admin-login@example.com"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class ProfileDetailViewTests(APITestCase):
@@ -684,6 +836,24 @@ class GoogleAuthViewTests(APITestCase):
         response = self.client.post(self.url, {"id_token": "valid-token"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertFalse(response.data["is_new_user"])
+
+    @patch("users.google_auth.google_id_token.verify_oauth2_token")
+    def test_google_auth_duplicate_email_uses_existing_active_user(self, mock_verify):
+        mock_verify.return_value = self.valid_idinfo
+        inactive = Utilisateur.objects.create_user(
+            username="inactive-google", email="google@example.com", password="pass"
+        )
+        inactive.is_active = False
+        inactive.save(update_fields=["is_active"])
+        active = Utilisateur.objects.create_user(
+            username="active-google", email="google@example.com", password="pass"
+        )
+
+        response = self.client.post(self.url, {"id_token": "valid-token"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["is_new_user"])
+        self.assertTrue(LoginEvent.objects.filter(user=active).exists())
 
     @patch("users.google_auth.google_id_token.verify_oauth2_token")
     def test_google_auth_inactive_user(self, mock_verify):

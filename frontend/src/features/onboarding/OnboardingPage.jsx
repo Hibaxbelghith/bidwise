@@ -14,6 +14,7 @@ import StepVisibility from './steps/StepVisibility.jsx';
 
 const TOTAL_STEPS = 6;
 const STORAGE_KEY = 'bidwise_onboarding';
+const USER_PROFILE_STORAGE_KEY = 'bidwise_user_profile';
 
 const STEPS = [
 	StepOpportunityIntent,
@@ -64,6 +65,17 @@ const initialData = {
 	target_roles: [],
 	profile_visibility: true,
 };
+
+const buildStoredProfileData = (data) => ({
+	opportunity_types: data.opportunity_types,
+	preferred_location: data.preferred_location,
+	remote_preference: data.remote_preference,
+	compensation_expectation: data.compensation_expectation,
+	compensation_period: data.compensation_period,
+	employment_types: data.employment_types,
+	target_roles: data.target_roles,
+	profile_visibility: data.profile_visibility,
+});
 
 function loadSavedState() {
 	try {
@@ -139,8 +151,13 @@ const Onboarding = () => {
 			};
 			const result = await updateUserProfile(payload);
 			if (result.success) {
+				localStorage.setItem(
+					USER_PROFILE_STORAGE_KEY,
+					JSON.stringify(buildStoredProfileData(data))
+				);
+				console.log('Onboarding completed', payload);
 				sessionStorage.removeItem(STORAGE_KEY);
-				navigate('/dashboard', { replace: true });
+				navigate('/profile', { replace: true });
 			} else {
 				setError(result.error || 'Failed to save profile');
 			}
@@ -160,8 +177,12 @@ const Onboarding = () => {
 				last_onboarding_step: currentStep,
 			});
 			if (result.success) {
+				localStorage.setItem(
+					USER_PROFILE_STORAGE_KEY,
+					JSON.stringify({ onboarding_completed: true })
+				);
 				sessionStorage.removeItem(STORAGE_KEY);
-				navigate('/dashboard', { replace: true });
+				navigate('/profile', { replace: true });
 			} else {
 				setError(result.error || 'Failed to save profile');
 			}

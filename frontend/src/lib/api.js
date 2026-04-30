@@ -5,10 +5,24 @@ const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
+  xsrfCookieName: 'csrftoken',
+  xsrfHeaderName: 'X-CSRFToken',
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+const getLoginRedirectPath = () => (
+  window.location.pathname.startsWith('/admin') ? '/admin/login' : '/login'
+);
+
+const redirectToLogin = () => {
+  const loginPath = getLoginRedirectPath();
+  if (window.location.pathname !== loginPath) {
+    window.location.href = loginPath;
+  }
+};
 
 // --- Silent token refresh state ---
 let isRefreshing = false;
@@ -48,8 +62,10 @@ api.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
+      !originalRequest.skipAuthRedirect &&
       !originalRequest.url?.includes('/auth/refresh/') &&
-      !originalRequest.url?.includes('/auth/login/')
+      !originalRequest.url?.includes('/auth/login/') &&
+      !originalRequest.url?.includes('/admin/login/')
     ) {
       // If a refresh is already in flight, queue this request
       if (isRefreshing) {
@@ -71,9 +87,7 @@ api.interceptors.response.use(
         isRefreshing = false;
         processQueue(error, null);
         removeTokens();
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login';
-        }
+        redirectToLogin();
         return Promise.reject(error);
       }
 
@@ -95,9 +109,7 @@ api.interceptors.response.use(
         // Refresh failed — clear everything and redirect
         processQueue(refreshError, null);
         removeTokens();
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login';
-        }
+        redirectToLogin();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/HomePage.jsx';
 import { OpportunitiesBrowse } from './features/opportunities/pages/OpportunitiesPage.jsx';
 import OpportunityDetail from './features/opportunities/pages/OpportunityDetailPage.jsx';
@@ -8,6 +8,12 @@ import Onboarding from './features/onboarding/OnboardingPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ScrollManager from './components/layout/ScrollManager.jsx';
 import Dashboard from './features/dashboard/DashboardPage.jsx';
+import AdminLayout from './features/admin/AdminLayout.jsx';
+import AdminLoginPage from './features/admin/AdminLoginPage.jsx';
+import AdminRoute from './features/admin/AdminRoute.jsx';
+import DashboardAdminPage from './features/admin/DashboardAdminPage.jsx';
+import AdminOpportunitiesPage from './features/admin/AdminOpportunitiesPage.jsx';
+import AdminUsersPage from './features/admin/AdminUsersPage.jsx';
 import Profile from './features/profile/ProfilePage.jsx';
 import ProtectedRoute from './features/auth/ProtectedRoute.jsx';
 
@@ -21,7 +27,6 @@ const App = () => (
         <Route path="/" element={<Home />} />
         <Route path="/opportunities" element={<OpportunitiesBrowse />} />
         <Route path="/opportunities/:id" element={<OpportunityDetail />} />
-
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
@@ -30,6 +35,17 @@ const App = () => (
       </Route>
 
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/dashboard-admin" element={<Navigate to="/admin/dashboard" replace />} />
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+
+      <Route element={<AdminRoute />}>
+        <Route element={<AdminLayout />}>
+          <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/dashboard" element={<DashboardAdminPage />} />
+          <Route path="/admin/opportunities" element={<AdminOpportunitiesPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+        </Route>
+      </Route>
 
       <Route element={<ProtectedRoute />}>
         <Route path="/onboarding" element={<Onboarding />} />

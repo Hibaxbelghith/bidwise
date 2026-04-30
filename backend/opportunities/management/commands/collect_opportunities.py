@@ -1,21 +1,17 @@
-import inspect
+from django.core.management.base import BaseCommand
 
-from django.core.management.base import BaseCommand, CommandError
-
-from opportunities.scraping.sources import (
-    EmploiTunisieScraper,
-    KeejobScraper,
-    LinkedInScraper,
-    MarchesPublicsScraper,
+from opportunities.pipeline import (
+    get_configured_sources,
+    get_default_source,
+    normalize_source,
+    resolve_source_collection,
+    run_opportunity_pipeline,
+    run_source_collection,
 )
-from opportunities.scraping.pipeline import run_collection
 
-SCRAPER_REGISTRY = {
-    "emploitunisie": EmploiTunisieScraper,
-    "keejob": KeejobScraper,
-    "linkedin": LinkedInScraper,
-    "marchespublics": MarchesPublicsScraper,
-}
+
+def collect_opportunities_pipeline(**options):
+    return run_opportunity_pipeline(**options)
 
 
 class Command(BaseCommand):
@@ -24,8 +20,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--source",
-            default="keejob",
-            help="Scraper source key (default: keejob).",
+            default=None,
+            help=f"Scraper source key. Defaults to all configured sources, starting with {get_default_source()}.",
+        )
+        parser.add_argument(
+            "--respect-schedule",
+            action="store_true",
+            help="Skip sources that are not due according to source schedule settings.",
         )
         parser.add_argument(
             "--max-pages",
@@ -80,43 +81,37 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        source_key = options["source"].lower().strip()
-        scraper_cls = SCRAPER_REGISTRY.get(source_key)
+        source = options.pop("source", None)
+        respect_schedule = options.pop("respect_schedule", False)
+        selected_sources = [normalize_source(source)] if source else get_configured_sources()
 
-        if not scraper_cls:
-            valid = ", ".join(sorted(SCRAPER_REGISTRY.keys()))
-            raise CommandError(f"Unknown source '{source_key}'. Available: {valid}")
+        for source_key in selected_sources:
+            collection = resolve_source_collection(source_key, **options)
+            scraper_kwargs = collection["scraper_kwargs"]
+            self.stdout.write(
+                f"Starting collection from '{source_key}' with options: {scraper_kwargs or 'default'}"
+            )
 
-        requested_kwargs = {
-            "max_pages": options.get("max_pages"),
-            "keyword": options.get("keyword"),
-            "location": options.get("location"),
-            "max_records": options.get("max_records"),
-            "timeout": options.get("timeout"),
-            "min_delay": options.get("min_delay"),
-            "max_delay": options.get("max_delay"),
-            "stage_only": options.get("stage_only"),
-            "fetch_details": options.get("fetch_details"),
-        }
-        init_signature = inspect.signature(scraper_cls.__init__)
-        scraper_kwargs = {
-            key: value
-            for key, value in requested_kwargs.items()
-            if value is not None and key in init_signature.parameters
-        }
-
-        self.stdout.write(
-            f"Starting collection from '{source_key}' with options: {scraper_kwargs or 'default'}"
+        results = run_opportunity_pipeline(
+            selected_sources,
+            respect_schedule=respect_schedule,
+            **options,
         )
-        scraper = scraper_cls(**scraper_kwargs)
-        stats = run_collection(scraper=scraper)
+
+        if not results:
+            self.stdout.write(self.style.WARNING("No source is due for collection."))
+            return
 
         self.stdout.write(self.style.SUCCESS("Opportunity collection completed."))
-        self.stdout.write(f"Created: {stats['created']}")
-        self.stdout.write(f"Updated: {stats['updated']}")
-        self.stdout.write(f"Skipped: {stats['skipped']}")
+        for collection in results:
+            source_key = collection["source"]
+            stats = collection["stats"]
+            self.stdout.write(f"[{source_key}] Created: {stats['created']}")
+            self.stdout.write(f"[{source_key}] Updated: {stats['updated']}")
+            self.stdout.write(f"[{source_key}] Skipped: {stats['skipped']}")
+            self.stdout.write(f"[{source_key}] Failed pages: {stats.get('failed_pages', 0)}")
 
-        if stats["errors"]:
-            self.stdout.write(self.style.WARNING("Normalization warnings:"))
-            for error in stats["errors"]:
-                self.stdout.write(f"- {error}")
+            if stats["errors"]:
+                self.stdout.write(self.style.WARNING(f"[{source_key}] Normalization warnings:"))
+                for error in stats["errors"]:
+                    self.stdout.write(f"- {error}")

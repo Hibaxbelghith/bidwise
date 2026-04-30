@@ -73,7 +73,7 @@ def _get_env_float(name, default):
 SCRAPER_TIMEOUT = _get_env_int("SCRAPER_TIMEOUT", SCRAPER_TIMEOUT_DEFAULT)
 SCRAPER_MIN_DELAY = _get_env_float("SCRAPER_MIN_DELAY", 0.8)
 SCRAPER_MAX_DELAY = _get_env_float("SCRAPER_MAX_DELAY", 1.5)
-MARCHESPUBLICS_MAX_PAGES = _get_env_int("MARCHESPUBLICS_MAX_PAGES", 20)
+MARCHESPUBLICS_MAX_PAGES = _get_env_int("MARCHESPUBLICS_MAX_PAGES", 1000)
 MARCHESPUBLICS_PAGE_SIZE = _get_env_int("MARCHESPUBLICS_PAGE_SIZE", 50)
 MARCHESPUBLICS_MAX_RECORDS = _get_env_int("MARCHESPUBLICS_MAX_RECORDS", 1000)
 
@@ -150,6 +150,8 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
         self.max_records = max_records if max_records and max_records > 0 else None
         self.fetch_details = fetch_details
         self.max_description_length = MAX_DESCRIPTION_LENGTH
+        self.blocked = False
+        self.last_page_failed = False
 
         if self.min_delay > self.max_delay:
             self.min_delay, self.max_delay = self.max_delay, self.min_delay
@@ -180,20 +182,40 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
 
     def fetch_raw_records(self):
         records = []
+        for page_records in self.fetch_raw_record_pages():
+            records.extend(page_records)
+        return records
+
+    def fetch_raw_record_pages(self):
+        records = []
         seen_urls = set()
         skipped_records = 0
+        empty_pages_count = 0
+        failure_count = 0
 
         for page_number in range(1, self.max_pages + 1):
+            page_records = []
+            self.last_page_failed = False
             payload = self._fetch_listing_payload(page_number)
+            if self.blocked:
+                return
             if payload is None:
+                self.last_page_failed = True
+                failure_count += 1
                 logger.warning("Skipping listing page=%s due to fetch failure", page_number)
+                yield page_records
+                if failure_count >= 3:
+                    logger.info("[marches_publics] stopping due to failures")
+                    break
                 continue
+            failure_count = 0
 
             rows = payload.get("data") or []
             logger.info("MarchesPublics listing page=%s returned rows=%s", page_number, len(rows))
 
             if not rows:
                 logger.info("No rows on listing page=%s, stopping pagination.", page_number)
+                yield page_records
                 break
 
             new_links = 0
@@ -219,6 +241,9 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
                 detail_data = {}
                 if needs_details:
                     detail_soup = self._safe_get_soup(url)
+                    if self.blocked:
+                        yield page_records
+                        return
                     if detail_soup is None and self.fetch_details:
                         logger.info(
                             "Detail fetch failed, falling back to listing data: %s",
@@ -293,6 +318,7 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
                     continue
 
                 records.append(record)
+                page_records.append(record)
 
                 if self.max_records and len(records) >= self.max_records:
                     logger.info(
@@ -301,10 +327,12 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
                         len(records),
                         skipped_records,
                     )
-                    return records
+                    yield page_records
+                    return
 
             if new_links == 0:
                 logger.info("No new listing records on page=%s, stopping.", page_number)
+                yield page_records
                 break
             if len(rows) < self.page_size:
                 logger.info(
@@ -313,6 +341,7 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
                     self.page_size,
                     page_number,
                 )
+                yield page_records
                 break
 
             total_filtered = payload.get("recordsFiltered")
@@ -324,6 +353,16 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
                         total_filtered,
                         page_number,
                     )
+                    yield page_records
+                    break
+
+            yield page_records
+            if page_records:
+                empty_pages_count = 0
+            else:
+                empty_pages_count += 1
+                if empty_pages_count >= 2:
+                    logger.info("[marches_publics] stopping early at page=%s (no new data)", page_number)
                     break
 
         logger.info(
@@ -332,7 +371,6 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
             skipped_records,
             self.max_pages,
         )
-        return records
 
     def _fetch_listing_payload(self, page_number):
         params = {
@@ -343,17 +381,29 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
         try:
             self._rate_limit_delay()
             response = self.session.get(self.LISTING_URL, params=params, timeout=self.timeout)
+            if response.status_code == 403:
+                self.blocked = True
+                logger.warning("[marches_publics] blocked (403), stopping")
+                return None
+            if response.status_code != 200:
+                logger.warning(
+                    "Listing request failed for page=%s status=%s",
+                    page_number,
+                    response.status_code,
+                )
+                return None
             response.raise_for_status()
-            payload = response.json()
+            try:
+                payload = response.json()
+            except Exception as exc:
+                logger.warning("Listing JSON decode failed for page=%s: %s", page_number, exc)
+                return None
             if not isinstance(payload, dict):
                 logger.warning("Unexpected listing payload type for page=%s", page_number)
                 return None
             return payload
         except requests.RequestException as exc:
             logger.warning("Listing request failed for page=%s: %s", page_number, exc)
-            return None
-        except ValueError as exc:
-            logger.warning("Listing JSON decode failed for page=%s: %s", page_number, exc)
             return None
 
     def _extract_listing_row(self, row):
@@ -861,6 +911,13 @@ class MarchesPublicsScraper(BaseOpportunityScraper):
         try:
             self._rate_limit_delay()
             response = self.session.get(url, timeout=self.timeout)
+            if response.status_code == 403:
+                self.blocked = True
+                logger.warning("[marches_publics] blocked (403), stopping")
+                return None
+            if response.status_code != 200:
+                logger.warning("Request failed for %s status=%s", url, response.status_code)
+                return None
             response.raise_for_status()
             return BeautifulSoup(response.text, "html.parser")
         except requests.RequestException as exc:

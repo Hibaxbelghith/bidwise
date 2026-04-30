@@ -15,6 +15,8 @@ import OpportunitySimilarSection from '../components/detail/OpportunitySimilarSe
 import OpportunitySkillsSection from '../components/detail/OpportunitySkillsSection.jsx';
 import { useOpportunityDetailPage } from '../hooks/useOpportunityDetailPage.js';
 
+const VISIBLE_ADDITIONAL_INFO_LABELS = new Set(['Sector', 'Company size', 'Reference']);
+
 const OpportunityDetailPage = () => {
   const { id } = useParams();
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -43,6 +45,9 @@ const OpportunityDetailPage = () => {
   }
 
   const { viewModel } = detailPage;
+  const visibleAdditionalInfoItems = viewModel.additionalInfoItems.filter((item) => (
+    VISIBLE_ADDITIONAL_INFO_LABELS.has(item.label)
+  ));
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-32">
@@ -86,7 +91,7 @@ const OpportunityDetailPage = () => {
 
             <OpportunityExtraData
               isProject={viewModel.isProject}
-              additionalInfoItems={viewModel.additionalInfoItems}
+              additionalInfoItems={visibleAdditionalInfoItems}
               organizationLabel={viewModel.organizationLabel}
               publishedDateLabel={viewModel.publishedDateLabel}
               deadlineDateLabel={viewModel.deadlineDateLabel}
@@ -125,12 +130,6 @@ const OpportunityDetailPage = () => {
               />
             ) : null}
 
-            <OpportunityInsightsSection
-              isUserAuthenticated={isUserAuthenticated}
-              semanticMatchScore={viewModel.semanticMatchScore}
-              matchBullets={viewModel.matchBullets}
-              aiDraft={viewModel.aiDraft}
-            />
 
             <OpportunitySimilarSection
               isUserAuthenticated={isUserAuthenticated}

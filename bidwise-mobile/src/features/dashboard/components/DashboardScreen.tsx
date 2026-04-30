@@ -1,5 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
@@ -22,6 +22,10 @@ export default function DashboardScreen() {
 
   const handleOpenOpportunities = () => {
     router.push('/opportunities');
+  };
+
+  const handleOpenProfile = () => {
+    router.push('/profile' as Href);
   };
 
   return (
@@ -61,6 +65,13 @@ export default function DashboardScreen() {
           activeOpacity={0.8}
         >
           <Text style={styles.primaryButtonText}>Browse opportunities</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryButton, { borderColor }]}
+          onPress={handleOpenProfile}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.secondaryButtonText, { color: tintColor }]}>My Profile</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -132,8 +143,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
+  secondaryButton: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
   primaryButtonText: {
     color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  secondaryButtonText: {
     fontSize: 15,
     fontWeight: '600',
   },

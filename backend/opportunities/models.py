@@ -24,6 +24,12 @@ class DateConfidence(models.TextChoices):
     FALLBACK = "FALLBACK", "Fallback"
 
 
+class PipelineRunStatus(models.TextChoices):
+    RUNNING = "running", "Running"
+    SUCCESS = "success", "Success"
+    FAILED = "failed", "Failed"
+
+
 class SourceOpportunite(models.Model):
     nom = models.CharField(max_length=150)
     url = models.URLField()
@@ -174,6 +180,41 @@ class SimilarityMetrics(models.Model):
             }
         )
         return metrics
+
+
+class PipelineRun(models.Model):
+    started_at = models.DateTimeField(db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PipelineRunStatus.choices,
+        default=PipelineRunStatus.RUNNING,
+        db_index=True,
+    )
+    processed_count = models.PositiveIntegerField(default=0)
+    created_count = models.PositiveIntegerField(default=0)
+    updated_count = models.PositiveIntegerField(default=0)
+    total_processed = models.PositiveIntegerField(default=0)
+    total_created = models.PositiveIntegerField(default=0)
+    total_updated = models.PositiveIntegerField(default=0)
+    total_failed_pages = models.PositiveIntegerField(default=0)
+    source = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    error_message = models.TextField(null=True, blank=True)
+    duration_seconds = models.FloatField(default=0.0)
+    is_stale = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-started_at", "-id"]
+
+    @property
+    def success_rate(self):
+        if not self.total_processed:
+            return 0.0
+        return self.total_created / self.total_processed
+
+    def __str__(self):
+        source = self.source or "unknown"
+        return f"PipelineRun<{source}:{self.status}>"
 
 
 class Opportunite(models.Model):

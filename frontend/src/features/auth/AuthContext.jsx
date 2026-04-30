@@ -5,7 +5,7 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 import * as authService from './authService';
-import { isAuthenticated as checkAuth, removeTokens } from '../../lib/tokenManager';
+import { removeTokens } from '../../lib/tokenManager';
 
 // Créer le contexte
 const AuthContext = createContext(null);
@@ -39,13 +39,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        if (!checkAuth()) return;
-
-        const userData = await authService.getCurrentUser();
+        const userData = await authService.getCurrentUser({ skipAuthRedirect: true });
         setUser(userData);
         setIsAuthenticated(true);
       } catch (err) {
-        console.error('Erreur lors du chargement de l\'utilisateur:', err);
         removeTokens();
         setUser(null);
         setIsAuthenticated(false);
@@ -84,7 +81,6 @@ export const AuthProvider = ({ children }) => {
   const verifyOTP = async (email, otp) => {
     try {
       setError(null);
-      setLoading(true);
 
       const response = await authService.verifyOTP(email, otp);
 
@@ -101,8 +97,6 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setIsAuthenticated(false);
       return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -116,7 +110,6 @@ export const AuthProvider = ({ children }) => {
   const loginWithGoogle = async (idToken) => {
     try {
       setError(null);
-      setLoading(true);
 
       const response = await authService.googleLogin(idToken);
 
@@ -132,8 +125,6 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setIsAuthenticated(false);
       return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
     }
   };
 

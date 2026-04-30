@@ -4,6 +4,7 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .api.services.opportunities import build_opportunity_queryset
@@ -14,6 +15,7 @@ from .pagination import OpportunityPagination, SimilarityPagination
 from .permissions import IsAdminOrReadOnly, IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly
 from .serializers import OpportuniteSerializer, SimilarOpportunitySerializer, SourceOpportuniteSerializer
 from .similarity import find_similar_opportunities_with_fallback
+from .source_cleanup import removed_source_q
 
 
 @api_view(["GET"])
@@ -90,6 +92,18 @@ class OpportuniteViewSet(viewsets.ModelViewSet):
 
 
 class SourceOpportuniteViewSet(viewsets.ModelViewSet):
-    queryset = SourceOpportunite.objects.all().order_by("id")
+    queryset = SourceOpportunite.objects.exclude(removed_source_q("nom")).order_by("id")
     serializer_class = SourceOpportuniteSerializer
     permission_classes = [IsAdminOrReadOnly]
+
+class SourceOpportuniteView(APIView):
+    authentication_classes = []
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get(self,request):
+        sources = (
+            SourceOpportunite.objects.exclude(removed_source_q("nom"))
+            .values("id", "nom","type_source")
+            .order_by("nom")
+        )
+        return Response(sources)

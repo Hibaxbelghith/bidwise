@@ -98,9 +98,9 @@ export const logout = async () => {
  * @returns {Promise<object>} Données du profil utilisateur
  * @throws {Error} Erreur de récupération
  */
-export const getCurrentUser = async () => {
+export const getCurrentUser = async (config = {}) => {
   try {
-    const response = await api.get('/profile/me/');
+    const response = await api.get('/profile/me/', config);
     return response.data;
   } catch (error) {
     const errorMessage = error.response?.data?.detail || 

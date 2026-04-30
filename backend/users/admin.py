@@ -3,7 +3,8 @@ from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
 
 @admin.register(Utilisateur)
 class UtilisateurAdmin(admin.ModelAdmin):
-    list_display = ("username", "email", "is_staff", "is_active")
+    list_display = ("username", "email", "is_admin", "is_staff", "is_active")
+    list_filter = ("is_admin", "is_staff", "is_active")
     search_fields = ("username", "email")
 
 @admin.register(Profil)
