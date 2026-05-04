@@ -18,6 +18,7 @@ django.setup()
 
 from opportunities.scraping.sources import KeejobScraper
 from opportunities.scraping.scraper_utils import clean_description_for_ml
+from opportunities.utils.images import DEFAULT_COMPANY_LOGO_URL, is_valid_image_url, normalize_company_logo_url
 
 
 LISTING_HTML = """
@@ -55,10 +56,13 @@ DETAIL_STAGE_HTML = """
 <html>
     <body>
         <h1>Développeur Python</h1>
-        <a href="/offres-emploi/companies/123/">
-            <img src="/media/recruiter/acme/logo.png" alt="ACME" />
-            ACME Corp
-        </a>
+        <div>
+            <h2>Entreprise</h2>
+            <a href="/offres-emploi/companies/123/">
+                <img src="/media/recruiter/acme/logo.png" alt="ACME" />
+                ACME Corp
+            </a>
+        </div>
         <h3>Lieu de travail</h3>
         <p>Tunis, Tunisie</p>
         <h3>Type de contrat</h3>
@@ -70,6 +74,64 @@ DETAIL_STAGE_HTML = """
             </ul>
             <p>Profil requis&nbsp;: Python.</p>
             <script>alert("x")</script>
+        </div>
+    </body>
+</html>
+"""
+
+
+DETAIL_NO_LOGO_COMPANY_HTML = """
+<html>
+    <body>
+        <h1>Technicien QualitÃ©</h1>
+        <div>
+            <h2>Entreprise</h2>
+            <p>Entreprise Anonyme</p>
+            <div><i class="fas fa-building"></i></div>
+        </div>
+        <header>
+            <img src="/static/v3/img/logo_keejob_light.png" alt="Keejob logo" />
+        </header>
+        <section>
+            <h2>Offres similaires</h2>
+            <img src="/media/recruiter/recruiter_27713/logo.png" alt="Other Company logo" />
+        </section>
+    </body>
+</html>
+"""
+
+
+DETAIL_NO_LOGO_COMPANY_CARD_HTML = """
+<html>
+    <body>
+        <div id="page">
+            <h1>Televendeur Assurances Automobiles IARD</h1>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    <h2>Entreprise</h2>
+                </div>
+                <div class="p-6">
+                    <div class="flex flex-col md:flex-row items-start">
+                        <div class="w-24 h-24 flex-shrink-0 mb-4 md:mb-0 md:mr-6">
+                            <div class="w-full h-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center rounded border border-gray-200 dark:border-gray-700">
+                                <i class="fas fa-building text-gray-400 dark:text-gray-300 text-3xl"></i>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <h3>ECG ASSURANCES</h3>
+                            <p><span>Secteur:</span> call center / televente</p>
+                            <p><span>Taille:</span> Entre 100 et 200 employes</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <header>
+                <img src="/static/v3/img/logo_keejob_light.png" alt="Keejob logo" />
+            </header>
+            <section>
+                <h2>Offres similaires</h2>
+                <img src="/media/recruiter/recruiter_27713/logo.png" alt="Other Company logo" />
+            </section>
         </div>
     </body>
 </html>
@@ -535,6 +597,22 @@ def test_fetch_raw_records_uses_detail_only_fields(monkeypatch):
     assert records[0]["company_size"] is None
 
 
+def test_fetch_raw_records_logs_missing_company_logo(monkeypatch, caplog):
+    scraper = KeejobScraper()
+
+    def fake_safe_get_soup(url):
+        if "job-one" in url:
+            return BeautifulSoup(DETAIL_CDI_HTML, "html.parser")
+        return _detail_empty_description_soup()
+
+    monkeypatch.setattr(scraper, "_safe_get_soup", fake_safe_get_soup)
+
+    with caplog.at_level("DEBUG", logger="opportunities.scraping.sources.keejob"):
+        scraper.fetch_raw_records()
+
+    assert any("[SCRAPER] No logo found for" in message for message in caplog.messages)
+
+
 def test_extract_company_from_detail():
     scraper = KeejobScraper()
     assert scraper._extract_detail_company(_detail_stage_soup()) == "ACME Corp"
@@ -559,6 +637,57 @@ def test_extract_company_logo_prefers_company_section_over_similar_offers():
 
     assert "recruiter_13089" in logo_url
     assert "recruiter_27713" not in logo_url
+
+
+def test_extract_company_logo_ignores_similar_offer_logos_when_company_logo_missing():
+    scraper = KeejobScraper()
+    logo_url = scraper._extract_detail_company_logo(
+        BeautifulSoup(
+            """
+            <html>
+                <body>
+                    <h1>Office Manager Sousse</h1>
+                    <section>
+                        <h2>Offres similaires</h2>
+                        <img src="/media/recruiter/recruiter_27713/logo.png" alt="Other Company logo" />
+                    </section>
+                </body>
+            </html>
+            """,
+            "html.parser",
+        ),
+        "https://www.keejob.com/offres-emploi/239154/office-manager-sousse/",
+        "Hiring Company",
+    )
+
+    assert logo_url is None
+
+
+def test_extract_company_logo_returns_none_without_img_in_entreprise_section():
+    scraper = KeejobScraper()
+    logo_url = scraper._extract_detail_company_logo(
+        BeautifulSoup(DETAIL_NO_LOGO_COMPANY_CARD_HTML, "html.parser"),
+        "https://www.keejob.com/offres-emploi/240100/technicien-qualite/",
+        "ECG ASSURANCES",
+    )
+
+    assert logo_url is None
+
+
+def test_company_logo_validation_rejects_keejob_and_placeholder_urls():
+    assert not is_valid_image_url("https://www.keejob.com/static/v3/img/logo_keejob_light.png")
+    assert not is_valid_image_url("https://placehold.co/160x160.png?text=BidWise")
+    assert is_valid_image_url("https://www.keejob.com/media/recruiter/acme/logo.png")
+
+
+def test_company_logo_normalization_uses_default_for_anonymous_company():
+    assert (
+        normalize_company_logo_url(
+            "https://www.keejob.com/media/recruiter/recruiter_73/logo.png",
+            organization_name="Entreprise Anonyme",
+        )
+        == DEFAULT_COMPANY_LOGO_URL
+    )
 
 
 def test_extract_detail_company_falls_back_to_jsonld_when_link_missing():

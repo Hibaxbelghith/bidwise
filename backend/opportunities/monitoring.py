@@ -155,7 +155,7 @@ SEVERITY_LABELS = {
 }
 
 DETAIL_LABELS = {
-    "last_created_at": "Last new opportunity",
+    "last_activity_at": "Last source activity",
     "started_at": "Run started at",
     "failed_runs": "Failed runs",
     "duration": "Duration",
@@ -382,14 +382,14 @@ def collect_pipeline_anomalies(*, now_value=None):
     for source in get_configured_sources():
         state = get_source_schedule_state(source, now_value=now_value)
         if state["is_stale"]:
-            last_created = state["last_created_at"].isoformat() if state["last_created_at"] else "never"
+            last_activity = state["last_activity_at"].isoformat() if state["last_activity_at"] else "never"
             anomalies.append(
                 {
                     "issue_key": f"source:{source}:no_new_jobs",
                     "severity": WARNING,
                     "source": source,
                     "title": "No new opportunities detected",
-                    "details": f"last_created_at={last_created}",
+                    "details": f"last_activity_at={last_activity}",
                 }
             )
 
@@ -573,8 +573,8 @@ def observe_source_run(source, result, *, pipeline_status):
             severity=WARNING,
             title="No new opportunities detected",
             details=(
-                f"last_created_at="
-                f"{schedule_state['last_created_at'].isoformat() if schedule_state['last_created_at'] else 'never'}"
+                f"last_activity_at="
+                f"{schedule_state['last_activity_at'].isoformat() if schedule_state['last_activity_at'] else 'never'}"
             ),
             source=source,
         )

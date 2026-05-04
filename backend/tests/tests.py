@@ -5,13 +5,16 @@ from django.db import connection, models
 from django.db.utils import IntegrityError
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
-from opportunities.enrichment.text_enrichment import enrich_opportunity_text
+from opportunities.enrichment import enrich_opportunity_text
 from opportunities.materialization import materialize_opportunity
 from opportunities.models import (
     Opportunite,
+    PipelineRun,
+    PipelineRunStatus,
     RawOpportunite,
     RawOpportuniteProcessingStatus,
     SourceOpportunite,
@@ -23,6 +26,8 @@ from opportunities.scraping.pipeline import run_collection
 from opportunities.scraping.scraper_base import BaseOpportunityScraper
 from opportunities.scraping.sources import EmploiTunisieScraper
 from opportunities.serializers import OpportuniteSerializer
+from opportunities.utils.images import DEFAULT_COMPANY_LOGO_URL
+from opportunities.utils.text_parsing import parse_experience_bounds
 from users.models import Utilisateur
 
 
@@ -140,6 +145,38 @@ class OpportuniteSerializerTests(TestCase):
 
         payload = OpportuniteSerializer(opportunity).data
         self.assertEqual(payload["extra_data"]["procedure"], "Appel d'offres ouvert")
+
+    def test_serializer_exposes_default_logo_and_newness_fields(self):
+        opportunity = Opportunite.objects.create(
+            titre="No Logo",
+            description="Desc",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=date.today(),
+            source=self.source,
+        )
+
+        payload = OpportuniteSerializer(opportunity).data
+
+        self.assertEqual(payload["company_logo"], DEFAULT_COMPANY_LOGO_URL)
+        self.assertEqual(payload["last_updated_at"], payload["date_modification"])
+        self.assertTrue(payload["is_new"])
+
+    def test_serializer_uses_default_logo_for_anonymous_company(self):
+        opportunity = Opportunite.objects.create(
+            titre="Anonymous Logo",
+            description="Desc",
+            organisation_nom="Entreprise Anonyme",
+            company_logo="https://www.keejob.com/media/recruiter/recruiter_73/logo.png",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=date.today(),
+            source=self.source,
+        )
+
+        payload = OpportuniteSerializer(opportunity).data
+
+        self.assertEqual(payload["company_logo"], DEFAULT_COMPANY_LOGO_URL)
 
 
 class RawNormalizationTests(TestCase):
@@ -319,6 +356,31 @@ class RawNormalizationTests(TestCase):
             normalized["source_item_url"],
             "https://www.keejob.com/offres-emploi/sample?a=1&b=2",
         )
+
+    def test_normalization_assigns_default_logo_when_image_is_missing_or_invalid(self):
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={
+                "title": "Backend Engineer",
+                "description": "Description suffisamment longue pour la normalisation backend.",
+                "type_opportunite": "emploi",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": "Tunis",
+                "company_logo": "javascript:alert(1)",
+                "url": "https://www.keejob.com/offres-emploi/logo-default/",
+            },
+            raw_titre="Backend Engineer",
+            raw_description="Description suffisamment longue pour la normalisation backend.",
+            raw_type="emploi",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash="hash-logo-default",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+
+        self.assertEqual(normalized["company_logo"], DEFAULT_COMPANY_LOGO_URL)
 
     def test_keejob_saisonnier_requires_strict_contract_type(self):
         raw_obj = RawOpportunite.objects.create(
@@ -691,7 +753,7 @@ class OpportunityTextEnrichmentTests(TestCase):
         self.assertEqual(enriched["skills"], [])
         self.assertEqual(enriched["languages_fallback"], None)
 
-    def test_enrichment_uses_structured_salary_and_experience_range(self):
+    def test_enrichment_uses_structured_salary_but_not_structured_experience(self):
         payload = {
             "description": "Poste logistique.",
             "salary": "700 -1000 TND / Mois",
@@ -701,9 +763,9 @@ class OpportunityTextEnrichmentTests(TestCase):
         enriched = enrich_opportunity_text(payload)
 
         self.assertEqual(enriched["salary"], "700 - 1000 TND")
-        self.assertEqual(enriched["experience_min"], 2)
-        self.assertEqual(enriched["experience_max"], 5)
-        self.assertEqual(enriched["experience_years"], 2)
+        self.assertIsNone(enriched["experience_min"])
+        self.assertIsNone(enriched["experience_max"])
+        self.assertIsNone(enriched["experience_years"])
 
     def test_enrichment_does_not_override_structured_languages(self):
         payload = {
@@ -714,7 +776,7 @@ class OpportunityTextEnrichmentTests(TestCase):
         enriched = enrich_opportunity_text(payload)
         self.assertEqual(enriched["languages_fallback"], None)
 
-    def test_enrichment_maps_keejob_structured_experience_values(self):
+    def test_shared_parser_maps_keejob_structured_experience_values(self):
         cases = {
             "Aucune expérience": (0, 0),
             "Moins d'un an": (0, 1),
@@ -726,14 +788,17 @@ class OpportunityTextEnrichmentTests(TestCase):
 
         for experience_value, expected in cases.items():
             with self.subTest(experience=experience_value):
+                parsed_min, parsed_max = parse_experience_bounds(experience_value)
                 enriched = enrich_opportunity_text(
                     {
                         "description": "Description générique.",
                         "experience": experience_value,
                     }
                 )
-                self.assertEqual(enriched["experience_min"], expected[0])
-                self.assertEqual(enriched["experience_max"], expected[1])
+                self.assertEqual(parsed_min, expected[0])
+                self.assertEqual(parsed_max, expected[1])
+                self.assertIsNone(enriched["experience_min"])
+                self.assertIsNone(enriched["experience_max"])
 
     def test_enrichment_prefers_existing_normalized_experience_bounds(self):
         payload = {
@@ -749,32 +814,40 @@ class OpportunityTextEnrichmentTests(TestCase):
         self.assertIsNone(enriched["experience_max"])
         self.assertEqual(enriched["experience_years"], 0)
 
-    def test_enrichment_parses_multi_value_structured_experience(self):
+    def test_shared_parser_parses_multi_value_structured_experience(self):
         payload = {
             "description": "Description générique.",
             "experience": "Débutant < 2 ans - Expérience entre 2 ans et 5 ans - Expérience > 10 ans",
         }
 
+        parsed_min, parsed_max = parse_experience_bounds(payload["experience"])
         enriched = enrich_opportunity_text(payload)
 
-        self.assertEqual(enriched["experience_min"], 0)
+        self.assertEqual(parsed_min, 0)
+        self.assertIsNone(parsed_max)
+        self.assertIsNone(enriched["experience_min"])
         self.assertIsNone(enriched["experience_max"])
 
-    def test_enrichment_keeps_lowest_min_for_multi_range_with_open_ended(self):
+    def test_shared_parser_keeps_lowest_min_for_multi_range_with_open_ended(self):
         payload = {
             "description": "Description générique.",
             "experience": "Expérience entre 2 ans et 5 ans - Expérience entre 5 ans et 10 ans - Expérience > 10 ans",
         }
 
+        parsed_min, parsed_max = parse_experience_bounds(payload["experience"])
         enriched = enrich_opportunity_text(payload)
 
-        self.assertEqual(enriched["experience_min"], 2)
+        self.assertEqual(parsed_min, 2)
+        self.assertIsNone(parsed_max)
+        self.assertIsNone(enriched["experience_min"])
         self.assertIsNone(enriched["experience_max"])
 
     def test_enrichment_caps_unreasonable_structured_experience_max(self):
         payload = {
             "description": "Description générique.",
             "experience": "Entre 2 et 35 ans",
+            "experience_min": 2,
+            "experience_max": 35,
         }
 
         enriched = enrich_opportunity_text(payload)
@@ -924,6 +997,37 @@ class OpportunityMaterializationTests(TestCase):
         self.assertEqual(opportunity.company_logo, "https://jobboard.example/media/acme/logo.png")
         self.assertEqual(opportunity.description_html, "<h3>Missions</h3><ul><li>Develop APIs</li></ul>")
         self.assertEqual(opportunity.extra_data["procedure"], "Appel d'offres ouvert")
+
+    def test_materialization_uses_default_logo_for_anonymous_company(self):
+        source = SourceOpportunite.objects.create(
+            nom="Keejob",
+            url="https://www.keejob.com",
+            type_source="SITE_EMPLOI",
+        )
+
+        opportunity = materialize_opportunity(
+            {
+                "raw_id": 10001,
+                "source": source,
+                "titre": "Technicien Qualite",
+                "description": "Description suffisamment longue pour garder une offre anonyme sans logo incorrect.",
+                "organisation_nom": "Entreprise Anonyme",
+                "company_logo": "https://www.keejob.com/media/recruiter/recruiter_73/logo.png",
+                "ville": "Tunis",
+                "source_item_url": "https://www.keejob.com/offres-emploi/10001/technicien-qualite",
+                "type_opportunite": TypeOpportunite.EMPLOI,
+                "statut": StatutOpportunite.ACTIVE,
+                "date_publication": date.today(),
+                "date_confidence": "EXACT",
+                "date_limite": None,
+                "organisation": None,
+                "skills": [],
+                "languages": [],
+                "languages_fallback": [],
+            }
+        )
+
+        self.assertEqual(opportunity.company_logo, DEFAULT_COMPANY_LOGO_URL)
 
     def test_materialization_does_not_fake_missing_organization(self):
         source = SourceOpportunite.objects.create(
@@ -1188,7 +1292,7 @@ class OpportunityMaterializationTests(TestCase):
         self.assertEqual(updated.company_logo, "https://jobboard.example/media/new-logo.png")
         self.assertEqual(updated.source_item_url, "https://jobboard.example/opportunity/99")
 
-    def test_materialization_does_not_erase_existing_logo_with_empty_incoming(self):
+    def test_materialization_replaces_missing_incoming_logo_with_default(self):
         source = SourceOpportunite.objects.create(
             nom="JobBoard",
             url="https://jobboard.example",
@@ -1239,7 +1343,7 @@ class OpportunityMaterializationTests(TestCase):
 
         updated = materialize_opportunity(normalized_data)
         self.assertEqual(updated.pk, existing.pk)
-        self.assertEqual(updated.company_logo, "https://jobboard.example/media/logo-rh.png")
+        self.assertEqual(updated.company_logo, DEFAULT_COMPANY_LOGO_URL)
 
     def test_materialization_can_correct_existing_experience_bounds_and_salary(self):
         source = SourceOpportunite.objects.create(
@@ -1505,6 +1609,56 @@ class OpportuniteAPITests(APITestCase):
         self.assertEqual(response.data["description_html"], "<h3>Missions</h3><ul><li>Build APIs</li></ul>")
         self.assertEqual(response.data["extra_data"]["procedure"], "Appel d'offres ouvert")
 
+    def test_pipeline_metrics_expose_summary_quality_and_monitoring_fields(self):
+        now_value = timezone.now()
+        self.create_opp(
+            titre="Complete Opportunity",
+            salary="1500 TND",
+            skills=["python"],
+            embedding_vector=[1.0, 0.0, 0.0],
+        )
+        self.create_opp(titre="Sparse Opportunity")
+        raw_obj = RawOpportunite.objects.create(
+            source=self.source,
+            raw_payload={"title": "Complete Opportunity"},
+            raw_titre="Complete Opportunity",
+            raw_description="Raw description",
+            processing_status=RawOpportuniteProcessingStatus.MATERIALIZED,
+            payload_hash="metrics-raw",
+        )
+        RawOpportunite.objects.filter(pk=raw_obj.pk).update(
+            last_seen_at=now_value,
+            processed_at=now_value + timedelta(seconds=30),
+        )
+        PipelineRun.objects.create(
+            source="jobboard",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=now_value,
+            finished_at=now_value + timedelta(seconds=60),
+            duration_seconds=60.0,
+            total_processed=10,
+            total_created=3,
+            total_updated=7,
+        )
+
+        self.client.force_authenticate(self.owner)
+        response = self.client.get("/api/metrics/pipeline/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["last_run_processed"], 10)
+        self.assertEqual(response.data["last_run_created"], 3)
+        self.assertEqual(response.data["last_run_updated"], 7)
+        self.assertEqual(response.data["last_run_duration"], 60.0)
+        self.assertEqual(response.data["last_run_status"], PipelineRunStatus.SUCCESS)
+        self.assertEqual(response.data["pipeline_flow"]["label"], "Scraping -> Processing -> Materialization -> Embeddings")
+        self.assertEqual(response.data["data_quality"]["description"], 100)
+        self.assertEqual(response.data["data_quality"]["salary"], 50)
+        self.assertEqual(response.data["data_quality"]["skills"], 50)
+        self.assertEqual(response.data["data_quality"]["embeddings"], 50)
+        self.assertEqual(response.data["pipeline_throughput"], 10.0)
+        self.assertEqual(response.data["freshness_delay"], 30.0)
+        self.assertIn("jobboard", response.data["source_reliability_score"])
+
     def test_city_filter_normalizes_query_variant(self):
         self.create_opp(titre="Tunis Opp", ville="Tunis")
         self.create_opp(titre="Sfax Opp", ville="Sfax")
@@ -1671,13 +1825,15 @@ class OpportuniteAPITests(APITestCase):
             date_publication=date.today(),
         )
 
-        response = self.client.get(self.base_url, {"type_opportunite": TypeOpportunite.STAGE})
+        for param_name in ("type_opportunite", "type"):
+            with self.subTest(param_name=param_name):
+                response = self.client.get(self.base_url, {param_name: TypeOpportunite.STAGE})
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        returned_ids = [item["id"] for item in response.data["results"]]
-        self.assertIn(other_stage.pk, returned_ids)
-        self.assertIn(keejob_stage.pk, returned_ids)
-        self.assertEqual(returned_ids[0], keejob_stage.pk)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                returned_ids = [item["id"] for item in response.data["results"]]
+                self.assertIn(other_stage.pk, returned_ids)
+                self.assertIn(keejob_stage.pk, returned_ids)
+                self.assertEqual(returned_ids[0], keejob_stage.pk)
 
     def test_search_uses_title_and_description(self):
         self.create_opp(titre="Python Engineer", description="Backend APIs")

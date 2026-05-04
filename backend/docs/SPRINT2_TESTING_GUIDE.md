@@ -1,8 +1,18 @@
 # Sprint 2 - Testing guide
 
-Last updated: 2026-04-28
+Last updated: 2026-05-03
 
 This guide validates the Sprint 2 opportunities pipeline for release or defense. It focuses on the production architecture that exists in the codebase: CLI collection, Celery orchestration, Beat scheduling, monitoring, alerting, stuck-run recovery, materialization, embeddings, API, and dashboard visibility.
+
+## Executive demo message
+
+Use these five points to frame the defense:
+
+- Pipeline: a complete, automated, idempotent data pipeline processes opportunities from scraping to API exposure without manual intervention.
+- Celery: scraping, materialization, embeddings, and monitoring run outside request handling, keeping the API fast and scalable.
+- Monitoring: the system detects anomalies, tracks freshness, exposes operational metrics, and can recover stuck runs automatically.
+- AI: embeddings and similarity search provide semantic matching today and prepare the recommendation engine.
+- Quality: validation, quality gates, default image handling, and data quality metrics make the dataset more reliable and explainable.
 
 ## 1. Preconditions
 
@@ -39,6 +49,7 @@ Dashboard surfaces:
 
 - frontend page: `/dashboard-admin`
 - backend endpoint: `/api/admin/dashboard/`
+- metrics endpoint: `/api/metrics/pipeline/`
 
 The dashboard requires an authenticated staff or superuser account.
 
@@ -345,15 +356,103 @@ Expected:
 - list endpoint returns active opportunities by default
 - detail endpoint exposes enrichment fields
 - similar endpoint returns ranked, same-type, active candidates when embeddings exist
+- similar endpoint includes `similarity_score` between `0` and `1`
+- opportunities expose `last_updated_at` and `is_new`
+- missing or invalid `company_logo` values resolve to the default placeholder
 - sources endpoint is readable
 - pipeline metrics and admin dashboard require authentication and authorization
 
-## 10. Recommended automated test suites
+## 10. Pipeline visibility and quality metrics test
+
+Purpose: prove that the backend exposes a lightweight execution summary and data quality metrics without changing pipeline logic.
+
+### Command
+
+```bash
+curl -X GET http://localhost:8000/api/metrics/pipeline/ -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+Or through Django shell:
+
+```bash
+docker compose exec backend python manage.py shell -c "from opportunities.dataset_metrics import compute_pipeline_metrics; print(compute_pipeline_metrics())"
+```
+
+### Expected response fields
+
+```json
+{
+  "last_run_processed": 10,
+  "last_run_created": 3,
+  "last_run_updated": 7,
+  "last_run_duration": 60.0,
+  "last_run_status": "success",
+  "pipeline_flow": {
+    "label": "Scraping -> Processing -> Materialization -> Embeddings"
+  },
+  "data_quality": {
+    "description": 100,
+    "salary": 40,
+    "skills": 95,
+    "embeddings": 100
+  },
+  "source_reliability_score": {
+    "keejob": 95
+  },
+  "pipeline_throughput": 10.0,
+  "freshness_delay": 30.0
+}
+```
+
+Numbers vary by dataset; the important part is that the fields exist, are computed from existing models, and do not require schema changes.
+
+### What to show on dashboard
+
+- Pipeline flow: `Scraping -> Processing -> Materialization -> Embeddings`
+- Data quality percentages for descriptions, salary, skills, and embeddings
+- Source reliability scores
+- Throughput and freshness delay
+
+### What to explain orally
+
+The metrics endpoint makes the pipeline explainable. It summarizes the latest run, current raw processing distribution, dataset quality, source reliability, throughput, and freshness using existing `PipelineRun`, `RawOpportunite`, and `Opportunite` data.
+
+## 11. Image consistency regression test
+
+Purpose: prove that opportunities without a valid image do not inherit another company's image.
+
+### Command
+
+Run the targeted scraper and materialization regressions:
+
+```bash
+docker compose run --rm backend pytest tests/test_scrapers.py -q
+docker compose run --rm backend python manage.py test tests.tests.RawNormalizationTests tests.tests.OpportunityMaterializationTests tests.tests.OpportuniteAPITests
+```
+
+Optional shell spot check for empty logos after serialization:
+
+```bash
+docker compose exec backend python manage.py shell -c "from opportunities.serializers import OpportuniteSerializer; from opportunities.models import Opportunite; opp=Opportunite.objects.filter(company_logo='').first(); print(OpportuniteSerializer(opp).data['company_logo'] if opp else 'no empty logo rows')"
+```
+
+### Expected behavior
+
+- Keejob similar-offer logos are ignored when selecting the detail company logo.
+- Missing, empty, or invalid image URLs become the default placeholder.
+- Existing duplicate updates do not keep stale invalid logos.
+- API responses keep `company_logo` populated with either a valid URL or the placeholder.
+
+### What to explain orally
+
+Image handling is now explicit data consistency logic. A missing source image is represented as a placeholder, not as an inherited or cached image from another opportunity.
+
+## 12. Recommended automated test suites
 
 Pipeline orchestration tests:
 
 ```bash
-docker compose run --rm backend python manage.py test opportunities.tests_pipeline_tasks
+docker compose run --rm backend python manage.py test tests.tests_pipeline_tasks
 ```
 
 Targeted Sprint 2 suites:
@@ -381,11 +480,12 @@ docker compose run --rm backend python manage.py test tests.test_nlp_preprocessi
 Full backend validation pass:
 
 ```bash
-docker compose run --rm backend python manage.py test tests.tests tests.test_scrapers tests.tests_quality tests.tests_embeddings tests.tests_marchespublics tests.test_nlp_preprocessing opportunities.tests_pipeline_tasks
+docker compose run --rm backend python manage.py test
+docker compose run --rm backend pytest tests/test_scrapers.py -q
 docker compose run --rm backend pytest tests/test_linkedin_scraper.py -q
 ```
 
-## 11. Data quality spot checks
+## 13. Data quality spot checks
 
 EmploiTunisie source URL completeness:
 
@@ -411,7 +511,13 @@ Pipeline run health:
 docker compose exec backend python manage.py shell -c "from opportunities.views_admin import get_pipeline_stats, get_source_monitoring, get_pipeline_lag_monitoring; print(get_pipeline_stats()); print(get_source_monitoring()); print(get_pipeline_lag_monitoring())"
 ```
 
-## 12. Release sign-off checklist
+Pipeline metrics API:
+
+```bash
+docker compose exec backend python manage.py shell -c "from opportunities.dataset_metrics import compute_pipeline_metrics; metrics=compute_pipeline_metrics(); print(metrics['pipeline_flow']); print(metrics['data_quality']); print(metrics['source_reliability_score'])"
+```
+
+## 14. Release sign-off checklist
 
 Sprint 2 is ready for release when:
 
@@ -427,8 +533,10 @@ Sprint 2 is ready for release when:
 - dashboard shows KPIs, active alerts, source monitoring, Celery status, lag, and embedding readiness
 - targeted Sprint 2 tests pass
 - public API and similar endpoint respond correctly
+- pipeline metrics expose last-run summary, data quality, source reliability, throughput, and freshness delay
+- image consistency regression passes: missing logos use the default placeholder and no similar-offer logo is reused
 
-## 13. Key talking points for presentation
+## 15. Key talking points for presentation
 
 - Sprint 2 delivered an ingestion subsystem, not only scrapers.
 - CLI and Celery share the same source registry and collection core.
@@ -436,7 +544,9 @@ Sprint 2 is ready for release when:
 - Scheduling is intelligent: due, stale, retry-after-failure, running, and running-stale are explicit states.
 - Raw data is retained before canonical materialization, so parsing rules can be replayed without scraping again.
 - Materialization is idempotent and uses conservative merge rules to avoid destroying better existing data.
+- Missing or invalid company images are normalized to a default placeholder, preventing cross-company image leakage.
 - Monitoring is database-backed and detects stuck runs, stale sources, repeated failures, duration anomalies, and embedding backlog.
+- Data quality metrics expose description, salary, skills, and embedding coverage for explainable dataset health.
 - Alerts are stateful: threshold, cooldown, grouping, Discord delivery, and recovery notification.
 - Recovery is automatic: stale `RUNNING` rows are marked failed and their Redis locks are cleared.
 - The dashboard is an operator view over the pipeline, worker state, lag, embedding readiness, and alerts.

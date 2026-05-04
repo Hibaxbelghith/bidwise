@@ -17,6 +17,8 @@ const OpportunitiesBrowseResults = ({
   isUserAuthenticated,
   hasPrevious,
   hasNext,
+  visiblePageNumbers,
+  onPageChange,
   onPreviousPage,
   onNextPage,
   onResetFilters,
@@ -73,7 +75,7 @@ const OpportunitiesBrowseResults = ({
       </div>
     ) : null}
 
-    <div className="mt-6 flex items-center justify-center gap-3">
+    <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
       <Button
         variant="outline"
         onClick={onPreviousPage}
@@ -81,9 +83,57 @@ const OpportunitiesBrowseResults = ({
       >
         Previous
       </Button>
-      <span className="text-sm text-neutral-600">
-        {page} / {totalPages}
-      </span>
+      {visiblePageNumbers[0] > 1 ? (
+        <>
+          <Button
+            type="button"
+            variant={page === 1 ? 'default' : 'outline'}
+            className="min-w-10"
+            disabled={loading || isFetching}
+            aria-current={page === 1 ? 'page' : undefined}
+            onClick={() => onPageChange(1)}
+          >
+            1
+          </Button>
+          {visiblePageNumbers[0] > 2 ? (
+            <span className="px-1 text-sm text-neutral-400" aria-hidden="true">
+              ...
+            </span>
+          ) : null}
+        </>
+      ) : null}
+      {visiblePageNumbers.map((pageNumber) => (
+        <Button
+          key={pageNumber}
+          type="button"
+          variant={pageNumber === page ? 'default' : 'outline'}
+          className="min-w-10"
+          disabled={loading || isFetching}
+          aria-current={pageNumber === page ? 'page' : undefined}
+          onClick={() => onPageChange(pageNumber)}
+        >
+          {pageNumber}
+        </Button>
+      ))}
+      {visiblePageNumbers[visiblePageNumbers.length - 1] < totalPages ? (
+        <>
+          {visiblePageNumbers[visiblePageNumbers.length - 1] < totalPages - 1 ? (
+            <span className="px-1 text-sm text-neutral-400" aria-hidden="true">
+              ...
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            variant={page === totalPages ? 'default' : 'outline'}
+            className="min-w-10"
+            disabled={loading || isFetching}
+            aria-current={page === totalPages ? 'page' : undefined}
+            onClick={() => onPageChange(totalPages)}
+          >
+            {totalPages}
+          </Button>
+        </>
+      ) : null}
       <Button
         variant="outline"
         onClick={onNextPage}

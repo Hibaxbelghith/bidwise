@@ -10,6 +10,7 @@ from opportunities.management.commands.collect_opportunities import (
 )
 from opportunities.models import PipelineRun, PipelineRunStatus
 from opportunities.pipeline import (
+    build_collection_result,
     get_configured_sources,
     get_source_schedule_state,
     run_opportunity_pipeline,
@@ -100,7 +101,7 @@ class PipelineCoreExecutionTests(TestCase):
         },
     )
     @patch("opportunities.pipeline.run_source_collection")
-    def test_respect_schedule_falls_back_to_all_sources_when_none_are_due(self, run_source_mock):
+    def test_respect_schedule_skips_when_no_sources_are_due(self, run_source_mock):
         finished_at = timezone.now()
         PipelineRun.objects.create(
             source="keejob",
@@ -123,8 +124,35 @@ class PipelineCoreExecutionTests(TestCase):
 
         results = run_opportunity_pipeline(respect_schedule=True)
 
-        self.assertEqual([result["source"] for result in results], ["keejob"])
-        run_source_mock.assert_called_once_with("keejob")
+        self.assertEqual(results, [])
+        run_source_mock.assert_not_called()
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+            },
+        },
+    )
+    def test_schedule_freshness_counts_updated_records(self):
+        finished_at = timezone.now()
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=finished_at,
+            finished_at=finished_at,
+            total_processed=1,
+            total_updated=1,
+            updated_count=1,
+        )
+
+        state = get_source_schedule_state("keejob")
+
+        self.assertFalse(state["is_stale"])
+        self.assertEqual(state["last_activity_at"], finished_at)
 
     @override_settings(
         OPPORTUNITY_PIPELINE_SOURCES=["keejob"],
@@ -172,6 +200,24 @@ class SourceNormalizationTests(SimpleTestCase):
     def test_normalize_source_accepts_legacy_aliases(self):
         self.assertEqual(normalize_source("emploitunisie"), "emploi_tn")
         self.assertEqual(normalize_source("marchespublics"), "marches_publics")
+
+
+class PipelineMetricsTests(SimpleTestCase):
+    def test_update_only_collection_is_not_marked_stale(self):
+        now_value = timezone.now()
+        result = build_collection_result(
+            "keejob",
+            {"created": 0, "updated": 2, "skipped": 0, "failed_pages": 0},
+            started_at=now_value,
+            finished_at=now_value,
+        )
+
+        self.assertFalse(result["is_stale"])
+
+    def test_success_rate_counts_created_and_updated_records(self):
+        run = PipelineRun(total_processed=4, total_created=1, total_updated=2)
+
+        self.assertEqual(run.success_rate, 0.75)
 
 
 class SourceTaskTests(SimpleTestCase):

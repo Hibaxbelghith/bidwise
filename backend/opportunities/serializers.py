@@ -1,7 +1,11 @@
+from datetime import timedelta
+
 from rest_framework import serializers
+from django.utils import timezone
 
 from .models import Opportunite, SourceOpportunite
 from .normalization import normalize_city_name
+from .utils.images import normalize_company_logo_url
 
 
 class SourceOpportuniteSerializer(serializers.ModelSerializer):
@@ -24,6 +28,8 @@ class OpportuniteSerializer(serializers.ModelSerializer):
     languages_fallback = serializers.SerializerMethodField(read_only=True)
     extra_data = serializers.JSONField(read_only=True)
     source = SourceOpportuniteSerializer(read_only=True)
+    last_updated_at = serializers.DateTimeField(source="date_modification", read_only=True)
+    is_new = serializers.SerializerMethodField(read_only=True)
     source_id = serializers.PrimaryKeyRelatedField(
         queryset=SourceOpportunite.objects.all(), source='source', write_only=True
     )
@@ -59,6 +65,8 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "source_id",
             "date_creation",
             "date_modification",
+            "last_updated_at",
+            "is_new",
         ]
         read_only_fields = [
             "id",
@@ -66,6 +74,8 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "quality_score",
             "date_creation",
             "date_modification",
+            "last_updated_at",
+            "is_new",
         ]
 
     @staticmethod
@@ -95,7 +105,10 @@ class OpportuniteSerializer(serializers.ModelSerializer):
         return text or None
 
     def get_company_logo(self, obj):
-        return self._get_optional_text(obj, "company_logo")
+        return normalize_company_logo_url(
+            getattr(obj, "company_logo", ""),
+            organization_name=getattr(obj, "organisation_nom", ""),
+        )
 
     def get_contract_type(self, obj):
         return self._get_optional_text(obj, "contract_type")
@@ -131,6 +144,12 @@ class OpportuniteSerializer(serializers.ModelSerializer):
     def get_languages_fallback(self, obj):
         return self._as_list_of_text(getattr(obj, "languages_fallback", None))
 
+    def get_is_new(self, obj):
+        created_at = getattr(obj, "date_creation", None)
+        if created_at is None:
+            return False
+        return created_at >= timezone.now() - timedelta(hours=24)
+
     def to_internal_value(self, data):
         # Keep API backward-compatible: ignore legacy owner payload key.
         if isinstance(data, dict):
@@ -160,11 +179,13 @@ class OpportuniteSerializer(serializers.ModelSerializer):
 class SimilarOpportunitySerializer(serializers.ModelSerializer):
     similarity_score = serializers.SerializerMethodField(read_only=True)
     organisation_nom = serializers.SerializerMethodField(read_only=True)
+    last_updated_at = serializers.DateTimeField(source="date_modification", read_only=True)
+    is_new = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Opportunite
-        fields = ["id", "titre", "organisation_nom", "similarity_score"]
-        read_only_fields = ["id", "titre", "organisation_nom", "similarity_score"]
+        fields = ["id", "titre", "organisation_nom", "similarity_score", "last_updated_at", "is_new"]
+        read_only_fields = fields
 
     def get_organisation_nom(self, obj):
         value = getattr(obj, "organisation_nom", None)
@@ -178,6 +199,12 @@ class SimilarOpportunitySerializer(serializers.ModelSerializer):
         if score is None:
             return None
         try:
-            return round(float(score), 4)
+            return round(max(0.0, min(1.0, float(score))), 4)
         except (TypeError, ValueError):
             return None
+
+    def get_is_new(self, obj):
+        created_at = getattr(obj, "date_creation", None)
+        if created_at is None:
+            return False
+        return created_at >= timezone.now() - timedelta(hours=24)

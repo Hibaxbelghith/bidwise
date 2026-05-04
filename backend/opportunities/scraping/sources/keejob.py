@@ -22,6 +22,7 @@ from ..scraper_utils import (
     canonicalize_source_item_url,
     clean_description_for_ml,
 )
+from opportunities.utils.images import is_valid_image_url
 
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,8 @@ class KeejobScraper(BaseOpportunityScraper):
 
                     if not raw_company:
                         logger.debug("Keejob detail has empty company for url=%s", url)
+                    if not detail_company_logo:
+                        logger.debug("[SCRAPER] No logo found for %s", title or canonical_url)
 
                     record = {
                         "title": title,
@@ -571,65 +574,42 @@ class KeejobScraper(BaseOpportunityScraper):
 
     def _extract_detail_company_logo(self, detail_soup, detail_url, company_name=""):
         if detail_soup is None:
-            return ""
+            return None
 
-        normalized_company = self._normalize_label(company_name)
-        candidates = []
+        entreprise_heading = None
+        for heading in detail_soup.find_all("h2"):
+            if self._normalize_label(heading.get_text(" ", strip=True)) == "entreprise":
+                entreprise_heading = heading
+                break
 
-        for node in detail_soup.find_all("img"):
-            src = self._clean_text(node.get("src"))
-            if not src:
-                continue
+        if entreprise_heading is None:
+            return None
 
-            class_blob = self._normalize_label(" ".join(node.get("class") or []))
-            alt_blob = self._normalize_label(node.get("alt"))
-            src_blob = self._normalize_label(src)
-            if "/media/recruiter/" not in src and "logo" not in class_blob and "logo" not in alt_blob:
-                continue
+        heading_block = entreprise_heading.find_parent("div")
+        search_blocks = []
+        if heading_block is not None:
+            search_blocks.append(heading_block)
+            parent_block = heading_block.find_parent("div")
+            if parent_block is not None:
+                search_blocks.append(parent_block)
 
-            absolute_logo_url = urljoin(detail_url or self.source_url, src)
-            if not self._is_valid_url(absolute_logo_url):
-                continue
+        image = None
+        for block in search_blocks:
+            image = block.find("img")
+            if image is not None:
+                break
+        if image is None:
+            return None
 
-            score = 0
-            if "/media/recruiter/" in src:
-                score += 8
-            if "logo" in alt_blob:
-                score += 2
-            if "recruiter" in src_blob:
-                score += 1
+        src = self._clean_text(image.get("src"))
+        if not src or "/media/recruiter/" not in src:
+            return None
 
-            if normalized_company and alt_blob and normalized_company in alt_blob:
-                score += 12
+        absolute_logo_url = urljoin(detail_url or self.source_url, src)
+        if not self._is_valid_url(absolute_logo_url) or not is_valid_image_url(absolute_logo_url):
+            return None
 
-            context_chunks = []
-            ancestor = node
-            for _ in range(5):
-                ancestor = ancestor.find_parent(["section", "article", "div"]) if ancestor is not None else None
-                if ancestor is None:
-                    break
-                snippet = self._clean_text(ancestor.get_text(" ", strip=True))
-                if snippet:
-                    context_chunks.append(snippet[:300])
-
-            context_blob = self._normalize_label(" ".join(context_chunks))
-            if context_blob:
-                if "offres similaires" in context_blob or "offre similaire" in context_blob:
-                    score -= 20
-                if "entreprise" in context_blob or "societe" in context_blob:
-                    score += 6
-                if "secteur" in context_blob or "taille" in context_blob:
-                    score += 2
-                if normalized_company and normalized_company in context_blob:
-                    score += 8
-
-            candidates.append((score, absolute_logo_url))
-
-        if not candidates:
-            return ""
-
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        return candidates[0][1]
+        return absolute_logo_url
 
 
     def _extract_detail_description_html(self, detail_soup):

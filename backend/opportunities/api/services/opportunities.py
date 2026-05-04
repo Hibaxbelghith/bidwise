@@ -21,7 +21,9 @@ def build_opportunity_queryset(*, request, action, base_ordering):
     diversify_param = str(request.query_params.get("diversify_sources", "1")).strip().lower()
     source_cap_param = request.query_params.get("source_cap")
     diversify_enabled = diversify_param not in {"0", "false", "no", "off"}
-    type_param = str(request.query_params.get("type_opportunite", "")).strip().upper()
+    type_param = str(
+        request.query_params.get("type_opportunite") or request.query_params.get("type", "")
+    ).strip().upper()
     stage_requested = type_param == TypeOpportunite.STAGE
 
     if stage_requested and not source_param:

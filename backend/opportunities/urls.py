@@ -2,7 +2,6 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import (
     OpportuniteViewSet,
-    SourceOpportuniteView,
     SourceOpportuniteViewSet,
     pipeline_metrics_view,
 )
@@ -27,6 +26,5 @@ urlpatterns = [
 	path('admin/test/', AdminTestView.as_view(), name='admin_test'),
 	path('admin/dashboard/', AdminDashboardView.as_view(), name='admin_dashboard'),
 	path('metrics/pipeline/', pipeline_metrics_view, name='pipeline_metrics'),
-    path('sources/', SourceOpportuniteView.as_view(), name='source-opportunite-list'),
 ]
 urlpatterns += router.urls

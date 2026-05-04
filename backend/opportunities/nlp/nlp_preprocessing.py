@@ -1,8 +1,20 @@
+"""
+NLP preprocessing helpers for opportunity text.
+
+This module currently mixes several responsibilities: text cleaning, entity
+and organization extraction, lightweight content classification, tender/job
+specific extraction, and embedding text preparation. The code stays in place
+for now to avoid behavior changes, but it should later be split into dedicated
+modules for cleaning, extraction, classification, and embedding preparation.
+"""
+
 import html
 import logging
 import re
 import unicodedata
 from typing import Any, Dict
+
+from opportunities.utils.text_cleaning import clean_text as clean_text
 
 
 logger = logging.getLogger(__name__)

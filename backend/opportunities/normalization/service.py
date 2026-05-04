@@ -1,3 +1,14 @@
+"""
+Canonical normalization service for raw opportunity records.
+
+This layer is mainly responsible for deterministic mapping from scraped raw
+fields into the canonical opportunity shape: types, statuses, dates, locations,
+URLs, and other persistence-ready values. Some NLP-style inference still lives
+here temporarily, including organization and city inference, so existing
+behavior remains stable. A future cleanup should move that inference into a
+dedicated NLP/enrichment layer while keeping normalization deterministic.
+"""
+
 import logging
 import re
 import unicodedata
@@ -14,6 +25,8 @@ from opportunities.scraping.scraper_utils import (
     looks_closed_opportunity,
     normalize_organization_name,
 )
+from opportunities.utils.images import normalize_company_logo_url
+from opportunities.utils.text_parsing import parse_experience_bounds
 
 
 logger = logging.getLogger(__name__)
@@ -498,17 +511,6 @@ def _as_optional_html(value: Any) -> str | None:
     return text or None
 
 
-def _as_optional_url(value: Any) -> str | None:
-    text = _canonical_text(value)
-    if not text:
-        return None
-
-    lowered = text.lower()
-    if lowered.startswith("http://") or lowered.startswith("https://"):
-        return text
-    return None
-
-
 def _as_display_location(value: Any) -> str:
     text = _canonical_text(value)
     if not text:
@@ -558,92 +560,6 @@ def _parse_optional_date_to_iso(value: Any) -> str | None:
         return fr_date.isoformat()
 
     return None
-
-
-def _parse_experience_bounds(value: Any) -> tuple[int | None, int | None]:
-    text = _canonical_text(value)
-    if not text:
-        return None, None
-
-    token = _normalize_match_token(text)
-    if not token:
-        return None, None
-
-    minimum_candidates: list[int] = []
-    maximum_candidates: list[int] = []
-    has_open_ended = False
-    has_match = False
-
-    if _EXPERIENCE_LESS_THAN_ONE_YEAR_TOKEN in token:
-        minimum_candidates.append(0)
-        maximum_candidates.append(1)
-        has_match = True
-
-    for range_match in _EXPERIENCE_RANGE_RE.finditer(text):
-        try:
-            first = int(range_match.group(1))
-            second = int(range_match.group(2))
-            low = min(first, second)
-            high = max(first, second)
-            minimum_candidates.append(low)
-            maximum_candidates.append(high)
-            has_match = True
-        except (TypeError, ValueError):
-            continue
-
-    for lt_match in _EXPERIENCE_LESS_THAN_RE.finditer(text):
-        try:
-            upper = int(lt_match.group(1))
-            minimum_candidates.append(0)
-            maximum_candidates.append(upper)
-            has_match = True
-        except (TypeError, ValueError):
-            continue
-
-    for beginner_match in _EXPERIENCE_BEGINNER_RE.finditer(token):
-        try:
-            upper = int(beginner_match.group(1))
-            minimum_candidates.append(0)
-            maximum_candidates.append(upper)
-            has_match = True
-        except (TypeError, ValueError):
-            continue
-
-    for gt_match in _EXPERIENCE_MORE_THAN_RE.finditer(text):
-        try:
-            lower = int(gt_match.group(1))
-            minimum_candidates.append(lower)
-            has_open_ended = True
-            has_match = True
-        except (TypeError, ValueError):
-            continue
-
-    if not has_match:
-        single_match = _EXPERIENCE_SINGLE_RE.search(text)
-        if single_match:
-            try:
-                years = int(single_match.group(1))
-                minimum_candidates.append(years)
-                maximum_candidates.append(years)
-                has_match = True
-            except (TypeError, ValueError):
-                return None, None
-
-    if not has_match:
-        return None, None
-
-    min_value = min(minimum_candidates) if minimum_candidates else None
-    if has_open_ended:
-        max_value = None
-    else:
-        max_value = max(maximum_candidates) if maximum_candidates else None
-
-    if min_value is None and max_value is not None:
-        min_value = max_value
-    if min_value is not None and max_value is not None and min_value > max_value:
-        min_value, max_value = max_value, min_value
-
-    return min_value, max_value
 
 
 def _parse_contract_types(value: Any) -> list[str] | None:
@@ -869,13 +785,14 @@ def normalize_raw_opportunity(raw_obj: RawOpportunite) -> dict[str, Any]:
         )
     )
 
-    company_logo = _as_optional_url(
+    company_logo = normalize_company_logo_url(
         _pick_first_non_empty(
             payload.get("company_logo"),
             payload.get("organisation_logo"),
             payload.get("logo_url"),
             payload.get("companyLogo"),
-        )
+        ),
+        organization_name=organisation_nom,
     )
 
     description_html = _as_optional_html(payload.get("description_html"))
@@ -886,7 +803,7 @@ def normalize_raw_opportunity(raw_obj: RawOpportunite) -> dict[str, Any]:
         contract_type = _sanitize_contract_type(raw_contract_type)
 
     experience_text = _as_optional_text(payload.get("experience"))
-    experience_min, experience_max = _parse_experience_bounds(experience_text)
+    experience_min, experience_max = parse_experience_bounds(experience_text)
 
     structured_data = {
         "reference": _as_optional_text(payload.get("reference")),

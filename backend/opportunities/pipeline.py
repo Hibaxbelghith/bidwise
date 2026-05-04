@@ -1,3 +1,12 @@
+"""
+Scheduler/orchestrator for opportunity source collection.
+
+This module decides which scraping sources should run, when they should run,
+how stale or failed runs are handled, and how collection results are recorded.
+It is not the business data pipeline for transforming one raw opportunity into
+a normalized, enriched, scored, and materialized opportunity.
+"""
+
 import inspect
 import logging
 from datetime import timedelta
@@ -211,10 +220,15 @@ def _running_age_seconds(run, *, now_value):
     return max((now_value - run.started_at).total_seconds(), 0.0)
 
 
-def _latest_created_run(source):
+def _latest_activity_run(source):
     return (
         PipelineRun.objects.filter(source=source, status=PipelineRunStatus.SUCCESS)
-        .filter(Q(total_created__gt=0) | Q(created_count__gt=0))
+        .filter(
+            Q(total_created__gt=0)
+            | Q(created_count__gt=0)
+            | Q(total_updated__gt=0)
+            | Q(updated_count__gt=0)
+        )
         .order_by("-started_at", "-id")
         .first()
     )
@@ -225,9 +239,9 @@ def get_source_schedule_state(source, *, now_value=None):
     now_value = now_value or timezone.now()
     config = get_source_config(source_key)
     latest_run = PipelineRun.objects.filter(source=source_key).order_by("-started_at", "-id").first()
-    latest_created_run = _latest_created_run(source_key)
+    latest_activity_run = _latest_activity_run(source_key)
     last_run_at = _finished_at(latest_run)
-    last_created_at = _finished_at(latest_created_run)
+    last_activity_at = _finished_at(latest_activity_run)
     stale_after_seconds = _coerce_positive_int(config.get("stale_after_seconds"), 12 * 60 * 60)
     schedule_seconds = _coerce_positive_int(config.get("schedule_seconds"), 60 * 60)
     stale_schedule_seconds = _coerce_positive_int(
@@ -246,8 +260,8 @@ def get_source_schedule_state(source, *, now_value=None):
         and running_age_seconds >= max_duration_seconds
     )
     is_stale = (
-        last_created_at is None
-        or now_value - last_created_at >= timedelta(seconds=stale_after_seconds)
+        last_activity_at is None
+        or now_value - last_activity_at >= timedelta(seconds=stale_after_seconds)
     )
 
     if latest_run and latest_run.status == PipelineRunStatus.RUNNING:
@@ -262,7 +276,7 @@ def get_source_schedule_state(source, *, now_value=None):
                 "reason": "running_stale",
                 "interval_seconds": max_duration_seconds,
                 "last_run_at": last_run_at,
-                "last_created_at": last_created_at,
+                "last_activity_at": last_activity_at,
                 "next_run_at": now_value,
                 "latest_run_status": latest_run.status,
                 "running_age_seconds": running_age_seconds,
@@ -277,7 +291,7 @@ def get_source_schedule_state(source, *, now_value=None):
             "reason": "running",
             "interval_seconds": schedule_seconds,
             "last_run_at": last_run_at,
-            "last_created_at": last_created_at,
+            "last_activity_at": last_activity_at,
             "next_run_at": next_run_at,
             "latest_run_status": latest_run.status,
             "running_age_seconds": running_age_seconds,
@@ -300,7 +314,7 @@ def get_source_schedule_state(source, *, now_value=None):
         "reason": reason,
         "interval_seconds": interval_seconds,
         "last_run_at": last_run_at,
-        "last_created_at": last_created_at,
+        "last_activity_at": last_activity_at,
         "next_run_at": next_run_at,
         "latest_run_status": latest_run.status if latest_run else None,
         "running_age_seconds": running_age_seconds,
@@ -316,7 +330,7 @@ def _schedule_state_log_payload(state):
         "reason": state["reason"],
         "last_run_at": _isoformat_or_none(state["last_run_at"]),
         "next_run_at": _isoformat_or_none(state["next_run_at"]),
-        "last_created_at": _isoformat_or_none(state["last_created_at"]),
+        "last_activity_at": _isoformat_or_none(state["last_activity_at"]),
         "latest_run_status": state["latest_run_status"],
         "is_running_stale": state["is_running_stale"],
         "running_age_seconds": round(float(state["running_age_seconds"] or 0), 2),
@@ -329,14 +343,14 @@ def _log_schedule_decisions(states, *, level=logging.INFO):
         logger.log(
             level,
             "Opportunity source schedule decision source=%s due=%s reason=%s "
-            "last_run_at=%s next_run_at=%s last_created_at=%s latest_status=%s "
+            "last_run_at=%s next_run_at=%s last_activity_at=%s latest_status=%s "
             "running_age_seconds=%.2f max_duration_seconds=%s",
             state["source"],
             state["is_due"],
             state["reason"],
             _isoformat_or_none(state["last_run_at"]),
             _isoformat_or_none(state["next_run_at"]),
-            _isoformat_or_none(state["last_created_at"]),
+            _isoformat_or_none(state["last_activity_at"]),
             state["latest_run_status"],
             float(state["running_age_seconds"] or 0),
             state["max_duration_seconds"],
@@ -405,13 +419,14 @@ def select_sources_for_pipeline(sources=None, *, respect_schedule=False, now_val
         _log_schedule_decisions(states)
         return due_sources
 
-    logger.warning(
-        "No opportunity sources are due; falling back to all configured sources. "
-        "schedule_decisions=%s",
+    # With respect_schedule=True, an idle schedule should stay idle. Manual
+    # force-runs use respect_schedule=False or the Celery force flag instead.
+    logger.info(
+        "No opportunity sources are due; schedule respected. schedule_decisions=%s",
         [_schedule_state_log_payload(state) for state in states],
     )
-    _log_schedule_decisions(states, level=logging.WARNING)
-    return configured_sources
+    _log_schedule_decisions(states)
+    return []
 
 
 def get_due_sources(sources=None, *, force=False, now_value=None):
@@ -432,6 +447,8 @@ def build_collection_result(source, stats, *, started_at, finished_at, status="c
     total_failed_pages = int(stats.get("failed_pages", 0) or 0)
     total_processed = total_created + total_updated + total_skipped
     duration_seconds = max((finished_at - started_at).total_seconds(), 0.0)
+    # A source is stale only when it produced neither new nor refreshed records.
+    is_stale = total_created == 0 and total_updated == 0
 
     return {
         "status": status,
@@ -441,7 +458,7 @@ def build_collection_result(source, stats, *, started_at, finished_at, status="c
         "updated": total_updated,
         "skipped": total_skipped,
         "failed_pages": total_failed_pages,
-        "is_stale": total_created == 0,
+        "is_stale": is_stale,
         "duration_seconds": duration_seconds,
         "error_message": error_message,
     }
@@ -478,3 +495,9 @@ def run_opportunity_pipeline(sources=None, *, respect_schedule=False, **options)
             }
         )
     return results
+
+
+# Clear scheduler-facing aliases. Keep the historical name available while
+# making the module responsibility explicit for new callers.
+run_pipeline = run_opportunity_pipeline
+run_scheduler = run_pipeline

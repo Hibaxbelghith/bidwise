@@ -3,9 +3,9 @@ import { Badge } from '../../../components/ui/badge.jsx';
 
 const OPTIONS = [
 	{ value: 'JOB', label: 'Jobs', description: 'Full-time, part-time, and contract positions', icon: Briefcase, enabled: true },
-	{ value: 'INTERNSHIP', label: 'Internships', description: 'Internship and trainee programs', icon: GraduationCap, enabled: false },
-	{ value: 'RESEARCH', label: 'Research projects', description: 'Academic and R&D opportunities', icon: BookOpen, enabled: false },
-	{ value: 'FUNDING', label: 'Funding', description: 'Grants, scholarships, and funding', icon: TrendingUp, enabled: false },
+	{ value: 'INTERNSHIP', label: 'Internships', description: 'Internship and trainee programs', icon: GraduationCap, enabled: true },
+	{ value: 'RESEARCH', label: 'Research projects', description: 'Academic and R&D opportunities', icon: BookOpen, enabled: true },
+	{ value: 'FUNDING', label: 'Funding', description: 'Grants, scholarships, and funding', icon: TrendingUp, enabled: true },
 ];
 
 const StepOpportunityIntent = ({ data, onChange }) => {

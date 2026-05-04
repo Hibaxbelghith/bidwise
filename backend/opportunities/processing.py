@@ -16,7 +16,7 @@ from opportunities.embeddings.service import (
     build_embedding_model_identifier,
     generate_opportunity_embedding,
 )
-from opportunities.enrichment.text_enrichment import enrich_opportunity_text
+from opportunities.enrichment import enrich_opportunity_text
 from opportunities.materialization import materialize_opportunity
 from opportunities.normalization import normalize_raw_opportunity
 from opportunities.quality.quality_gate import evaluate_opportunity
@@ -173,6 +173,11 @@ def process_raw_opportunity(raw_obj: RawOpportunite) -> Opportunite | None:
                 )
                 return locked_raw.canonical
 
+            # Pipeline flow:
+            # 1. normalization: map raw structured data
+            # 2. enrichment: extract derived fields from text
+            # 3. scoring: evaluate quality
+            # 4. materialization: persist to DB
             normalized_data = normalize_raw_opportunity(locked_raw)
             normalized_data.update(enrich_opportunity_text(normalized_data))
             normalized_data = evaluate_opportunity(normalized_data)

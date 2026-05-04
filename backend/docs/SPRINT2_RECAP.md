@@ -1,6 +1,6 @@
 # Sprint 2 - Technical recap
 
-Last updated: 2026-04-28
+Last updated: 2026-05-03
 
 ## Verdict
 
@@ -9,6 +9,16 @@ Sprint 2 is complete for the opportunities pipeline scope.
 The implementation is no longer a simple scraper command. It is now a production-oriented ingestion architecture with a shared pipeline core, manual CLI entry point, Celery workers, Celery Beat scheduling, Redis-backed locks, operational monitoring, anomaly detection, Discord alerting, automatic recovery, raw replay safety, canonical materialization, API exposure, embeddings, and similarity search.
 
 The original Sprint 2 target was the backend data layer behind opportunity discovery. That scope is implemented end to end: collection, raw persistence, normalization, enrichment, quality scoring, materialization, API exposure, embedding generation, and similarity.
+
+## Executive value for demo
+
+These are the strongest Sprint 2 talking points for a technical presentation:
+
+- Pipeline: we built a complete, automated, idempotent data pipeline that can collect, persist, normalize, enrich, quality-check, materialize, embed, and expose opportunities without manual intervention.
+- Celery: heavy work is externalized to Celery so the API remains fast, responsive, and scalable while scraping, materialization, embeddings, and monitoring run asynchronously.
+- Monitoring: the system is self-monitored with anomaly detection, structured events, source freshness tracking, failed-run detection, Discord alerting, and automatic stuck-run recovery.
+- AI: vector embeddings power semantic similarity today and create the foundation for a future recommendation engine.
+- Quality: data quality is measured and enforced with validation, quality scoring, explicit rejection states, default image handling, and API-level quality metrics.
 
 ## Scope delivered
 
@@ -28,6 +38,8 @@ The original Sprint 2 target was the backend data layer behind opportunity disco
 | Embeddings | Complete | `opportunities/embeddings/service.py`, `generate_embeddings`, `opportunities.generate_embeddings` |
 | Similarity | Complete | `opportunities/similarity.py`, similar endpoint with Python and pgvector fallback |
 | Monitoring | Complete | `opportunities/monitoring.py`, `opportunities/views_admin.py` |
+| Data quality metrics | Complete | `opportunities/dataset_metrics.py`, `/api/metrics/pipeline/` |
+| Image consistency | Complete | default logo validation in normalization, materialization, and serializers |
 | Alerting and recovery | Complete | Discord webhook alerting, Redis alert state, stuck-run recovery |
 | Admin dashboard | Complete | `frontend/src/features/admin/DashboardAdminPage.jsx` |
 
@@ -66,8 +78,15 @@ Celery Beat or CLI
   -> materialize_opportunity
   -> Opportunite
   -> embedding generation
-  -> similarity/API/admin dashboard
+  -> similarity/API/admin dashboard/metrics
 ```
+
+Role boundaries in the raw-to-canonical step:
+
+- Normalization maps raw source payloads into canonical structured fields. It owns source schema mapping, date parsing, canonical type/status values, city/company cleanup, URL canonicalization, and structured experience parsing.
+- Enrichment does not remap source schemas. It derives extra fields from already-normalized text, such as salary, skills, language fallback, and experience fallback from description text only when no structured experience is present.
+- Scoring evaluates the normalized and enriched payload quality; it does not extract new business fields.
+- Materialization persists the final payload to `Opportunite`, applies DB safety checks, deduplication, merge rules, and status policy.
 
 Important distinction:
 
@@ -90,6 +109,7 @@ Current implementation modules:
 - `opportunities/similarity.py`
 - `opportunities/views.py`
 - `opportunities/views_admin.py`
+- `opportunities/dataset_metrics.py`
 - `frontend/src/features/admin/DashboardAdminPage.jsx`
 
 ## Execution architecture
@@ -189,9 +209,13 @@ This design reduces external load while still protecting freshness.
 | `opportunities/monitoring.py` | Observability, anomaly detection, alerting, recovery | Called by source observation, monitor task, and admin dashboard | structured logs, Redis/cache alert state, Discord alerts, threshold/cooldown anti-spam, recovery notifications, stuck-run detection, failed-streak detection, duration anomalies, embedding backlog detection, automatic stuck recovery |
 | `opportunities/scraping/pipeline.py` | Raw ingestion boundary | Called by `run_source_collection` after a scraper yields records | shadow storage, source upsert, URL and record-id identity, payload hash, content fingerprint, requeue on impactful raw changes, max empty pages, max failed pages, page-level stats |
 | `opportunities/scraping/sources/*` | Source-specific adapters for Keejob, EmploiTunisie, LinkedIn, MarchesPublics | Each scraper returns raw records or raw pages to the shared scraping pipeline | HTTP retry adapters, random request delays, pagination caps, max records, duplicate skipping, 403 block detection, detail-page enrichment, listing fallback for MarchesPublics, fail-safe LinkedIn scraper, structured field extraction |
+| `opportunities/normalization/service.py` | Canonical mapping from raw payload to normalized dict | Called first by `process_raw_opportunity` | deterministic field mapping, date/type/status parsing, source URL canonicalization, structured field cleanup, structured experience bounds |
+| `opportunities/enrichment/text_enrichment.py` | Deterministic derived-field extraction from normalized text | Called after normalization and before quality scoring | salary parsing, skills extraction, language fallback, description-only experience fallback, safe default output on parser failure |
+| `opportunities/quality/quality_gate.py` | Quality scoring and usability gate | Called after enrichment | quality score, quality tier, recommendation readiness, minimum title/description/source URL checks |
 | `opportunities/materialization/service.py` | Canonical persistence for `Opportunite` | Called by `process_raw_opportunity` after normalization, enrichment, and quality gate | transactional deduplication, source+URL identity, external-id fallback, required-field validation, choice validation, URL quality policy, quality score persistence, non-destructive merge rules, status correction, previous duplicate archiving |
 | `opportunities/processing.py` | Raw-to-canonical batch processor | Called by manual shell tests and `materialize_opportunities_task` | per-record isolation, row locks, rejection without deleting raw data, replay-safe state transitions, optional inline embeddings, deterministic batch order |
 | `opportunities/embeddings/service.py` | Embedding model abstraction | Called by `generate_embeddings` command and optional inline processing | model whitelist, model versioning, cached CPU model, batch encoding, L2-normalized vectors, text preprocessing |
+| `opportunities/dataset_metrics.py` | Lightweight operational and data quality metrics | Called by `/api/metrics/pipeline/` and admin dashboard enrichment | raw processing distribution, last-run summary, pipeline flow, description/salary/skills/embedding coverage, source reliability, throughput, freshness delay |
 | `opportunities/views_admin.py` | Staff-only dashboard API | Frontend calls `/api/admin/dashboard/` | Celery inspect snapshot, KPI aggregation, source monitoring, embedding coverage, raw lag, recent run history, live anomaly list |
 | `frontend DashboardAdminPage` | Operator dashboard UI | React page at `/dashboard-admin`, reads `/admin/dashboard/` through the API client | active alert list, Celery health, source monitoring table, embedding readiness, raw backlog, pipeline history, worker unavailable state |
 
@@ -213,6 +237,28 @@ Metrics exposed to the admin dashboard:
 - embedding coverage
 - pgvector coverage
 - active anomalies
+- data quality percentages for description, salary, skills, and embeddings
+- source reliability score based on success, errors, and freshness
+- latest pipeline throughput in processed records per minute
+- freshness delay between scraping and availability
+
+The public authenticated pipeline metrics endpoint, `GET /api/metrics/pipeline/`, also exposes a lightweight flow summary:
+
+```text
+Scraping -> Processing -> Materialization -> Embeddings
+```
+
+It includes:
+
+- `last_run_processed`
+- `last_run_created`
+- `last_run_updated`
+- `last_run_duration`
+- `last_run_status`
+- `data_quality`
+- `source_reliability_score`
+- `pipeline_throughput`
+- `freshness_delay`
 
 Anomaly detection includes:
 
@@ -254,6 +300,7 @@ Failure handling exists at several levels:
 - Lock layer: source and embedding tasks use Redis locks to avoid concurrent duplicate work.
 - Persistence layer: raw records are never deleted during processing; invalid records become `REJECTED` with validation errors.
 - Materialization layer: canonical updates are idempotent and transactionally deduplicated.
+- Image consistency layer: missing or invalid company images are normalized to a default placeholder, and Keejob similar-offer logos are not reused as company logos.
 - Recovery layer: stale `RUNNING` rows are marked `FAILED`, duration is recorded, error message is set, and Redis locks are cleared.
 
 Operational guarantees:
@@ -301,7 +348,7 @@ Primary Sprint 2 backend coverage:
 - `tests.tests.OpportunityMaterializationTests`
 - `tests.tests.OpportuniteAPITests`
 - `tests.tests.PipelineTests`
-- `opportunities.tests_pipeline_tasks`
+- `tests.tests_pipeline_tasks`
 
 Extended regression coverage:
 
@@ -339,6 +386,8 @@ Key improvements:
 - source-level locks
 - bounded batch processing
 - operational monitoring
+- data quality percentages and pipeline flow metrics
+- explicit default image handling to prevent cross-company logo leakage
 - Discord alerting
 - anti-spam and recovery alerts
 - automatic stuck-run recovery

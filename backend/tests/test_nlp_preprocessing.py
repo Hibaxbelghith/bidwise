@@ -11,7 +11,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
-from opportunities.nlp_preprocessing import (  # noqa: E402
+from opportunities.nlp.nlp_preprocessing import (  # noqa: E402
     build_embedding_text,
     clean_tender_text,
     detect_content_type,

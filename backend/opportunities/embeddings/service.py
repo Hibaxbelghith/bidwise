@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from django.conf import settings
 
-from opportunities.nlp_preprocessing import prepare_combined_text
+from opportunities.nlp.nlp_preprocessing import prepare_combined_text
 
 
 logger = logging.getLogger(__name__)

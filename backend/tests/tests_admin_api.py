@@ -4,7 +4,8 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
+from opportunities.models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
+from opportunities.utils.images import DEFAULT_COMPANY_LOGO_URL
 
 
 User = get_user_model()
@@ -41,6 +42,7 @@ class AdminApiTests(APITestCase):
             statut=StatutOpportunite.ACTIVE,
             date_publication=date.today(),
             source_item_url="https://linkedin.com/jobs/1",
+            company_logo="https://linkedin.com/media/company/logo.png",
             source=self.linkedin,
         )
         Opportunite.objects.create(
@@ -110,3 +112,26 @@ class AdminApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.admin.refresh_from_db()
         self.assertTrue(self.admin.is_active)
+
+    def test_admin_dashboard_reports_logo_coverage(self):
+        Opportunite.objects.create(
+            titre="Anonymous Company",
+            description="No real company logo should count as placeholder coverage.",
+            organisation_nom="Entreprise Anonyme",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=date.today(),
+            company_logo=DEFAULT_COMPANY_LOGO_URL,
+            source=self.keejob,
+        )
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/admin/dashboard/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        logo_metrics = response.data["monitoring"]["logos"]
+        self.assertEqual(logo_metrics["total"], 3)
+        self.assertEqual(logo_metrics["with_logo"], 1)
+        self.assertEqual(logo_metrics["missing_or_placeholder"], 2)
+        self.assertAlmostEqual(logo_metrics["coverage"], 100 / 3)
+        self.assertAlmostEqual(response.data["kpis"]["logo_coverage"], 100 / 3)

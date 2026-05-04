@@ -15,6 +15,7 @@ from opportunities.scoring.quality import (
 )
 from opportunities.scraping.scraper_utils import classify_source_item_url, normalize_organization_name
 from opportunities.scraping.scraper_utils import canonicalize_source_item_url
+from opportunities.utils.images import is_valid_image_url, normalize_company_logo_url
 
 
 logger = logging.getLogger(__name__)
@@ -268,9 +269,12 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
         opportunity.external_id = incoming_external_id
         update_fields.append("external_id")
 
-    incoming_company_logo = _persist_text(defaults.get("company_logo", "")).strip()
+    incoming_company_logo = normalize_company_logo_url(
+        defaults.get("company_logo", ""),
+        organization_name=defaults.get("organisation_nom", ""),
+    )
     current_company_logo = _persist_text(getattr(opportunity, "company_logo", "")).strip()
-    if incoming_company_logo and incoming_company_logo != current_company_logo:
+    if not is_valid_image_url(current_company_logo) or incoming_company_logo != current_company_logo:
         opportunity.company_logo = incoming_company_logo
         update_fields.append("company_logo")
 
@@ -472,7 +476,7 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
 
     Separation of concerns:
     - This layer does DB persistence and canonical deduplication only.
-    - NLP is intentionally not executed here; enrichment belongs to later stages.
+    - Enrichment and scoring are expected to run upstream before persistence.
     """
 
     raw_id = normalized_data.get("raw_id")
@@ -540,7 +544,10 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
     description_html = _persist_text(normalized_data.get("description_html", "")).strip()
 
     company_logo_max_length = Opportunite._meta.get_field("company_logo").max_length
-    company_logo_value = _persist_text(normalized_data.get("company_logo", "")).strip()
+    company_logo_value = normalize_company_logo_url(
+        normalized_data.get("company_logo", ""),
+        organization_name=normalized_data.get("organisation_nom", ""),
+    )
     if len(company_logo_value) > company_logo_max_length:
         logger.warning(
             "raw_id=%s company_logo truncated for DB safety (len=%s, max=%s).",

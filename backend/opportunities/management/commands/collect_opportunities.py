@@ -6,7 +6,6 @@ from opportunities.pipeline import (
     normalize_source,
     resolve_source_collection,
     run_opportunity_pipeline,
-    run_source_collection,
 )
 
 
@@ -89,7 +88,7 @@ class Command(BaseCommand):
             collection = resolve_source_collection(source_key, **options)
             scraper_kwargs = collection["scraper_kwargs"]
             self.stdout.write(
-                f"Starting collection from '{source_key}' with options: {scraper_kwargs or 'default'}"
+                f"Prepared collection source '{source_key}' with options: {scraper_kwargs or 'default'}"
             )
 
         results = run_opportunity_pipeline(

@@ -3,7 +3,6 @@ from django.db.models import Q
 from django.contrib.postgres.fields import ArrayField
 from pgvector.django import VectorField
 from users.models import Utilisateur
-from datetime import datetime, timedelta
 
 class TypeOpportunite(models.TextChoices):
     EMPLOI = "EMPLOI", "Emploi"
@@ -210,7 +209,7 @@ class PipelineRun(models.Model):
     def success_rate(self):
         if not self.total_processed:
             return 0.0
-        return self.total_created / self.total_processed
+        return (self.total_created + self.total_updated) / self.total_processed
 
     def __str__(self):
         source = self.source or "unknown"

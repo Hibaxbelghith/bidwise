@@ -15,6 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from config.celery import app as celery_app
 from users.models import LoginEvent
 from users.permissions import IsAdminUser
+from .dataset_metrics import compute_pipeline_metrics
 from .monitoring import collect_pipeline_anomalies
 from .models import (
     Opportunite,
@@ -24,6 +25,7 @@ from .models import (
     RawOpportuniteProcessingStatus,
 )
 from .source_cleanup import REMOVED_SOURCE_KEYS, removed_source_q
+from .utils.images import DEFAULT_COMPANY_LOGO_URL
 
 
 User = get_user_model()
@@ -404,6 +406,21 @@ def get_embedding_monitoring():
     }
 
 
+def get_logo_monitoring():
+    queryset = Opportunite.objects.exclude(removed_source_q("source__nom"))
+    total = queryset.count()
+    with_logo = queryset.exclude(company_logo="").exclude(company_logo=DEFAULT_COMPANY_LOGO_URL).count()
+    missing_or_placeholder = max(total - with_logo, 0)
+    coverage = (with_logo / total) * 100 if total else 0.0
+
+    return {
+        "total": total,
+        "with_logo": with_logo,
+        "missing_or_placeholder": missing_or_placeholder,
+        "coverage": coverage,
+    }
+
+
 def get_pipeline_lag_monitoring():
     raw_statuses = (
         RawOpportunite.objects.exclude(removed_source_q("source__nom"))
@@ -484,8 +501,10 @@ class AdminDashboardView(APIView):
         )
         celery = _get_celery_snapshot()
         pipeline_stats = get_pipeline_stats()
+        pipeline_metrics = compute_pipeline_metrics()
         monitoring_sources = get_source_monitoring(celery.get("running_sources", []))
         embedding_monitoring = get_embedding_monitoring()
+        logo_monitoring = get_logo_monitoring()
         pipeline_lag = get_pipeline_lag_monitoring()
         alerts = collect_pipeline_anomalies()
         latest_processed = _run_total(latest_run, "total_processed", "processed_count") if latest_run else 0
@@ -505,6 +524,7 @@ class AdminDashboardView(APIView):
                     "pipeline_activity_today": opportunities_today,
                     "sources_count": sources_count,
                     "success_rate": pipeline_stats["success_rate"],
+                    "logo_coverage": logo_monitoring["coverage"],
                 },
                 "pipeline": {
                     "last_run": latest_run.finished_at if latest_run else None,
@@ -512,6 +532,12 @@ class AdminDashboardView(APIView):
                     "processed": latest_processed,
                     "created": latest_created,
                     "updated": latest_updated,
+                    "last_run_processed": pipeline_metrics["last_run_processed"],
+                    "last_run_created": pipeline_metrics["last_run_created"],
+                    "last_run_updated": pipeline_metrics["last_run_updated"],
+                    "last_run_duration": pipeline_metrics["last_run_duration"],
+                    "last_run_status": pipeline_metrics["last_run_status"],
+                    "flow": pipeline_metrics["pipeline_flow"],
                     "failed_pages": latest_run.total_failed_pages if latest_run else 0,
                     "is_stale": latest_run.is_stale if latest_run else False,
                     "stats": pipeline_stats,
@@ -531,7 +557,12 @@ class AdminDashboardView(APIView):
                     "sources": monitoring_sources,
                     "queue": celery_response,
                     "embeddings": embedding_monitoring,
+                    "logos": logo_monitoring,
                     "pipeline_lag": pipeline_lag,
+                    "data_quality": pipeline_metrics["data_quality"],
+                    "source_reliability_score": pipeline_metrics["source_reliability_score"],
+                    "pipeline_throughput": pipeline_metrics["pipeline_throughput"],
+                    "freshness_delay": pipeline_metrics["freshness_delay"],
                     "alerts": alerts,
                 },
             }
