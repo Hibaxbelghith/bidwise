@@ -27,6 +27,19 @@ from opportunities.scraping.sources import (
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_ADAPTIVE_RECENT_RUN_LIMIT = 5
+DEFAULT_ADAPTIVE_ZERO_RUNS_THRESHOLD = 3
+DEFAULT_ADAPTIVE_FAILURE_THRESHOLD = 2
+DEFAULT_ADAPTIVE_HIGH_CREATED_AVG = 5
+DEFAULT_ADAPTIVE_HIGH_UPDATED_AVG = 10
+MIN_ADAPTIVE_INTERVAL_SECONDS = 5 * 60
+MAX_ADAPTIVE_INTERVAL_SECONDS = 12 * 60 * 60
+ADAPTIVE_CREATED_SPEEDUP_DIVISOR = 2
+ADAPTIVE_UPDATED_SPEEDUP_NUMERATOR = 3
+ADAPTIVE_UPDATED_SPEEDUP_DENOMINATOR = 4
+ADAPTIVE_FAILURE_BACKOFF_NUMERATOR = 3
+ADAPTIVE_FAILURE_BACKOFF_DENOMINATOR = 2
+MAX_ZERO_RUN_SLOWDOWN_MULTIPLIER = 3
 
 SCRAPER_REGISTRY = {
     "keejob": KeejobScraper,
@@ -220,6 +233,20 @@ def _running_age_seconds(run, *, now_value):
     return max((now_value - run.started_at).total_seconds(), 0.0)
 
 
+def _run_total(run, total_field, legacy_field):
+    value = getattr(run, total_field, 0) or 0
+    if value:
+        return int(value)
+    return int(getattr(run, legacy_field, 0) or 0)
+
+
+def _average(values):
+    values = list(values)
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
+
+
 def _latest_activity_run(source):
     return (
         PipelineRun.objects.filter(source=source, status=PipelineRunStatus.SUCCESS)
@@ -232,6 +259,200 @@ def _latest_activity_run(source):
         .order_by("-started_at", "-id")
         .first()
     )
+
+
+def get_source_schedule_metrics(source, *, recent_run_limit=None):
+    source_key = normalize_source(source)
+    config = get_source_config(source_key)
+    recent_run_limit = _coerce_positive_int(
+        recent_run_limit or config.get("adaptive_recent_run_limit"),
+        DEFAULT_ADAPTIVE_RECENT_RUN_LIMIT,
+    )
+    recent_runs = list(
+        PipelineRun.objects.filter(source=source_key)
+        .exclude(status=PipelineRunStatus.RUNNING)
+        .order_by("-started_at", "-id")[:recent_run_limit]
+    )
+    successful_runs = [
+        run
+        for run in recent_runs
+        if run.status == PipelineRunStatus.SUCCESS
+    ]
+    created_values = [
+        _run_total(run, "total_created", "created_count")
+        for run in successful_runs
+    ]
+    updated_values = [
+        _run_total(run, "total_updated", "updated_count")
+        for run in successful_runs
+    ]
+
+    consecutive_zero_runs = 0
+    for run in successful_runs:
+        if _run_total(run, "total_created", "created_count") > 0:
+            break
+        consecutive_zero_runs += 1
+
+    failure_count_recent = sum(
+        1 for run in recent_runs if run.status == PipelineRunStatus.FAILED
+    )
+    failed_pages_recent = sum(
+        _run_total(run, "total_failed_pages", "total_failed_pages")
+        for run in recent_runs
+    )
+
+    return {
+        "recent_run_count": len(recent_runs),
+        "recent_success_count": len(successful_runs),
+        "recent_created_avg": _average(created_values),
+        "recent_updated_avg": _average(updated_values),
+        "consecutive_zero_runs": consecutive_zero_runs,
+        "failure_count_recent": failure_count_recent,
+        "failure_rate": failure_count_recent / len(recent_runs) if recent_runs else 0.0,
+        "failed_pages_recent": failed_pages_recent,
+    }
+
+
+def compute_adaptive_interval(source, state, metrics):
+    source_key = normalize_source(source)
+    config = get_source_config(source_key)
+    schedule_seconds = _coerce_positive_int(state.get("schedule_seconds"), 60 * 60)
+    stale_schedule_seconds = _coerce_positive_int(
+        state.get("stale_schedule_seconds"),
+        max(schedule_seconds // 2, 60),
+    )
+    failure_retry_seconds = _coerce_positive_int(
+        state.get("failure_retry_seconds"),
+        max(schedule_seconds // 2, 60),
+    )
+    base_interval_seconds = _coerce_positive_int(
+        state.get("base_interval_seconds"),
+        schedule_seconds,
+    )
+    min_interval_seconds = _coerce_positive_int(
+        config.get("adaptive_min_interval_seconds"),
+        MIN_ADAPTIVE_INTERVAL_SECONDS,
+    )
+    max_interval_seconds = _coerce_positive_int(
+        config.get("adaptive_max_interval_seconds"),
+        MAX_ADAPTIVE_INTERVAL_SECONDS,
+    )
+    high_created_threshold = _coerce_positive_int(
+        config.get("adaptive_high_created_avg"),
+        DEFAULT_ADAPTIVE_HIGH_CREATED_AVG,
+    )
+    high_updated_threshold = _coerce_positive_int(
+        config.get("adaptive_high_updated_avg"),
+        max(DEFAULT_ADAPTIVE_HIGH_UPDATED_AVG, high_created_threshold),
+    )
+    zero_runs_threshold = _coerce_positive_int(
+        config.get("adaptive_zero_runs_threshold"),
+        DEFAULT_ADAPTIVE_ZERO_RUNS_THRESHOLD,
+    )
+    failure_threshold = _coerce_positive_int(
+        config.get("adaptive_failure_threshold"),
+        DEFAULT_ADAPTIVE_FAILURE_THRESHOLD,
+    )
+
+    interval_seconds = base_interval_seconds
+    reason = state.get("reason", "scheduled")
+    rules = []
+
+    latest_run_status = state.get("latest_run_status")
+    failure_count_recent = int(metrics.get("failure_count_recent", 0) or 0)
+    failed_pages_recent = int(metrics.get("failed_pages_recent", 0) or 0)
+    failure_rate = float(metrics.get("failure_rate", 0.0) or 0.0)
+    recent_created_avg = float(metrics.get("recent_created_avg", 0.0) or 0.0)
+    recent_updated_avg = float(metrics.get("recent_updated_avg", 0.0) or 0.0)
+    consecutive_zero_runs = int(metrics.get("consecutive_zero_runs", 0) or 0)
+
+    if latest_run_status == PipelineRunStatus.FAILED:
+        backoff_steps = max(failure_count_recent, 1)
+        interval_seconds = min(
+            max_interval_seconds,
+            max(failure_retry_seconds, failure_retry_seconds * backoff_steps),
+        )
+        if backoff_steps > 1:
+            reason = "adaptive_failure_backoff"
+            rules.append("recent_failures_backoff")
+        else:
+            reason = "retry_after_failure"
+            rules.append("latest_failure_retry")
+    elif state.get("is_stale"):
+        interval_seconds = min(interval_seconds, stale_schedule_seconds)
+        reason = "stale"
+        rules.append("stale_priority")
+    elif consecutive_zero_runs >= zero_runs_threshold:
+        zero_multiplier = min(
+            MAX_ZERO_RUN_SLOWDOWN_MULTIPLIER,
+            consecutive_zero_runs - zero_runs_threshold + 2,
+        )
+        interval_seconds = min(
+            max_interval_seconds,
+            max(interval_seconds, schedule_seconds * zero_multiplier),
+        )
+        reason = "adaptive_low_volume"
+        rules.append("consecutive_zero_runs_slowdown")
+    elif recent_created_avg >= high_created_threshold:
+        interval_seconds = max(
+            min_interval_seconds,
+            min(interval_seconds, schedule_seconds // ADAPTIVE_CREATED_SPEEDUP_DIVISOR),
+        )
+        reason = "adaptive_high_created_volume"
+        rules.append("high_created_volume_speedup")
+    elif recent_updated_avg >= high_updated_threshold:
+        interval_seconds = max(
+            min_interval_seconds,
+            min(
+                interval_seconds,
+                (schedule_seconds * ADAPTIVE_UPDATED_SPEEDUP_NUMERATOR)
+                // ADAPTIVE_UPDATED_SPEEDUP_DENOMINATOR,
+            ),
+        )
+        reason = "adaptive_high_updated_volume"
+        rules.append("high_updated_volume_speedup")
+
+    if (
+        latest_run_status != PipelineRunStatus.FAILED
+        and not state.get("is_stale")
+        and (
+            failure_count_recent >= failure_threshold
+            or failed_pages_recent >= failure_threshold
+        )
+    ):
+        interval_seconds = min(
+            max_interval_seconds,
+            max(
+                interval_seconds,
+                (schedule_seconds * ADAPTIVE_FAILURE_BACKOFF_NUMERATOR)
+                // ADAPTIVE_FAILURE_BACKOFF_DENOMINATOR,
+            ),
+        )
+        reason = "adaptive_recent_failures"
+        rules.append("recent_failure_signals_backoff")
+
+    logger.info(
+        "adaptive_decision",
+        extra={
+            "source": source_key,
+            "reason": reason,
+            "interval": int(interval_seconds),
+            "created_avg": recent_created_avg,
+            "updated_avg": recent_updated_avg,
+            "failures": failure_count_recent,
+            "failure_rate": failure_rate,
+            "rules": rules,
+        },
+    )
+
+    return {
+        "interval_seconds": int(interval_seconds),
+        "reason": reason,
+        "rules": rules,
+        "base_interval_seconds": int(base_interval_seconds),
+        "min_interval_seconds": int(min_interval_seconds),
+        "max_interval_seconds": int(max_interval_seconds),
+    }
 
 
 def get_source_schedule_state(source, *, now_value=None):
@@ -254,6 +475,7 @@ def get_source_schedule_state(source, *, now_value=None):
     )
     max_duration_seconds = _get_max_duration_seconds(source_key)
     running_age_seconds = _running_age_seconds(latest_run, now_value=now_value)
+    metrics = get_source_schedule_metrics(source_key)
     is_running_stale = (
         latest_run is not None
         and latest_run.status == PipelineRunStatus.RUNNING
@@ -281,6 +503,9 @@ def get_source_schedule_state(source, *, now_value=None):
                 "latest_run_status": latest_run.status,
                 "running_age_seconds": running_age_seconds,
                 "max_duration_seconds": max_duration_seconds,
+                "base_interval_seconds": max_duration_seconds,
+                "adaptive_rules": ["running_stale_recovery"],
+                "schedule_metrics": metrics,
             }
         return {
             "source": source_key,
@@ -296,6 +521,9 @@ def get_source_schedule_state(source, *, now_value=None):
             "latest_run_status": latest_run.status,
             "running_age_seconds": running_age_seconds,
             "max_duration_seconds": max_duration_seconds,
+            "base_interval_seconds": schedule_seconds,
+            "adaptive_rules": ["running_lockout"],
+            "schedule_metrics": metrics,
         }
 
     interval_seconds = stale_schedule_seconds if is_stale else schedule_seconds
@@ -304,6 +532,22 @@ def get_source_schedule_state(source, *, now_value=None):
         interval_seconds = failure_retry_seconds
         reason = "retry_after_failure"
 
+    adaptive = compute_adaptive_interval(
+        source_key,
+        {
+            "base_interval_seconds": interval_seconds,
+            "schedule_seconds": schedule_seconds,
+            "stale_schedule_seconds": stale_schedule_seconds,
+            "failure_retry_seconds": failure_retry_seconds,
+            "latest_run_status": latest_run.status if latest_run else None,
+            "is_stale": is_stale,
+            "reason": reason,
+        },
+        metrics,
+    )
+    base_interval_seconds = interval_seconds
+    interval_seconds = adaptive["interval_seconds"]
+    reason = adaptive["reason"]
     next_run_at = last_run_at + timedelta(seconds=interval_seconds) if last_run_at else now_value
     return {
         "source": source_key,
@@ -319,6 +563,9 @@ def get_source_schedule_state(source, *, now_value=None):
         "latest_run_status": latest_run.status if latest_run else None,
         "running_age_seconds": running_age_seconds,
         "max_duration_seconds": max_duration_seconds,
+        "base_interval_seconds": base_interval_seconds,
+        "adaptive_rules": adaptive["rules"],
+        "schedule_metrics": metrics,
     }
 
 

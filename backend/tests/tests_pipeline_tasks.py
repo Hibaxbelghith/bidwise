@@ -155,6 +155,267 @@ class PipelineCoreExecutionTests(TestCase):
         self.assertEqual(state["last_activity_at"], finished_at)
 
     @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_schedule_seconds": 30 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_high_created_avg": 5,
+            },
+        },
+    )
+    def test_adaptive_schedule_runs_high_created_volume_sooner(self):
+        now_value = timezone.now()
+        finished_at = now_value - timedelta(minutes=40)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=finished_at,
+            finished_at=finished_at,
+            total_processed=8,
+            total_created=8,
+            created_count=8,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertTrue(state["is_due"])
+        self.assertEqual(state["base_interval_seconds"], 60 * 60)
+        self.assertEqual(state["interval_seconds"], 30 * 60)
+        self.assertEqual(state["reason"], "adaptive_high_created_volume")
+        self.assertIn("high_created_volume_speedup", state["adaptive_rules"])
+        self.assertEqual(state["schedule_metrics"]["recent_created_avg"], 8)
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_schedule_seconds": 30 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_high_updated_avg": 6,
+            },
+        },
+    )
+    def test_adaptive_schedule_runs_high_updated_volume_sooner(self):
+        now_value = timezone.now()
+        finished_at = now_value - timedelta(minutes=50)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=finished_at,
+            finished_at=finished_at,
+            total_processed=8,
+            total_created=0,
+            total_updated=8,
+            updated_count=8,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertTrue(state["is_due"])
+        self.assertFalse(state["is_stale"])
+        self.assertEqual(state["interval_seconds"], 45 * 60)
+        self.assertEqual(state["reason"], "adaptive_high_updated_volume")
+        self.assertIn("high_updated_volume_speedup", state["adaptive_rules"])
+        self.assertEqual(state["schedule_metrics"]["recent_updated_avg"], 8)
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 8 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_high_created_avg": 5,
+            },
+        },
+    )
+    def test_adaptive_schedule_enforces_min_interval(self):
+        now_value = timezone.now()
+        finished_at = now_value - timedelta(minutes=6)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=finished_at,
+            finished_at=finished_at,
+            total_processed=8,
+            total_created=8,
+            created_count=8,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertTrue(state["is_due"])
+        self.assertEqual(state["interval_seconds"], 5 * 60)
+        self.assertEqual(state["reason"], "adaptive_high_created_volume")
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 6 * 60 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_zero_runs_threshold": 3,
+            },
+        },
+    )
+    def test_adaptive_schedule_enforces_max_interval(self):
+        now_value = timezone.now()
+        for hours_ago in (13, 14, 15, 16):
+            finished_at = now_value - timedelta(hours=hours_ago)
+            PipelineRun.objects.create(
+                source="keejob",
+                status=PipelineRunStatus.SUCCESS,
+                started_at=finished_at,
+                finished_at=finished_at,
+                total_processed=5,
+                total_created=0,
+                created_count=0,
+            )
+        activity_at = now_value - timedelta(hours=17)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=activity_at,
+            finished_at=activity_at,
+            total_processed=1,
+            total_created=1,
+            created_count=1,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertTrue(state["is_due"])
+        self.assertFalse(state["is_stale"])
+        self.assertEqual(state["interval_seconds"], 12 * 60 * 60)
+        self.assertEqual(state["reason"], "adaptive_low_volume")
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_schedule_seconds": 30 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_zero_runs_threshold": 3,
+            },
+        },
+    )
+    def test_adaptive_schedule_slows_after_consecutive_zero_created_runs(self):
+        now_value = timezone.now()
+        for minutes_ago in (75, 120, 180):
+            finished_at = now_value - timedelta(minutes=minutes_ago)
+            PipelineRun.objects.create(
+                source="keejob",
+                status=PipelineRunStatus.SUCCESS,
+                started_at=finished_at,
+                finished_at=finished_at,
+                total_processed=5,
+                total_created=0,
+                created_count=0,
+            )
+        activity_at = now_value - timedelta(hours=4)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=activity_at,
+            finished_at=activity_at,
+            total_processed=1,
+            total_created=1,
+            created_count=1,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertFalse(state["is_due"])
+        self.assertFalse(state["is_stale"])
+        self.assertEqual(state["base_interval_seconds"], 60 * 60)
+        self.assertEqual(state["interval_seconds"], 2 * 60 * 60)
+        self.assertEqual(state["reason"], "adaptive_low_volume")
+        self.assertEqual(state["schedule_metrics"]["consecutive_zero_runs"], 3)
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "failure_retry_seconds": 15 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+            },
+        },
+    )
+    def test_adaptive_schedule_backs_off_after_recent_failures(self):
+        now_value = timezone.now()
+        for minutes_ago in (20, 90):
+            finished_at = now_value - timedelta(minutes=minutes_ago)
+            PipelineRun.objects.create(
+                source="keejob",
+                status=PipelineRunStatus.FAILED,
+                started_at=finished_at,
+                finished_at=finished_at,
+                total_failed_pages=3,
+            )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertFalse(state["is_due"])
+        self.assertEqual(state["base_interval_seconds"], 15 * 60)
+        self.assertEqual(state["interval_seconds"], 30 * 60)
+        self.assertEqual(state["reason"], "adaptive_failure_backoff")
+        self.assertEqual(state["schedule_metrics"]["failure_count_recent"], 2)
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_schedule_seconds": 30 * 60,
+                "stale_after_seconds": 12 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_zero_runs_threshold": 3,
+            },
+        },
+    )
+    def test_stale_sources_stay_prioritized_over_zero_run_slowdown(self):
+        now_value = timezone.now()
+        for minutes_ago in (40, 90, 140):
+            finished_at = now_value - timedelta(minutes=minutes_ago)
+            PipelineRun.objects.create(
+                source="keejob",
+                status=PipelineRunStatus.SUCCESS,
+                started_at=finished_at,
+                finished_at=finished_at,
+                total_processed=5,
+                total_created=0,
+                created_count=0,
+            )
+        activity_at = now_value - timedelta(hours=13)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=activity_at,
+            finished_at=activity_at,
+            total_processed=1,
+            total_created=1,
+            created_count=1,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertTrue(state["is_due"])
+        self.assertTrue(state["is_stale"])
+        self.assertEqual(state["interval_seconds"], 30 * 60)
+        self.assertEqual(state["reason"], "stale")
+        self.assertIn("stale_priority", state["adaptive_rules"])
+
+    @override_settings(
         OPPORTUNITY_PIPELINE_SOURCES=["keejob"],
         OPPORTUNITY_SOURCE_CONFIG={
             "keejob": {
