@@ -16,6 +16,7 @@ import PipelineHealthPanel from './dashboard/PipelineHealthPanel.jsx';
 import SourceBarChart from './dashboard/SourceBarChart.jsx';
 import SourceMonitoringTable from './dashboard/SourceMonitoringTable.jsx';
 import SystemStatusPanel from './dashboard/SystemStatusPanel.jsx';
+import SchedulerPanel from '../scheduler/components/SchedulerPanel.jsx';
 import { formatNumber, percentFormatter } from './dashboard/dashboard.Utils.js';
 import { emptyDashboard } from '../hooks/useDashboard.js';
 
@@ -116,6 +117,8 @@ const DashboardAdminContent = ({ dashboard, isLoading, error }) => {
           pipelineLag={pipelineLag}
           alerts={monitoringAlerts}
         />
+
+        <SchedulerPanel />
 
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
           <Card>

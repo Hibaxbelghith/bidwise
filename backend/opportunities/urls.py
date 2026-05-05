@@ -9,6 +9,7 @@ from .views_admin import (
     AdminDashboardView,
     AdminLoginView,
     AdminOpportunityViewSet,
+    AdminSchedulerStateView,
     AdminTestView,
     AdminUserViewSet,
 )
@@ -25,6 +26,7 @@ urlpatterns = [
 	path('admin/login/', AdminLoginView.as_view(), name='admin_login'),
 	path('admin/test/', AdminTestView.as_view(), name='admin_test'),
 	path('admin/dashboard/', AdminDashboardView.as_view(), name='admin_dashboard'),
+	path('admin/scheduler-state/', AdminSchedulerStateView.as_view(), name='admin_scheduler_state'),
 	path('metrics/pipeline/', pipeline_metrics_view, name='pipeline_metrics'),
 ]
 urlpatterns += router.urls

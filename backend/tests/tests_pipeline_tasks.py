@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import call, patch
 
+from django.core.cache import cache
 from django.utils import timezone
 from django.test import SimpleTestCase, TestCase, override_settings
 
@@ -11,10 +12,12 @@ from opportunities.management.commands.collect_opportunities import (
 from opportunities.models import PipelineRun, PipelineRunStatus
 from opportunities.pipeline import (
     build_collection_result,
+    compute_adaptive_interval,
     get_configured_sources,
     get_source_schedule_state,
     run_opportunity_pipeline,
 )
+from opportunities.services.scheduler_monitoring import scheduler_decision_cache_key
 from opportunities.tasks import (
     collect_opportunities_pipeline as collect_opportunities_task,
     collect_source_task,
@@ -71,6 +74,8 @@ class PipelineDispatchTests(TestCase):
     )
     @patch("opportunities.tasks.collect_source_task.apply_async")
     def test_celery_dispatches_due_sources_by_priority(self, apply_async_mock):
+        cache.clear()
+
         result = collect_opportunities_task.run(force=True)
 
         self.assertEqual(
@@ -86,6 +91,10 @@ class PipelineDispatchTests(TestCase):
             ]
         )
         self.assertEqual(apply_async_mock.call_count, 4)
+        self.assertEqual(
+            cache.get(scheduler_decision_cache_key("linkedin"))["source"],
+            "linkedin",
+        )
 
 
 class PipelineCoreExecutionTests(TestCase):
@@ -159,6 +168,56 @@ class PipelineCoreExecutionTests(TestCase):
             "keejob": {
                 "priority": 1,
                 "schedule_seconds": 60 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_ema_alpha": 0.5,
+            },
+        },
+    )
+    def test_schedule_metrics_use_ema_for_volume_and_failures(self):
+        now_value = timezone.now()
+        activity_at = now_value - timedelta(minutes=40)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=activity_at,
+            finished_at=activity_at,
+            total_processed=10,
+            total_created=10,
+            created_count=10,
+        )
+        failed_at = now_value - timedelta(minutes=30)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.FAILED,
+            started_at=failed_at,
+            finished_at=failed_at,
+            total_failed_pages=1,
+        )
+        latest_at = now_value - timedelta(minutes=20)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=latest_at,
+            finished_at=latest_at,
+            total_processed=2,
+            total_created=2,
+            created_count=2,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertAlmostEqual(state["schedule_metrics"]["recent_created_avg"], 6.0)
+        self.assertAlmostEqual(state["schedule_metrics"]["recent_created_mean"], 6.0)
+        self.assertAlmostEqual(state["schedule_metrics"]["failure_rate"], 0.25)
+        self.assertAlmostEqual(state["schedule_metrics"]["failure_rate_mean"], 1 / 3)
+        self.assertIn("adaptive_score", state["schedule_metrics"])
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
                 "stale_schedule_seconds": 30 * 60,
                 "stale_after_seconds": 24 * 60 * 60,
                 "max_duration_seconds": 60,
@@ -187,6 +246,40 @@ class PipelineCoreExecutionTests(TestCase):
         self.assertEqual(state["reason"], "adaptive_high_created_volume")
         self.assertIn("high_created_volume_speedup", state["adaptive_rules"])
         self.assertEqual(state["schedule_metrics"]["recent_created_avg"], 8)
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_high_created_avg": 10,
+                "adaptive_high_updated_avg": 10,
+                "adaptive_score_speedup_threshold": 0.5,
+            },
+        },
+    )
+    def test_adaptive_schedule_uses_score_when_no_existing_rule_matches(self):
+        now_value = timezone.now()
+        finished_at = now_value - timedelta(minutes=50)
+        PipelineRun.objects.create(
+            source="keejob",
+            status=PipelineRunStatus.SUCCESS,
+            started_at=finished_at,
+            finished_at=finished_at,
+            total_processed=6,
+            total_created=6,
+            created_count=6,
+        )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertTrue(state["is_due"])
+        self.assertEqual(state["interval_seconds"], 45 * 60)
+        self.assertEqual(state["reason"], "adaptive_score_high_activity")
+        self.assertIn("score_high_activity_speedup", state["adaptive_rules"])
+        self.assertAlmostEqual(state["schedule_metrics"]["adaptive_score"], 0.6)
 
     @override_settings(
         OPPORTUNITY_SOURCE_CONFIG={
@@ -351,7 +444,7 @@ class PipelineCoreExecutionTests(TestCase):
             },
         },
     )
-    def test_adaptive_schedule_backs_off_after_recent_failures(self):
+    def test_adaptive_schedule_uses_hard_cooldown_when_failure_rate_is_high(self):
         now_value = timezone.now()
         for minutes_ago in (20, 90):
             finished_at = now_value - timedelta(minutes=minutes_ago)
@@ -367,9 +460,51 @@ class PipelineCoreExecutionTests(TestCase):
 
         self.assertFalse(state["is_due"])
         self.assertEqual(state["base_interval_seconds"], 15 * 60)
-        self.assertEqual(state["interval_seconds"], 30 * 60)
-        self.assertEqual(state["reason"], "adaptive_failure_backoff")
+        self.assertEqual(state["interval_seconds"], 12 * 60 * 60)
+        self.assertEqual(state["reason"], "adaptive_hard_failure_cooldown")
+        self.assertIn("hard_failure_rate_cooldown", state["adaptive_rules"])
         self.assertEqual(state["schedule_metrics"]["failure_count_recent"], 2)
+        self.assertEqual(state["schedule_metrics"]["adaptive_score"], 0.0)
+
+    @override_settings(
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+                "adaptive_failure_threshold": 2,
+            },
+        },
+    )
+    def test_adaptive_schedule_backs_off_after_recent_failure_signals(self):
+        now_value = timezone.now()
+        for minutes_ago, status in (
+            (20, PipelineRunStatus.SUCCESS),
+            (40, PipelineRunStatus.SUCCESS),
+            (60, PipelineRunStatus.SUCCESS),
+            (80, PipelineRunStatus.FAILED),
+            (100, PipelineRunStatus.FAILED),
+        ):
+            finished_at = now_value - timedelta(minutes=minutes_ago)
+            PipelineRun.objects.create(
+                source="keejob",
+                status=status,
+                started_at=finished_at,
+                finished_at=finished_at,
+                total_processed=1 if status == PipelineRunStatus.SUCCESS else 0,
+                total_created=1 if status == PipelineRunStatus.SUCCESS else 0,
+                created_count=1 if status == PipelineRunStatus.SUCCESS else 0,
+                total_failed_pages=1 if status == PipelineRunStatus.FAILED else 0,
+            )
+
+        state = get_source_schedule_state("keejob", now_value=now_value)
+
+        self.assertFalse(state["is_due"])
+        self.assertLessEqual(state["schedule_metrics"]["failure_rate"], 0.5)
+        self.assertEqual(state["interval_seconds"], 90 * 60)
+        self.assertEqual(state["reason"], "adaptive_recent_failures")
+        self.assertIn("recent_failure_signals_backoff", state["adaptive_rules"])
 
     @override_settings(
         OPPORTUNITY_SOURCE_CONFIG={
@@ -479,6 +614,41 @@ class PipelineMetricsTests(SimpleTestCase):
         run = PipelineRun(total_processed=4, total_created=1, total_updated=2)
 
         self.assertEqual(run.success_rate, 0.75)
+
+    @patch("opportunities.pipeline.logger.info")
+    def test_adaptive_interval_logs_structured_scheduler_decision(self, logger_info_mock):
+        metrics = {
+            "recent_created_avg": 0.0,
+            "recent_updated_avg": 0.0,
+            "failure_rate": 0.0,
+            "failure_count_recent": 0,
+            "failed_pages_recent": 0,
+            "consecutive_zero_runs": 0,
+        }
+
+        result = compute_adaptive_interval(
+            "keejob",
+            {
+                "base_interval_seconds": 60 * 60,
+                "schedule_seconds": 60 * 60,
+                "stale_schedule_seconds": 30 * 60,
+                "failure_retry_seconds": 15 * 60,
+                "latest_run_status": PipelineRunStatus.SUCCESS,
+                "is_stale": False,
+                "reason": "scheduled",
+            },
+            metrics,
+        )
+
+        logger_info_mock.assert_called_once()
+        self.assertEqual(logger_info_mock.call_args.args[0], "scheduler_decision")
+        log_extra = logger_info_mock.call_args.kwargs["extra"]
+        self.assertEqual(log_extra["source"], "keejob")
+        self.assertEqual(log_extra["score"], metrics["adaptive_score"])
+        self.assertEqual(log_extra["reason"], result["reason"])
+        self.assertEqual(log_extra["interval"], result["interval_seconds"])
+        self.assertEqual(log_extra["mode"], "adaptive_hybrid")
+        self.assertIn("adaptive_raw_score", log_extra)
 
 
 class SourceTaskTests(SimpleTestCase):

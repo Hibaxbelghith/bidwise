@@ -17,6 +17,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from opportunities.models import PipelineRun, PipelineRunStatus
+from opportunities.services.scheduler_monitoring import cache_scheduler_decision_snapshot
 from opportunities.scraping.pipeline import run_collection
 from opportunities.scraping.sources import (
     EmploiTunisieScraper,
@@ -32,6 +33,11 @@ DEFAULT_ADAPTIVE_ZERO_RUNS_THRESHOLD = 3
 DEFAULT_ADAPTIVE_FAILURE_THRESHOLD = 2
 DEFAULT_ADAPTIVE_HIGH_CREATED_AVG = 5
 DEFAULT_ADAPTIVE_HIGH_UPDATED_AVG = 10
+DEFAULT_ADAPTIVE_EMA_ALPHA = 0.5
+DEFAULT_ADAPTIVE_SCORE_SPEEDUP_THRESHOLD = 0.75
+DEFAULT_ADAPTIVE_SCORE_COOLDOWN_THRESHOLD = -0.35
+DEFAULT_ADAPTIVE_HARD_FAILURE_RATE_THRESHOLD = 0.5
+MAX_ADAPTIVE_SCORE = 1.0
 MIN_ADAPTIVE_INTERVAL_SECONDS = 5 * 60
 MAX_ADAPTIVE_INTERVAL_SECONDS = 12 * 60 * 60
 ADAPTIVE_CREATED_SPEEDUP_DIVISOR = 2
@@ -39,6 +45,10 @@ ADAPTIVE_UPDATED_SPEEDUP_NUMERATOR = 3
 ADAPTIVE_UPDATED_SPEEDUP_DENOMINATOR = 4
 ADAPTIVE_FAILURE_BACKOFF_NUMERATOR = 3
 ADAPTIVE_FAILURE_BACKOFF_DENOMINATOR = 2
+ADAPTIVE_SCORE_SPEEDUP_NUMERATOR = 3
+ADAPTIVE_SCORE_SPEEDUP_DENOMINATOR = 4
+ADAPTIVE_SCORE_COOLDOWN_NUMERATOR = 3
+ADAPTIVE_SCORE_COOLDOWN_DENOMINATOR = 2
 MAX_ZERO_RUN_SLOWDOWN_MULTIPLIER = 3
 
 SCRAPER_REGISTRY = {
@@ -95,6 +105,20 @@ def _coerce_positive_int(value, default):
     except (TypeError, ValueError):
         return default
     return coerced if coerced > 0 else default
+
+
+def _coerce_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_ratio(value, default):
+    coerced = _coerce_float(value, default)
+    if coerced <= 0:
+        return default
+    return min(coerced, 1.0)
 
 
 def _isoformat_or_none(value):
@@ -247,6 +271,25 @@ def _average(values):
     return sum(values) / len(values)
 
 
+def _ema_next(new_value, old_value, *, alpha):
+    new_value = float(new_value or 0.0)
+    if old_value is None:
+        return new_value
+    return (alpha * new_value) + ((1 - alpha) * old_value)
+
+
+def _ema(values, *, alpha):
+    current = None
+    for value in values:
+        current = _ema_next(value, current, alpha=alpha)
+    return current if current is not None else 0.0
+
+
+def _normalize_adaptive_score(score):
+    bounded_score = max(0.0, min(float(score or 0.0), MAX_ADAPTIVE_SCORE))
+    return bounded_score / MAX_ADAPTIVE_SCORE
+
+
 def _latest_activity_run(source):
     return (
         PipelineRun.objects.filter(source=source, status=PipelineRunStatus.SUCCESS)
@@ -264,6 +307,10 @@ def _latest_activity_run(source):
 def get_source_schedule_metrics(source, *, recent_run_limit=None):
     source_key = normalize_source(source)
     config = get_source_config(source_key)
+    ema_alpha = _coerce_ratio(
+        config.get("adaptive_ema_alpha"),
+        DEFAULT_ADAPTIVE_EMA_ALPHA,
+    )
     recent_run_limit = _coerce_positive_int(
         recent_run_limit or config.get("adaptive_recent_run_limit"),
         DEFAULT_ADAPTIVE_RECENT_RUN_LIMIT,
@@ -280,11 +327,15 @@ def get_source_schedule_metrics(source, *, recent_run_limit=None):
     ]
     created_values = [
         _run_total(run, "total_created", "created_count")
-        for run in successful_runs
+        for run in reversed(successful_runs)
     ]
     updated_values = [
         _run_total(run, "total_updated", "updated_count")
-        for run in successful_runs
+        for run in reversed(successful_runs)
+    ]
+    failure_values = [
+        1.0 if run.status == PipelineRunStatus.FAILED else 0.0
+        for run in reversed(recent_runs)
     ]
 
     consecutive_zero_runs = 0
@@ -304,12 +355,45 @@ def get_source_schedule_metrics(source, *, recent_run_limit=None):
     return {
         "recent_run_count": len(recent_runs),
         "recent_success_count": len(successful_runs),
-        "recent_created_avg": _average(created_values),
-        "recent_updated_avg": _average(updated_values),
+        "recent_created_avg": _ema(created_values, alpha=ema_alpha),
+        "recent_updated_avg": _ema(updated_values, alpha=ema_alpha),
+        "recent_created_mean": _average(created_values),
+        "recent_updated_mean": _average(updated_values),
+        "ema_alpha": ema_alpha,
         "consecutive_zero_runs": consecutive_zero_runs,
         "failure_count_recent": failure_count_recent,
-        "failure_rate": failure_count_recent / len(recent_runs) if recent_runs else 0.0,
+        "failure_rate": _ema(failure_values, alpha=ema_alpha),
+        "failure_rate_mean": failure_count_recent / len(recent_runs) if recent_runs else 0.0,
         "failed_pages_recent": failed_pages_recent,
+    }
+
+
+def _build_adaptive_score(metrics, state, *, high_created_threshold, high_updated_threshold, failure_threshold):
+    created_signal = float(metrics.get("recent_created_avg", 0.0) or 0.0)
+    updated_signal = float(metrics.get("recent_updated_avg", 0.0) or 0.0)
+    failure_rate = float(metrics.get("failure_rate", 0.0) or 0.0)
+    failure_count_recent = int(metrics.get("failure_count_recent", 0) or 0)
+
+    freshness_score = 1.0 if state.get("is_stale") else 0.0
+    volume_score = min(
+        1.0,
+        (created_signal / max(high_created_threshold, 1))
+        + (updated_signal / max(high_updated_threshold, 1)),
+    )
+    failure_score = min(
+        1.0,
+        failure_rate + (failure_count_recent / max(failure_threshold, 1)),
+    )
+
+    raw_score = freshness_score + volume_score - failure_score
+    normalized_score = _normalize_adaptive_score(raw_score)
+
+    return {
+        "freshness_score": round(freshness_score, 3),
+        "volume_score": round(volume_score, 3),
+        "failure_score": round(failure_score, 3),
+        "raw_score": round(raw_score, 3),
+        "score": round(normalized_score, 3),
     }
 
 
@@ -353,6 +437,34 @@ def compute_adaptive_interval(source, state, metrics):
         config.get("adaptive_failure_threshold"),
         DEFAULT_ADAPTIVE_FAILURE_THRESHOLD,
     )
+    hard_failure_rate_threshold = _coerce_ratio(
+        config.get("adaptive_hard_failure_rate_threshold"),
+        DEFAULT_ADAPTIVE_HARD_FAILURE_RATE_THRESHOLD,
+    )
+    score_speedup_threshold = _coerce_float(
+        config.get("adaptive_score_speedup_threshold"),
+        DEFAULT_ADAPTIVE_SCORE_SPEEDUP_THRESHOLD,
+    )
+    score_cooldown_threshold = _coerce_float(
+        config.get("adaptive_score_cooldown_threshold"),
+        DEFAULT_ADAPTIVE_SCORE_COOLDOWN_THRESHOLD,
+    )
+    adaptive_score = _build_adaptive_score(
+        metrics,
+        state,
+        high_created_threshold=high_created_threshold,
+        high_updated_threshold=high_updated_threshold,
+        failure_threshold=failure_threshold,
+    )
+    metrics.update(
+        {
+            "adaptive_score": adaptive_score["score"],
+            "adaptive_raw_score": adaptive_score["raw_score"],
+            "freshness_score": adaptive_score["freshness_score"],
+            "volume_score": adaptive_score["volume_score"],
+            "failure_score": adaptive_score["failure_score"],
+        }
+    )
 
     interval_seconds = base_interval_seconds
     reason = state.get("reason", "scheduled")
@@ -366,7 +478,12 @@ def compute_adaptive_interval(source, state, metrics):
     recent_updated_avg = float(metrics.get("recent_updated_avg", 0.0) or 0.0)
     consecutive_zero_runs = int(metrics.get("consecutive_zero_runs", 0) or 0)
 
-    if latest_run_status == PipelineRunStatus.FAILED:
+    hard_failure_cooldown = failure_rate > hard_failure_rate_threshold
+    if hard_failure_cooldown:
+        interval_seconds = max_interval_seconds
+        reason = "adaptive_hard_failure_cooldown"
+        rules.append("hard_failure_rate_cooldown")
+    elif latest_run_status == PipelineRunStatus.FAILED:
         backoff_steps = max(failure_count_recent, 1)
         interval_seconds = min(
             max_interval_seconds,
@@ -413,7 +530,8 @@ def compute_adaptive_interval(source, state, metrics):
         rules.append("high_updated_volume_speedup")
 
     if (
-        latest_run_status != PipelineRunStatus.FAILED
+        not hard_failure_cooldown
+        and latest_run_status != PipelineRunStatus.FAILED
         and not state.get("is_stale")
         and (
             failure_count_recent >= failure_threshold
@@ -431,16 +549,57 @@ def compute_adaptive_interval(source, state, metrics):
         reason = "adaptive_recent_failures"
         rules.append("recent_failure_signals_backoff")
 
+    if (
+        not hard_failure_cooldown
+        and not rules
+        and latest_run_status != PipelineRunStatus.FAILED
+        and not state.get("is_stale")
+    ):
+        cooldown_score = (
+            adaptive_score["raw_score"]
+            if score_cooldown_threshold < 0
+            else adaptive_score["score"]
+        )
+        if adaptive_score["score"] >= score_speedup_threshold:
+            interval_seconds = max(
+                min_interval_seconds,
+                min(
+                    interval_seconds,
+                    (schedule_seconds * ADAPTIVE_SCORE_SPEEDUP_NUMERATOR)
+                    // ADAPTIVE_SCORE_SPEEDUP_DENOMINATOR,
+                ),
+            )
+            reason = "adaptive_score_high_activity"
+            rules.append("score_high_activity_speedup")
+        elif cooldown_score <= score_cooldown_threshold:
+            interval_seconds = min(
+                max_interval_seconds,
+                max(
+                    interval_seconds,
+                    (schedule_seconds * ADAPTIVE_SCORE_COOLDOWN_NUMERATOR)
+                    // ADAPTIVE_SCORE_COOLDOWN_DENOMINATOR,
+                ),
+            )
+            reason = "adaptive_score_cooldown"
+            rules.append("score_failure_cooldown")
+
     logger.info(
-        "adaptive_decision",
+        "scheduler_decision",
         extra={
             "source": source_key,
+            "score": adaptive_score["score"],
             "reason": reason,
             "interval": int(interval_seconds),
+            "mode": "adaptive_hybrid",
             "created_avg": recent_created_avg,
             "updated_avg": recent_updated_avg,
             "failures": failure_count_recent,
             "failure_rate": failure_rate,
+            "adaptive_score": adaptive_score["score"],
+            "adaptive_raw_score": adaptive_score["raw_score"],
+            "freshness_score": adaptive_score["freshness_score"],
+            "volume_score": adaptive_score["volume_score"],
+            "failure_score": adaptive_score["failure_score"],
             "rules": rules,
         },
     )
@@ -587,6 +746,7 @@ def _schedule_state_log_payload(state):
 
 def _log_schedule_decisions(states, *, level=logging.INFO):
     for state in states:
+        cache_scheduler_decision_snapshot(state)
         logger.log(
             level,
             "Opportunity source schedule decision source=%s due=%s reason=%s "
@@ -602,6 +762,12 @@ def _log_schedule_decisions(states, *, level=logging.INFO):
             float(state["running_age_seconds"] or 0),
             state["max_duration_seconds"],
         )
+
+
+def record_source_schedule_decision(source, *, now_value=None, level=logging.INFO):
+    state = get_source_schedule_state(source, now_value=now_value)
+    _log_schedule_decisions([state], level=level)
+    return state
 
 
 def mark_stale_running_runs(source, *, now_value=None):
@@ -676,14 +842,28 @@ def select_sources_for_pipeline(sources=None, *, respect_schedule=False, now_val
     return []
 
 
-def get_due_sources(sources=None, *, force=False, now_value=None):
+def get_due_source_schedule_states(sources=None, *, force=False, now_value=None):
+    now_value = now_value or timezone.now()
     selected_sources = sort_sources_by_priority(sources) if sources else get_configured_sources()
-    if force:
-        return selected_sources
-    return [
-        source
+    states = [
+        get_source_schedule_state(source, now_value=now_value)
         for source in selected_sources
-        if get_source_schedule_state(source, now_value=now_value)["is_due"]
+    ]
+    _log_schedule_decisions(states)
+
+    if force:
+        return states
+    return [state for state in states if state["is_due"]]
+
+
+def get_due_sources(sources=None, *, force=False, now_value=None):
+    return [
+        state["source"]
+        for state in get_due_source_schedule_states(
+            sources,
+            force=force,
+            now_value=now_value,
+        )
     ]
 
 

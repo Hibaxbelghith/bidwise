@@ -25,6 +25,7 @@ from .models import (
     RawOpportuniteProcessingStatus,
 )
 from .source_cleanup import REMOVED_SOURCE_KEYS, removed_source_q
+from .services.scheduler_monitoring import get_scheduler_decision_snapshots
 from .utils.images import DEFAULT_COMPANY_LOGO_URL
 
 
@@ -567,3 +568,10 @@ class AdminDashboardView(APIView):
                 },
             }
         )
+
+
+class AdminSchedulerStateView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        return Response(get_scheduler_decision_snapshots())

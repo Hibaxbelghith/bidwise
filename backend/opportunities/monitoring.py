@@ -15,6 +15,7 @@ from opportunities.pipeline import (
     get_source_config,
     get_source_schedule_state,
     normalize_source,
+    record_source_schedule_decision,
 )
 
 
@@ -566,7 +567,7 @@ def observe_source_run(source, result, *, pipeline_status):
             source=source,
         )
 
-    schedule_state = get_source_schedule_state(source)
+    schedule_state = record_source_schedule_decision(source)
     if schedule_state["is_stale"]:
         record_issue(
             f"source:{source}:no_new_jobs",

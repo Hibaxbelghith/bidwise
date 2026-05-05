@@ -24,9 +24,8 @@ from .monitoring import (
 from .pipeline import (
     build_collection_result,
     get_configured_sources,
-    get_due_sources,
+    get_due_source_schedule_states,
     get_source_config,
-    get_source_schedule_state,
     normalize_source,
     run_source_collection,
 )
@@ -126,7 +125,8 @@ def collect_opportunities_pipeline(self, force=False, sources=None, **command_op
         configured_sources = [sources]
     else:
         configured_sources = sources or get_configured_sources()
-    due_sources = get_due_sources(configured_sources, force=force)
+    due_states = get_due_source_schedule_states(configured_sources, force=force)
+    due_sources = [state["source"] for state in due_states]
     logger.info(
         "Dispatching opportunity pipeline task_id=%s sources=%s due_sources=%s force=%s",
         task_id,
@@ -134,8 +134,8 @@ def collect_opportunities_pipeline(self, force=False, sources=None, **command_op
         due_sources,
         force,
     )
-    for source in due_sources:
-        state = get_source_schedule_state(source)
+    for state in due_states:
+        source = state["source"]
         log_structured_event(
             "source_dispatch",
             source=source,
