@@ -1,0 +1,129 @@
+[
+  {
+    "resume_id": "cv_python_backend",
+    "language": "EN",
+    "specialization": "backend",
+    "text": "Python backend engineer with Django, FastAPI, REST APIs, PostgreSQL, Redis and Celery. Built scalable SaaS services, authentication flows, background jobs and API integrations."
+  },
+  {
+    "resume_id": "cv_frontend_react",
+    "language": "EN",
+    "specialization": "frontend",
+    "text": "Frontend engineer focused on React, TypeScript, JavaScript, CSS, accessibility and design systems. Delivered dashboards, reusable components and responsive web applications."
+  },
+  {
+    "resume_id": "cv_devops",
+    "language": "EN",
+    "specialization": "devops",
+    "text": "DevOps engineer experienced with Docker, Kubernetes, GitHub Actions, Terraform, AWS, monitoring, CI/CD pipelines, incident response and production reliability."
+  },
+  {
+    "resume_id": "cv_ai_engineer",
+    "language": "EN",
+    "specialization": "ai",
+    "text": "AI engineer building NLP and machine learning systems with Python, PyTorch, embeddings, retrieval evaluation, model monitoring and data preprocessing pipelines."
+  },
+  {
+    "resume_id": "cv_data_engineer",
+    "language": "EN",
+    "specialization": "data",
+    "text": "Data engineer with Python, SQL, Airflow, Spark, dbt and warehouse modeling. Built batch pipelines, analytics tables, quality checks and orchestration workflows."
+  },
+  {
+    "resume_id": "cv_cybersecurity",
+    "language": "EN",
+    "specialization": "cybersecurity",
+    "text": "Cybersecurity analyst experienced in SIEM monitoring, network security, vulnerability management, incident response, ISO 27001 controls and security reporting."
+  },
+  {
+    "resume_id": "cv_hr",
+    "language": "EN",
+    "specialization": "hr",
+    "text": "Human resources specialist with recruitment, onboarding, employee relations, HRIS administration, payroll coordination and workforce planning experience."
+  },
+  {
+    "resume_id": "cv_accounting",
+    "language": "EN",
+    "specialization": "accounting",
+    "text": "Accountant with experience in bookkeeping, tax declarations, payroll, reconciliations, invoicing, Excel reporting and month-end closing."
+  },
+  {
+    "resume_id": "cv_marketing",
+    "language": "EN",
+    "specialization": "marketing",
+    "text": "Digital marketing specialist with SEO, content strategy, Google Analytics, social campaigns, paid acquisition, email marketing and conversion reporting."
+  },
+  {
+    "resume_id": "cv_nurse",
+    "language": "EN",
+    "specialization": "nursing",
+    "text": "Registered nurse with patient care, triage, medication administration, clinical documentation, infection control and hospital ward experience."
+  },
+  {
+    "resume_id": "cv_python_ai",
+    "language": "EN",
+    "specialization": "ai",
+    "text": "Python AI engineer working on machine learning, NLP, embeddings, vector search, model evaluation, PyTorch experiments and production inference services."
+  },
+  {
+    "resume_id": "cv_python_data",
+    "language": "EN",
+    "specialization": "data",
+    "text": "Python data engineer building SQL pipelines, Airflow DAGs, Spark transformations, data validation, warehouse models and analytics infrastructure."
+  },
+  {
+    "resume_id": "cv_empty_backend",
+    "language": "EN",
+    "specialization": "backend",
+    "text": "Backend developer CV mentioning Python APIs, Django services, PostgreSQL schema design, Redis caching and asynchronous workers."
+  },
+  {
+    "resume_id": "cv_multilingual_fullstack",
+    "language": "MULTI",
+    "specialization": "fullstack",
+    "text": "Full stack developer. Développeur web avec Python, Django, React, JavaScript et API REST. خبرة في تطوير تطبيقات ويب متعددة اللغات."
+  },
+  {
+    "resume_id": "cv_backend_ar",
+    "language": "AR",
+    "specialization": "backend",
+    "text": "مهندس برمجيات بايثون لديه خبرة في Django وواجهات API وقواعد بيانات PostgreSQL وبناء خدمات خلفية لتطبيقات الويب."
+  },
+  {
+    "resume_id": "cv_backend_fr",
+    "language": "FR",
+    "specialization": "backend",
+    "text": "Développeur backend Python avec expérience Django, API REST, PostgreSQL, Redis, tests automatisés et intégration de services web."
+  },
+  {
+    "resume_id": "cv_accounting_fr",
+    "language": "FR",
+    "specialization": "accounting",
+    "text": "Comptable avec expérience en saisie comptable, rapprochements bancaires, déclarations fiscales, paie, facturation et reporting Excel."
+  },
+  {
+    "resume_id": "cv_accounting_ar",
+    "language": "AR",
+    "specialization": "accounting",
+    "text": "محاسب لديه خبرة في القيود المحاسبية، الضرائب، الرواتب، التسويات البنكية، الفوترة وتقارير Excel الشهرية."
+  },
+  {
+    "resume_id": "cv_nurse_ar",
+    "language": "AR",
+    "specialization": "nursing",
+    "text": "ممرض لديه خبرة في رعاية المرضى، متابعة العلامات الحيوية، إعطاء الأدوية، التوثيق الطبي والعمل داخل الأقسام الاستشفائية."
+  },
+  {
+    "resume_id": "cv_hr_data",
+    "language": "EN",
+    "specialization": "hr_analytics",
+    "text": "HR data analyst combining recruitment reporting, HR dashboards, Excel, workforce metrics, attrition analysis and people analytics."
+  },
+  {
+    "resume_id": "cv_ai_recruitment",
+    "language": "EN",
+    "specialization": "ai_recruitment",
+    "text": "Recruitment specialist using AI sourcing tools, talent matching, candidate screening automation, prompt templates and HR technology workflows."
+  }
+]
+

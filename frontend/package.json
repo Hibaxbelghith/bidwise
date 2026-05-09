@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:profile-ux": "node scripts/profileValidationChecks.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

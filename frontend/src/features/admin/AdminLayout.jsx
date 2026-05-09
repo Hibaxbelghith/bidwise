@@ -1,5 +1,16 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { BriefcaseBusiness, LayoutDashboard, LogOut, ShieldCheck, UsersRound } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Activity,
+  BarChart3,
+  BellRing,
+  BriefcaseBusiness,
+  CalendarClock,
+  LayoutDashboard,
+  LogOut,
+  RadioTower,
+  ShieldCheck,
+  UsersRound,
+} from 'lucide-react';
 
 import { Button } from '../../components/ui/button.jsx';
 import { adminLogout } from './adminAuthService.js';
@@ -9,6 +20,33 @@ const navItems = [
     to: '/admin/dashboard',
     label: 'Dashboard',
     icon: LayoutDashboard,
+    children: [
+      {
+        to: '/admin/dashboard/sources',
+        label: 'Sources Monitoring',
+        icon: RadioTower,
+      },
+      {
+        to: '/admin/dashboard/scheduler',
+        label: 'Scheduler Intelligence',
+        icon: CalendarClock,
+      },
+      {
+        to: '/admin/dashboard/pipeline',
+        label: 'Pipeline Health',
+        icon: Activity,
+      },
+      {
+        to: '/admin/dashboard/alerts',
+        label: 'Alerts',
+        icon: BellRing,
+      },
+      {
+        to: '/admin/dashboard/analytics',
+        label: 'Analytics',
+        icon: BarChart3,
+      },
+    ],
   },
   {
     to: '/admin/opportunities',
@@ -23,7 +61,9 @@ const navItems = [
 ];
 
 const AdminLayout = () => {
+  const location = useLocation();
   const navigate = useNavigate();
+  const isDashboardSection = location.pathname.startsWith('/admin/dashboard');
 
   const handleLogout = () => {
     adminLogout();
@@ -44,21 +84,46 @@ const AdminLayout = () => {
         </div>
 
         <nav className="space-y-1 px-3 py-4" aria-label="Admin navigation">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
-                  isActive
-                    ? 'bg-blue-500 text-white'
-                    : 'text-neutral-300 hover:bg-neutral-900 hover:text-white'
-                }`
-              }
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
-            </NavLink>
+          {navItems.map(({ to, label, icon: Icon, children }) => (
+            <div key={to}>
+              <NavLink
+                to={to}
+                end={to === '/admin/dashboard'}
+                className={({ isActive }) => {
+                  const active = isActive || (to === '/admin/dashboard' && isDashboardSection);
+
+                  return `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
+                    active
+                      ? 'bg-blue-500 text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900 hover:text-white'
+                  }`;
+                }}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {label}
+              </NavLink>
+
+              {children && isDashboardSection ? (
+                <div className="mt-1 space-y-1 border-l border-neutral-800 pl-4">
+                  {children.map(({ to: childTo, label: childLabel, icon: ChildIcon }) => (
+                    <NavLink
+                      key={childTo}
+                      to={childTo}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition ${
+                          isActive
+                            ? 'bg-neutral-800 text-white'
+                            : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
+                        }`
+                      }
+                    >
+                      <ChildIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                      {childLabel}
+                    </NavLink>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ))}
         </nav>
       </aside>
@@ -91,9 +156,10 @@ const AdminLayout = () => {
               <NavLink
                 key={to}
                 to={to}
+                end={to === '/admin/dashboard'}
                 className={({ isActive }) =>
                   `inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
-                    isActive
+                    isActive || (to === '/admin/dashboard' && isDashboardSection)
                       ? 'bg-blue-600 text-white'
                       : 'text-neutral-700 hover:bg-neutral-100'
                   }`
@@ -104,6 +170,26 @@ const AdminLayout = () => {
               </NavLink>
             ))}
           </div>
+          {isDashboardSection ? (
+            <div className="mt-2 flex gap-2 overflow-x-auto">
+              {navItems[0].children.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    `inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition ${
+                      isActive
+                        ? 'bg-neutral-900 text-white'
+                        : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-950'
+                    }`
+                  }
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          ) : null}
         </nav>
 
         <main>

@@ -13,10 +13,11 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import CommandError
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from opportunities.models import PipelineRun, PipelineRunStatus
+from opportunities.models import PipelineRun, PipelineRunStatus, SourceSchedulerState
 from opportunities.services.scheduler_monitoring import cache_scheduler_decision_snapshot
 from opportunities.scraping.pipeline import run_collection
 from opportunities.scraping.sources import (
@@ -123,6 +124,10 @@ def _coerce_ratio(value, default):
 
 def _isoformat_or_none(value):
     return value.isoformat() if value else None
+
+
+def _clamp_interval_seconds(value, *, min_seconds=MIN_ADAPTIVE_INTERVAL_SECONDS, max_seconds=MAX_ADAPTIVE_INTERVAL_SECONDS):
+    return max(min_seconds, min(int(value), max_seconds))
 
 
 def _settings_source_config():
@@ -359,6 +364,8 @@ def get_source_schedule_metrics(source, *, recent_run_limit=None):
         "recent_updated_avg": _ema(updated_values, alpha=ema_alpha),
         "recent_created_mean": _average(created_values),
         "recent_updated_mean": _average(updated_values),
+        "created_per_run": _average(created_values),
+        "trend": created_values,
         "ema_alpha": ema_alpha,
         "consecutive_zero_runs": consecutive_zero_runs,
         "failure_count_recent": failure_count_recent,
@@ -417,10 +424,12 @@ def compute_adaptive_interval(source, state, metrics):
         config.get("adaptive_min_interval_seconds"),
         MIN_ADAPTIVE_INTERVAL_SECONDS,
     )
+    min_interval_seconds = max(min_interval_seconds, MIN_ADAPTIVE_INTERVAL_SECONDS)
     max_interval_seconds = _coerce_positive_int(
         config.get("adaptive_max_interval_seconds"),
         MAX_ADAPTIVE_INTERVAL_SECONDS,
     )
+    max_interval_seconds = max(min_interval_seconds, min(max_interval_seconds, MAX_ADAPTIVE_INTERVAL_SECONDS))
     high_created_threshold = _coerce_positive_int(
         config.get("adaptive_high_created_avg"),
         DEFAULT_ADAPTIVE_HIGH_CREATED_AVG,
@@ -480,7 +489,7 @@ def compute_adaptive_interval(source, state, metrics):
 
     hard_failure_cooldown = failure_rate > hard_failure_rate_threshold
     if hard_failure_cooldown:
-        interval_seconds = max_interval_seconds
+        interval_seconds = MAX_ADAPTIVE_INTERVAL_SECONDS
         reason = "adaptive_hard_failure_cooldown"
         rules.append("hard_failure_rate_cooldown")
     elif latest_run_status == PipelineRunStatus.FAILED:
@@ -583,23 +592,30 @@ def compute_adaptive_interval(source, state, metrics):
             reason = "adaptive_score_cooldown"
             rules.append("score_failure_cooldown")
 
-    logger.info(
-        "scheduler_decision",
+    interval_seconds = _clamp_interval_seconds(
+        interval_seconds,
+        min_seconds=min_interval_seconds,
+        max_seconds=MAX_ADAPTIVE_INTERVAL_SECONDS if hard_failure_cooldown else max_interval_seconds,
+    )
+
+    logger.debug(
+        "scheduler_decision_metrics",
         extra={
             "source": source_key,
-            "score": adaptive_score["score"],
-            "reason": reason,
-            "interval": int(interval_seconds),
             "mode": "adaptive_hybrid",
             "created_avg": recent_created_avg,
             "updated_avg": recent_updated_avg,
             "failures": failure_count_recent,
             "failure_rate": failure_rate,
+            "score": adaptive_score["score"],
+            "raw_score": adaptive_score["raw_score"],
             "adaptive_score": adaptive_score["score"],
             "adaptive_raw_score": adaptive_score["raw_score"],
             "freshness_score": adaptive_score["freshness_score"],
             "volume_score": adaptive_score["volume_score"],
             "failure_score": adaptive_score["failure_score"],
+            "reason": reason,
+            "interval": interval_seconds,
             "rules": rules,
         },
     )
@@ -643,6 +659,11 @@ def get_source_schedule_state(source, *, now_value=None):
     is_stale = (
         last_activity_at is None
         or now_value - last_activity_at >= timedelta(seconds=stale_after_seconds)
+    )
+    metrics["freshness_lag"] = (
+        int(max((now_value - last_activity_at).total_seconds(), 0))
+        if last_activity_at
+        else None
     )
 
     if latest_run and latest_run.status == PipelineRunStatus.RUNNING:
@@ -744,24 +765,44 @@ def _schedule_state_log_payload(state):
     }
 
 
+def _scheduler_decision_log_extra(state):
+    metrics = state.get("schedule_metrics") or {}
+    return {
+        "source": state["source"],
+        "priority": state["priority"],
+        "is_due": state["is_due"],
+        "reason": state["reason"],
+        "interval": state["interval_seconds"],
+        "next_run_at": _isoformat_or_none(state["next_run_at"]),
+        "latest_status": state["latest_run_status"],
+        "score": metrics.get("adaptive_score"),
+        "raw_score": metrics.get("adaptive_raw_score"),
+        "adaptive_raw_score": metrics.get("adaptive_raw_score"),
+        "failure_rate": metrics.get("failure_rate"),
+        "created_avg": metrics.get("recent_created_avg"),
+        "updated_avg": metrics.get("recent_updated_avg"),
+    }
+
+
+def _record_scheduler_decision_timestamp(state):
+    try:
+        SourceSchedulerState.objects.update_or_create(
+            source=state["source"],
+            defaults={
+                "last_decision_at": timezone.now(),
+                "last_reason": str(state.get("reason") or "")[:80],
+            },
+        )
+    except Exception:
+        logger.exception("Could not persist scheduler decision timestamp source=%s", state.get("source"))
+
+
 def _log_schedule_decisions(states, *, level=logging.INFO):
     for state in states:
         cache_scheduler_decision_snapshot(state)
-        logger.log(
-            level,
-            "Opportunity source schedule decision source=%s due=%s reason=%s "
-            "last_run_at=%s next_run_at=%s last_activity_at=%s latest_status=%s "
-            "running_age_seconds=%.2f max_duration_seconds=%s",
-            state["source"],
-            state["is_due"],
-            state["reason"],
-            _isoformat_or_none(state["last_run_at"]),
-            _isoformat_or_none(state["next_run_at"]),
-            _isoformat_or_none(state["last_activity_at"]),
-            state["latest_run_status"],
-            float(state["running_age_seconds"] or 0),
-            state["max_duration_seconds"],
-        )
+        _record_scheduler_decision_timestamp(state)
+        logger.log(level, "scheduler_decision", extra=_scheduler_decision_log_extra(state))
+        logger.debug("scheduler_decision_state", extra=_schedule_state_log_payload(state))
 
 
 def record_source_schedule_decision(source, *, now_value=None, level=logging.INFO):
@@ -816,6 +857,11 @@ def select_sources_for_pipeline(sources=None, *, respect_schedule=False, now_val
         raise CommandError("No opportunity sources configured.")
 
     if not respect_schedule:
+        states = [
+            get_source_schedule_state(source, now_value=now_value)
+            for source in configured_sources
+        ]
+        _log_schedule_decisions(states)
         logger.info(
             "Opportunity pipeline schedule bypassed; running all selected sources=%s",
             configured_sources,
@@ -835,8 +881,8 @@ def select_sources_for_pipeline(sources=None, *, respect_schedule=False, now_val
     # With respect_schedule=True, an idle schedule should stay idle. Manual
     # force-runs use respect_schedule=False or the Celery force flag instead.
     logger.info(
-        "No opportunity sources are due; schedule respected. schedule_decisions=%s",
-        [_schedule_state_log_payload(state) for state in states],
+        "No opportunity sources are due; schedule respected. sources=%s",
+        [state["source"] for state in states],
     )
     _log_schedule_decisions(states)
     return []
@@ -865,6 +911,88 @@ def get_due_sources(sources=None, *, force=False, now_value=None):
             now_value=now_value,
         )
     ]
+
+
+def get_scheduler_max_sources_per_tick(candidate_count=None):
+    configured = _coerce_positive_int(
+        getattr(settings, "OPPORTUNITY_SCHEDULER_MAX_SOURCES_PER_TICK", 0),
+        0,
+    )
+    if configured <= 0:
+        return candidate_count
+    return configured
+
+
+def get_scheduler_dispatch_dedup_seconds(source):
+    source_key = normalize_source(source)
+    config = get_source_config(source_key)
+    configured = config.get(
+        "dispatch_dedup_seconds",
+        getattr(settings, "OPPORTUNITY_SCHEDULER_DISPATCH_DEDUP_SECONDS", MIN_ADAPTIVE_INTERVAL_SECONDS),
+    )
+    return max(
+        MIN_ADAPTIVE_INTERVAL_SECONDS,
+        _coerce_positive_int(configured, MIN_ADAPTIVE_INTERVAL_SECONDS),
+    )
+
+
+def reserve_source_dispatch(source, *, state=None, now_value=None):
+    source_key = normalize_source(source)
+    now_value = now_value or timezone.now()
+    dedup_seconds = get_scheduler_dispatch_dedup_seconds(source_key)
+
+    with transaction.atomic():
+        scheduler_state, _ = (
+            SourceSchedulerState.objects.select_for_update()
+            .get_or_create(source=source_key)
+        )
+        if scheduler_state.last_dispatched_at:
+            age_seconds = max((now_value - scheduler_state.last_dispatched_at).total_seconds(), 0.0)
+            if age_seconds < dedup_seconds:
+                return {
+                    "reserved": False,
+                    "reason": "recently_dispatched",
+                    "source": source_key,
+                    "last_dispatched_at": scheduler_state.last_dispatched_at,
+                    "dedup_seconds": dedup_seconds,
+                }
+
+        running_run = (
+            PipelineRun.objects.select_for_update()
+            .filter(source=source_key, status=PipelineRunStatus.RUNNING)
+            .order_by("-started_at", "-id")
+            .first()
+        )
+        if running_run is not None:
+            running_age_seconds = _running_age_seconds(running_run, now_value=now_value)
+            if running_age_seconds < _get_max_duration_seconds(source_key):
+                return {
+                    "reserved": False,
+                    "reason": "running",
+                    "source": source_key,
+                    "run_id": running_run.pk,
+                    "running_age_seconds": running_age_seconds,
+                }
+
+        scheduler_state.last_dispatched_at = now_value
+        scheduler_state.last_decision_at = now_value
+        scheduler_state.last_reason = str((state or {}).get("reason") or "")[:80]
+        scheduler_state.save(
+            update_fields=[
+                "last_dispatched_at",
+                "last_decision_at",
+                "last_reason",
+                "updated_at",
+            ]
+        )
+
+    return {
+        "reserved": True,
+        "reason": "reserved",
+        "source": source_key,
+        "last_dispatched_at": now_value,
+        "dedup_seconds": dedup_seconds,
+    }
 
 
 def build_collection_result(source, stats, *, started_at, finished_at, status="completed", error_message=None):

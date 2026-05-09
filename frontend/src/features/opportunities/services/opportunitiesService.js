@@ -14,6 +14,16 @@ const normalizeNumberOrNull = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const isPublicFilterSource = (source) => {
+  const name = normalizeString(source?.nom).toLowerCase();
+  if (!name) return false;
+  return !(
+    name.includes('bidwise recommendation') ||
+    name.includes('bidwise recommendations') ||
+    name.includes('bidwise_recommendation')
+  );
+};
+
 const normalizeOpportunity = (opportunity) => {
   const raw = normalizeObject(opportunity);
 
@@ -31,10 +41,13 @@ const normalizeOpportunity = (opportunity) => {
     salary: String(raw.salary || ''),
     type_opportunite: normalizeString(raw.type_opportunite),
     statut: normalizeString(raw.statut),
+    quality_score: normalizeNumberOrNull(raw.quality_score),
     date_publication: raw.date_publication || '',
     date_limite: raw.date_limite || '',
+    date_creation: raw.date_creation || '',
     contract_type: normalizeString(raw.contract_type),
     availability: normalizeString(raw.availability),
+    normalized_work_mode: normalizeString(raw.normalized_work_mode),
     education_level: normalizeString(raw.education_level),
     source_item_url: normalizeString(raw.source_item_url),
     source: normalizeObject(raw.source),
@@ -55,6 +68,7 @@ const normalizePaginatedResponse = (payload) => {
     count: Number(raw.count) || 0,
     next: raw.next ?? null,
     previous: raw.previous ?? null,
+    facets: normalizeObject(raw.facets),
     results: normalizeArray(raw.results).map(normalizeOpportunity),
   };
 };
@@ -79,14 +93,18 @@ export const listOpportunities = async ({
   status = '',
   city = '',
   source = '',
-  ordering = '-date_publication',
+  workMode = '',
+  experienceLevel = '',
+  sort = 'quality',
+  ordering = '',
+  sourceCap = 0,
+  diversifySources = true,
   page = 1,
   pageSize = 20,
 } = {}) => {
   const params = {
     page,
     page_size: pageSize,
-    ordering,
   };
 
   if (search) params.search = search;
@@ -94,11 +112,57 @@ export const listOpportunities = async ({
   if (status) params.statut = status;
   if (city && String(city).trim()) params.ville = String(city).trim();
   if (source) params.source = source;
+  if (workMode) params.work_mode = workMode;
+  if (experienceLevel) params.experience_level = experienceLevel;
+  if (ordering) {
+    params.ordering = ordering;
+  } else if (sort) {
+    params.sort = sort;
+  }
+  if (sourceCap) params.source_cap = sourceCap;
+  if (!diversifySources) params.diversify_sources = 0;
 
   const data = await getWithLegacyFallback(OPPORTUNITIES_ENDPOINT, LEGACY_OPPORTUNITIES_ENDPOINT, {
     params,
   });
   return normalizePaginatedResponse(data);
+};
+
+export const listOpportunitySources = async () => {
+  const response = await api.get('/sources/');
+  return normalizeArray(response.data?.results || response.data)
+    .map((source) => ({
+      id: source?.id ?? null,
+      nom: normalizeString(source?.nom),
+      url: normalizeString(source?.url),
+      type_source: normalizeString(source?.type_source),
+    }))
+    .filter((source) => source.id !== null && isPublicFilterSource(source));
+};
+
+export const listTrendingOpportunities = async ({ limit = 8 } = {}) =>
+  listOpportunities({
+    ordering: '-quality_score',
+    pageSize: limit,
+    sourceCap: 2,
+  }).then((payload) => payload.results);
+
+export const listRecentOpportunities = async ({ limit = 8 } = {}) =>
+  listOpportunities({
+    ordering: '-date_publication',
+    pageSize: limit,
+    diversifySources: false,
+  }).then((payload) => payload.results);
+
+export const listLocationOpportunities = async ({ location, limit = 6 } = {}) => {
+  const city = String(location || '').trim();
+  if (!city) return [];
+
+  return listOpportunities({
+    city,
+    ordering: '-date_publication',
+    pageSize: limit,
+  }).then((payload) => payload.results);
 };
 
 export const getOpportunityById = async (id) => {

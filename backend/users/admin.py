@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
+from .models import Utilisateur, Profil, ProfileResume, OTPChallenge, LoginEvent
 
 @admin.register(Utilisateur)
 class UtilisateurAdmin(admin.ModelAdmin):
@@ -10,6 +10,20 @@ class UtilisateurAdmin(admin.ModelAdmin):
 @admin.register(Profil)
 class ProfilAdmin(admin.ModelAdmin):
     list_display = ("prenom", "nom", "niveau_experience")
+
+
+@admin.register(ProfileResume)
+class ProfileResumeAdmin(admin.ModelAdmin):
+    list_display = ("profile", "source_type", "is_active", "parsing_status", "uploaded_at", "parsed_at")
+    list_filter = ("source_type", "is_active", "parsing_status")
+    readonly_fields = (
+        "uploaded_at",
+        "parsed_at",
+        "parsing_error",
+        "parsed_text",
+        "resume_text_embedding_source",
+        "metadata",
+    )
 
 @admin.register(OTPChallenge)
 class OTPChallengeAdmin(admin.ModelAdmin):

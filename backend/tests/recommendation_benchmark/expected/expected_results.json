@@ -1,0 +1,155 @@
+[
+  {
+    "profile_id": "python_backend_01",
+    "should_match": ["Python Backend Developer", "Django Engineer", "Backend Software Engineer", "Développeur Backend Python", "مهندس برمجيات بايثون", "Full Stack Developer", "Développeur Full Stack"],
+    "should_not_match": ["Accountant", "Comptable", "محاسب", "Registered Nurse", "ممرض", "HR Specialist", "Marketing Manager", "Python Accountant Tool Specialist"]
+  },
+  {
+    "profile_id": "frontend_react_01",
+    "should_match": ["Frontend React Developer", "React Frontend Engineer", "Développeur Frontend React", "Full Stack Developer", "Développeur Full Stack"],
+    "should_not_match": ["Accountant", "Registered Nurse", "Cybersecurity Analyst", "HR Specialist", "Data Engineer", "Python Backend Developer"]
+  },
+  {
+    "profile_id": "devops_01",
+    "should_match": ["DevOps Engineer", "Site Reliability Engineer", "Ingénieur DevOps Cloud"],
+    "should_not_match": ["Accountant", "DevOps Accountant ERP Specialist", "Registered Nurse", "HR Specialist", "Frontend React Developer"]
+  },
+  {
+    "profile_id": "ai_engineer_01",
+    "should_match": ["AI Engineer", "Machine Learning Engineer", "Ingénieur Intelligence Artificielle"],
+    "should_not_match": ["AI Recruitment Specialist", "HR Data Analyst", "Accountant", "Registered Nurse", "Marketing Manager"]
+  },
+  {
+    "profile_id": "data_engineer_01",
+    "should_match": ["Data Engineer", "Data Platform Engineer", "HR Data Analyst"],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "AI Recruitment Specialist", "Marketing Manager"]
+  },
+  {
+    "profile_id": "cybersecurity_01",
+    "should_match": ["Cybersecurity Analyst", "Security Engineer"],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager", "Data Engineer"]
+  },
+  {
+    "profile_id": "hr_specialist_01",
+    "should_match": ["HR Specialist", "Talent Acquisition Specialist", "أخصائي موارد بشرية", "AI Recruitment Specialist"],
+    "should_not_match": ["AI Engineer", "Data Engineer", "Python Backend Developer", "Accountant", "Registered Nurse"]
+  },
+  {
+    "profile_id": "accountant_01",
+    "should_match": ["Accountant", "Accounting Assistant", "Comptable", "محاسب", "Python Accountant Tool Specialist"],
+    "should_not_match": ["Python Backend Developer", "Registered Nurse", "HR Specialist", "Marketing Manager", "DevOps Engineer"]
+  },
+  {
+    "profile_id": "marketing_01",
+    "should_match": ["Marketing Manager", "Digital Marketing Specialist", "Marketing Automation Developer"],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Python Backend Developer", "Data Engineer"]
+  },
+  {
+    "profile_id": "nurse_01",
+    "should_match": ["Registered Nurse", "Infirmier", "ممرض", "Healthcare Data Coordinator"],
+    "should_not_match": ["Accountant", "HR Specialist", "Python Backend Developer", "Marketing Manager", "Data Engineer"]
+  },
+  {
+    "profile_id": "sparse_python_01",
+    "should_match": ["Python Backend Developer", "Django Engineer", "Backend Software Engineer", "AI Engineer", "Machine Learning Engineer", "Data Engineer", "Data Platform Engineer"],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager", "Python Accountant Tool Specialist"],
+    "cv_expectations": {
+      "cv_python_backend": {
+        "should_match": ["Python Backend Developer", "Django Engineer", "Backend Software Engineer", "Développeur Backend Python"],
+        "should_not_match": ["AI Recruitment Specialist", "Accountant", "Registered Nurse", "HR Specialist", "Python Accountant Tool Specialist"]
+      },
+      "cv_python_ai": {
+        "should_match": ["AI Engineer", "Machine Learning Engineer", "Ingénieur Intelligence Artificielle"],
+        "should_not_match": ["AI Recruitment Specialist", "Accountant", "Registered Nurse", "HR Specialist", "Python Accountant Tool Specialist"]
+      },
+      "cv_python_data": {
+        "should_match": ["Data Engineer", "Data Platform Engineer"],
+        "should_not_match": ["HR Specialist", "Accountant", "Registered Nurse", "AI Recruitment Specialist", "Python Accountant Tool Specialist"]
+      }
+    }
+  },
+  {
+    "profile_id": "empty_profile_01",
+    "should_match": [],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Python Backend Developer", "Marketing Manager"],
+    "cv_expectations": {
+      "cv_empty_backend": {
+        "should_match": ["Python Backend Developer", "Django Engineer", "Backend Software Engineer", "Développeur Backend Python"],
+        "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager"]
+      }
+    }
+  },
+  {
+    "profile_id": "cv_only_backend_01",
+    "should_match": [],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager"],
+    "cv_expectations": {
+      "cv_python_backend": {
+        "should_match": ["Python Backend Developer", "Django Engineer", "Backend Software Engineer", "Développeur Backend Python"],
+        "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager", "Python Accountant Tool Specialist"]
+      }
+    }
+  },
+  {
+    "profile_id": "role_only_frontend_01",
+    "should_match": ["Frontend React Developer", "React Frontend Engineer", "Développeur Frontend React"],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Python Backend Developer", "Data Engineer"],
+    "cv_expectations": {
+      "cv_frontend_react": {
+        "should_match": ["Frontend React Developer", "React Frontend Engineer", "Développeur Frontend React", "Full Stack Developer"],
+        "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Python Backend Developer", "Data Engineer"]
+      }
+    }
+  },
+  {
+    "profile_id": "multilingual_fullstack_01",
+    "should_match": ["Full Stack Developer", "Développeur Full Stack", "Python Backend Developer", "Frontend React Developer", "Développeur Frontend React"],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager", "Cybersecurity Analyst"]
+  },
+  {
+    "profile_id": "arabic_backend_01",
+    "should_match": ["مهندس برمجيات بايثون", "Python Backend Developer", "Développeur Backend Python", "Django Engineer"],
+    "should_not_match": ["محاسب", "ممرض", "أخصائي موارد بشرية", "Marketing Manager", "Accountant"]
+  },
+  {
+    "profile_id": "french_backend_01",
+    "should_match": ["Développeur Backend Python", "Python Backend Developer", "Django Engineer", "Backend Software Engineer"],
+    "should_not_match": ["Comptable", "Infirmier", "HR Specialist", "Marketing Manager", "Accountant"]
+  },
+  {
+    "profile_id": "english_profile_01",
+    "should_match": ["Backend Software Engineer", "Python Backend Developer", "Django Engineer", "Full Stack Developer"],
+    "should_not_match": ["Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager", "Python Accountant Tool Specialist"]
+  },
+  {
+    "profile_id": "french_accounting_01",
+    "should_match": ["Comptable", "Accountant", "Accounting Assistant", "محاسب"],
+    "should_not_match": ["Développeur Backend Python", "Infirmier", "HR Specialist", "Marketing Manager", "Python Backend Developer"]
+  },
+  {
+    "profile_id": "arabic_accounting_01",
+    "should_match": ["محاسب", "Accountant", "Comptable", "Accounting Assistant"],
+    "should_not_match": ["مهندس برمجيات بايثون", "ممرض", "أخصائي موارد بشرية", "Python Backend Developer", "Marketing Manager"]
+  },
+  {
+    "profile_id": "arabic_nurse_01",
+    "should_match": ["ممرض", "Registered Nurse", "Infirmier"],
+    "should_not_match": ["محاسب", "أخصائي موارد بشرية", "مهندس برمجيات بايثون", "Marketing Manager", "Accountant"]
+  },
+  {
+    "profile_id": "hr_data_profile_01",
+    "should_match": ["HR Data Analyst", "HR Specialist", "Talent Acquisition Specialist"],
+    "should_not_match": ["Data Engineer", "Data Platform Engineer", "AI Engineer", "Accountant", "Registered Nurse"]
+  },
+  {
+    "profile_id": "ai_recruitment_profile_01",
+    "should_match": ["AI Recruitment Specialist", "Talent Acquisition Specialist", "HR Specialist"],
+    "should_not_match": ["AI Engineer", "Machine Learning Engineer", "Data Engineer", "Accountant", "Registered Nurse"]
+  },
+  {
+    "profile_id": "devops_sparse_01",
+    "should_match": ["DevOps Engineer", "Site Reliability Engineer", "Ingénieur DevOps Cloud"],
+    "should_not_match": ["DevOps Accountant ERP Specialist", "Accountant", "Registered Nurse", "HR Specialist", "Marketing Manager"]
+  }
+]
+

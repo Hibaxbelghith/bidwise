@@ -136,7 +136,7 @@ const ProtectedRoute = ({ requireAdmin = false }) => {
 
 	const isAdmin = Boolean(user?.is_admin || user?.is_staff || user?.is_superuser);
 	if (requireAdmin && !isAdmin) {
-		return <Navigate to="/dashboard" replace />;
+		return <Navigate to="/opportunities" replace />;
 	}
 
 	return <Outlet />;

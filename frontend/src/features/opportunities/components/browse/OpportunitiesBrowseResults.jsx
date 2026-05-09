@@ -1,8 +1,58 @@
+import { Link } from 'react-router-dom';
+import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
+
 import { Button } from '../../../../components/ui/button.jsx';
 import OpportunitiesBrowseSkeleton, {
   FetchingSkeletonBanner,
 } from './OpportunitiesBrowseSkeleton.jsx';
 import OpportunityBrowseCard from './OpportunityBrowseCard.jsx';
+
+const GuestAiTeaserCard = () => (
+  <article className="overflow-hidden rounded-md border border-blue-200 bg-white shadow-sm">
+    <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="p-5">
+        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
+          <Sparkles className="h-4 w-4" />
+          AI Match preview
+        </p>
+        <h2 className="mt-2 text-lg font-semibold text-neutral-950">
+          BidWise uses AI to rank fit, explain why, and assist your application.
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-neutral-700">
+          Create a free profile to unlock matching signals, similar opportunities, saved jobs,
+          and a smarter application workflow.
+        </p>
+        <Button asChild className="mt-4 bg-blue-600 text-white hover:bg-blue-700">
+          <Link to="/login">
+            Create profile to unlock matching
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
+      <div className="border-t border-blue-100 bg-blue-50 p-5 md:border-l md:border-t-0">
+        <div className="rounded-md border border-white bg-white/80 p-4 shadow-sm">
+          <p className="inline-flex items-center gap-2 text-xs font-semibold text-neutral-900">
+            <Wand2 className="h-4 w-4 text-blue-700" />
+            AI opportunity insights
+          </p>
+          <div className="mt-3 space-y-2 text-sm font-medium text-neutral-800">
+            <p>Python skill detected</p>
+            <p>Backend engineering role</p>
+            <p>Remote-friendly opportunity</p>
+            <div className="relative overflow-hidden rounded-md border border-neutral-200 bg-white p-3">
+              <div className="space-y-2 blur-sm">
+                <p>Application angle matched to your profile</p>
+                <p>Similar roles ranked by fit</p>
+                <p>Suggested next action workflow</p>
+              </div>
+              <div className="absolute inset-0 bg-white/45" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </article>
+);
 
 const OpportunitiesBrowseResults = ({
   resultsSectionRef,
@@ -24,7 +74,7 @@ const OpportunitiesBrowseResults = ({
   onResetFilters,
   onRetry,
 }) => (
-  <section ref={resultsSectionRef} className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <section ref={resultsSectionRef} className="min-w-0">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
       <p className="text-sm font-medium text-neutral-700">{countLabel}</p>
       <p className="text-sm text-neutral-600">
@@ -65,12 +115,14 @@ const OpportunitiesBrowseResults = ({
 
     {!loading && opportunities.length > 0 ? (
       <div className="space-y-4">
-        {opportunities.map((opportunity) => (
-          <OpportunityBrowseCard
-            key={opportunity.id}
-            opportunity={opportunity}
-            isUserAuthenticated={isUserAuthenticated}
-          />
+        {opportunities.map((opportunity, index) => (
+          <div key={opportunity.id || index} className="space-y-4">
+            <OpportunityBrowseCard
+              opportunity={opportunity}
+              isUserAuthenticated={isUserAuthenticated}
+            />
+            {!isUserAuthenticated && index === 3 ? <GuestAiTeaserCard /> : null}
+          </div>
         ))}
       </div>
     ) : null}

@@ -200,13 +200,28 @@ _CLOSED_KEYWORDS = {
 }
 
 _TRACKING_QUERY_KEYS = {
+    "_hsenc",
+    "_hsmi",
+    "mc_cid",
+    "mc_eid",
     "utm_source",
     "utm_medium",
     "utm_campaign",
     "utm_term",
     "utm_content",
+    "utm_id",
+    "utm_name",
+    "utm_reader",
+    "utm_referrer",
+    "utm_social",
+    "utm_social-type",
     "gclid",
+    "dclid",
+    "gbraid",
+    "wbraid",
     "fbclid",
+    "igshid",
+    "msclkid",
     "ref",
     "referrer",
 }

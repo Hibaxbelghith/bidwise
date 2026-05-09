@@ -11,6 +11,7 @@ import {
 } from '../services/schedulerService.js';
 import MetricsGrid from './MetricsGrid.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
+import Sparkline from './Sparkline.jsx';
 import StatusBadge from './StatusBadge.jsx';
 import TrendIndicator from './TrendIndicator.jsx';
 
@@ -99,6 +100,12 @@ const SchedulerCard = ({ decision }) => {
         </div>
 
         <TrendIndicator decision={decision} />
+
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white px-3 py-2">
+          <span className="text-sm font-semibold text-neutral-700">Score history</span>
+          <Sparkline values={decision?.score_history || []} tone={mode.tone === 'red' ? 'red' : 'blue'} label="Score history" />
+        </div>
+
         <MetricsGrid decision={decision} />
       </CardContent>
     </Card>

@@ -1,28 +1,41 @@
 import logging
 
+from django.db import transaction
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes, throttle_classes
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser, IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
+from ai.embeddings import enqueue_profile_embedding_refresh
+from opportunities.autocomplete.service import coerce_limit, suggest_profile_terms
+from opportunities.models import ProfileSuggestionType
+
+from .models import Utilisateur, Profil, ProfileResume, OTPChallenge, LoginEvent
 from .otp_service import deliver_otp, otp_response_message, resolve_client_type
 from .serializers import (
     UtilisateurSerializer,
+    ProfileResumeSerializer,
     ProfilUpdateSerializer,
     OTPRequestSerializer,
     OTPVerifySerializer,
 )
-from .throttles import OTPRequestThrottle, OTPVerifyThrottle, OTPVerifyEmailThrottle
+from .tasks import enqueue_profile_resume_parse
+from .throttles import (
+    OTPRequestThrottle,
+    OTPVerifyEmailThrottle,
+    OTPVerifyThrottle,
+    ProfileSuggestionThrottle,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     """Admin-only user list. Restricted to Django staff users."""
-    queryset = Utilisateur.objects.all()
+    queryset = Utilisateur.objects.select_related("profil").prefetch_related("profil__resumes").all()
     serializer_class = UtilisateurSerializer
     permission_classes = [IsAdminUser]
 
@@ -53,6 +66,85 @@ def profile_detail(request):
             user_serializer = UtilisateurSerializer(request.user)
             return Response(user_serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _profile_suggestion_response(request, term_type):
+    query = request.query_params.get('q', '')
+    limit = coerce_limit(request.query_params.get('limit'))
+    return Response(suggest_profile_terms(term_type, query, limit=limit))
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ProfileSuggestionThrottle])
+def skill_suggestions(request):
+    return _profile_suggestion_response(request, ProfileSuggestionType.SKILL)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ProfileSuggestionThrottle])
+def role_suggestions(request):
+    return _profile_suggestion_response(request, ProfileSuggestionType.ROLE)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ProfileSuggestionThrottle])
+def interest_suggestions(request):
+    return _profile_suggestion_response(request, ProfileSuggestionType.INTEREST)
+
+
+@api_view(['GET', 'POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def profile_resume(request):
+    try:
+        profil = request.user.profil
+    except Profil.DoesNotExist:
+        return Response(
+            {"error": "Profil non trouvÃ©"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    active_resume = (
+        ProfileResume.objects
+        .filter(profile=profil, is_active=True)
+        .order_by("-uploaded_at", "-id")
+        .first()
+    )
+
+    if request.method == 'GET':
+        if not active_resume:
+            return Response({"resume": None}, status=status.HTTP_200_OK)
+        serializer = ProfileResumeSerializer(active_resume, context={"request": request})
+        return Response({"resume": serializer.data}, status=status.HTTP_200_OK)
+
+    if request.method == 'DELETE':
+        if active_resume:
+            active_resume.is_active = False
+            active_resume.save(update_fields=["is_active"])
+            transaction.on_commit(
+                lambda profile_id=profil.pk: enqueue_profile_embedding_refresh(profile_id)
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = ProfileResumeSerializer(
+        data=request.data,
+        context={"request": request, "profile": profil},
+    )
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        ProfileResume.objects.filter(profile=profil, is_active=True).update(is_active=False)
+        resume = serializer.save()
+        transaction.on_commit(
+            lambda resume_id=resume.pk: enqueue_profile_resume_parse(resume_id)
+        )
+
+    output = ProfileResumeSerializer(resume, context={"request": request})
+    return Response({"resume": output.data}, status=status.HTTP_201_CREATED)
 
 
 # ══════════════════════════════════════════════════════════

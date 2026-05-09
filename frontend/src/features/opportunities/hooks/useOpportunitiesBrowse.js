@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   DEFAULT_BROWSE_STATE,
-  DEFAULT_ORDERING,
+  DEFAULT_SORT,
   DEFAULT_PAGE_SIZE,
   FETCHING_SKELETON_DELAY_MS,
   FETCHING_SKELETON_MIN_VISIBLE_MS,
   FILTERS_STORAGE_KEY,
   SEARCH_DEBOUNCE_MS,
 } from '../constants/opportunityBrowse.js';
-import { listOpportunities } from '../services/opportunitiesService.js';
+import { listOpportunities, listOpportunitySources } from '../services/opportunitiesService.js';
 
 const readPersistedBrowseState = () => {
   if (typeof window === 'undefined') return DEFAULT_BROWSE_STATE;
@@ -25,7 +25,9 @@ const readPersistedBrowseState = () => {
       typeFilter: String(parsed?.typeFilter || ''),
       statusFilter: String(parsed?.statusFilter || ''),
       cityFilter: String(parsed?.cityFilter || ''),
-      ordering: String(parsed?.ordering || DEFAULT_BROWSE_STATE.ordering),
+      sourceFilter: String(parsed?.sourceFilter || ''),
+      workModeFilter: String(parsed?.workModeFilter || ''),
+      experienceFilter: String(parsed?.experienceFilter || ''),
       page: Number.isFinite(page) && page > 0 ? page : 1,
     };
   } catch {
@@ -40,12 +42,16 @@ export const useOpportunitiesBrowse = () => {
   const [typeFilter, setTypeFilter] = useState(initialState.typeFilter);
   const [statusFilter, setStatusFilter] = useState(initialState.statusFilter);
   const [cityFilter, setCityFilter] = useState(initialState.cityFilter);
-  const [ordering, setOrdering] = useState(initialState.ordering);
+  const [sourceFilter, setSourceFilter] = useState(initialState.sourceFilter);
+  const [workModeFilter, setWorkModeFilter] = useState(initialState.workModeFilter);
+  const [experienceFilter, setExperienceFilter] = useState(initialState.experienceFilter);
   const [page, setPage] = useState(initialState.page);
 
   const [count, setCount] = useState(0);
   const [opportunities, setOpportunities] = useState([]);
   const [cityOptions, setCityOptions] = useState([]);
+  const [sourceOptions, setSourceOptions] = useState([]);
+  const [facets, setFacets] = useState({});
   const [next, setNext] = useState(null);
   const [previous, setPrevious] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +87,9 @@ export const useOpportunitiesBrowse = () => {
       typeFilter,
       statusFilter,
       cityFilter,
-      ordering,
+      sourceFilter,
+      workModeFilter,
+      experienceFilter,
       page,
     };
     try {
@@ -89,7 +97,33 @@ export const useOpportunitiesBrowse = () => {
     } catch {
       // Ignore storage errors (e.g., private mode restrictions).
     }
-  }, [searchInput, typeFilter, statusFilter, cityFilter, ordering, page]);
+  }, [searchInput, typeFilter, statusFilter, cityFilter, sourceFilter, workModeFilter, experienceFilter, page]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const fetchSources = async () => {
+      try {
+        const sources = await listOpportunitySources();
+        if (!isCancelled) {
+          setSourceOptions(sources);
+          if (sourceFilter && !sources.some((source) => String(source.id) === sourceFilter)) {
+            setSourceFilter('');
+            setPage(1);
+          }
+        }
+      } catch {
+        if (!isCancelled) {
+          setSourceOptions([]);
+        }
+      }
+    };
+
+    fetchSources();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -171,7 +205,10 @@ export const useOpportunitiesBrowse = () => {
           type: typeFilter,
           status: statusFilter,
           city: cityFilter,
-          ordering,
+          source: sourceFilter,
+          workMode: workModeFilter,
+          experienceLevel: experienceFilter,
+          sort: DEFAULT_SORT,
           page,
           pageSize: DEFAULT_PAGE_SIZE,
         });
@@ -181,6 +218,7 @@ export const useOpportunitiesBrowse = () => {
         setCount(data.count ?? 0);
         setNext(data.next ?? null);
         setPrevious(data.previous ?? null);
+        setFacets(data.facets ?? {});
         setOpportunities(data.results ?? []);
         setHasLoadedOnce(true);
 
@@ -204,6 +242,7 @@ export const useOpportunitiesBrowse = () => {
         // Preserve existing data on incremental fetches to avoid list flashing.
         if (!hasLoadedOnce) {
           setOpportunities([]);
+          setFacets({});
           setCount(0);
           setNext(null);
           setPrevious(null);
@@ -220,7 +259,17 @@ export const useOpportunitiesBrowse = () => {
     return () => {
       isCancelled = true;
     };
-  }, [debouncedSearch, typeFilter, statusFilter, cityFilter, ordering, page, reloadToken]);
+  }, [
+    debouncedSearch,
+    typeFilter,
+    statusFilter,
+    cityFilter,
+    sourceFilter,
+    workModeFilter,
+    experienceFilter,
+    page,
+    reloadToken,
+  ]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(count / DEFAULT_PAGE_SIZE)),
@@ -242,8 +291,18 @@ export const useOpportunitiesBrowse = () => {
     setPage(1);
   };
 
-  const setOrderingAndResetPage = (value) => {
-    setOrdering(value);
+  const setSourceFilterAndResetPage = (value) => {
+    setSourceFilter(value);
+    setPage(1);
+  };
+
+  const setWorkModeFilterAndResetPage = (value) => {
+    setWorkModeFilter(value);
+    setPage(1);
+  };
+
+  const setExperienceFilterAndResetPage = (value) => {
+    setExperienceFilter(value);
     setPage(1);
   };
 
@@ -253,7 +312,9 @@ export const useOpportunitiesBrowse = () => {
     setTypeFilter('');
     setStatusFilter('');
     setCityFilter('');
-    setOrdering(DEFAULT_ORDERING);
+    setSourceFilter('');
+    setWorkModeFilter('');
+    setExperienceFilter('');
     setPage(1);
   };
 
@@ -262,6 +323,8 @@ export const useOpportunitiesBrowse = () => {
   return {
     opportunities,
     cityOptions,
+    sourceOptions,
+    facets,
     count,
     next,
     previous,
@@ -281,8 +344,12 @@ export const useOpportunitiesBrowse = () => {
     setStatusFilter: setStatusFilterAndResetPage,
     cityFilter,
     setCityFilter: setCityFilterAndResetPage,
-    ordering,
-    setOrdering: setOrderingAndResetPage,
+    sourceFilter,
+    setSourceFilter: setSourceFilterAndResetPage,
+    workModeFilter,
+    setWorkModeFilter: setWorkModeFilterAndResetPage,
+    experienceFilter,
+    setExperienceFilter: setExperienceFilterAndResetPage,
     setPage,
     resetFilters,
     refetch,

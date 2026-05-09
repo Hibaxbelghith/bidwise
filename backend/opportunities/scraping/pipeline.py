@@ -5,7 +5,8 @@ import re
 import unicodedata
 
 from django.conf import settings
-from django.db.models import F
+from django.db import IntegrityError, transaction
+from django.db.models import Case, F, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from opportunities.models import (
@@ -79,77 +80,82 @@ def _get_or_create_source(source_cache, *, name, url, type_source):
     return source
 
 
-def _shadow_store_raw_record(raw_record, source, *, payload_hash, content_fingerprint):
-    raw_data = {
-        "raw_payload": raw_record,
-        "raw_titre": _as_text(raw_record.get("titre") or raw_record.get("title")),
-        "raw_description": _as_text(raw_record.get("raw_description") or raw_record.get("description")),
-        "raw_organisation_nom": _as_text(
-            raw_record.get("organisation_nom")
-            or raw_record.get("organisation")
-            or raw_record.get("organization")
-        ),
-        "raw_type": _as_text(raw_record.get("type_opportunite") or raw_record.get("type")),
-        "raw_status": _as_text(raw_record.get("statut") or raw_record.get("status")),
-        "raw_date_publication": _as_text(raw_record.get("date_publication") or raw_record.get("publication_date")),
-        "raw_date_limite": _as_text(raw_record.get("date_limite") or raw_record.get("deadline")),
-        "source_item_url": canonicalize_source_item_url(
-            raw_record.get("source_item_url") or raw_record.get("item_url") or raw_record.get("url")
-        ),
-        "source_listing_url": raw_record.get("source_listing_url") or raw_record.get("listing_url"),
-        "source_record_id": _as_text(
-            raw_record.get("source_record_id") or raw_record.get("record_id") or raw_record.get("external_id")
-        )
-        or None,
-        "payload_hash": payload_hash,
-        "content_fingerprint": content_fingerprint,
-    }
+def _identity_filter(source, raw_data):
+    source_record_id = raw_data.get("source_record_id")
+    source_item_url = raw_data.get("source_item_url")
+    identity_query = Q()
+    if source_record_id:
+        identity_query |= Q(source_record_id=source_record_id)
+    if source_item_url:
+        identity_query |= Q(source_item_url=source_item_url)
 
-    # Use DB-backed identity keys when available. This gives us strong dedup
-    # guarantees on source_record_id / source_item_url without changing the
-    # existing canonical Opportunite flow yet.
-    identity_lookup = None
-    if raw_data["source_item_url"]:
-        identity_lookup = {
-            "source": source,
-            "source_item_url": raw_data["source_item_url"],
-        }
-    elif raw_data["source_record_id"]:
-        identity_lookup = {
-            "source": source,
-            "source_record_id": raw_data["source_record_id"],
-        }
+    if not identity_query:
+        return None
 
-    if identity_lookup:
-        raw_opportunity, created = RawOpportunite.objects.get_or_create(
-            defaults={
-                **raw_data,
-                "processing_status": RawOpportuniteProcessingStatus.NEW,
-            },
-            **identity_lookup,
-        )
-        if created:
-            return raw_opportunity, True, payload_hash
-    else:
-        # payload_hash is still a best-effort fallback because it is not backed
-        # by a unique DB constraint. We reuse the newest matching row if found.
-        raw_opportunity = RawOpportunite.objects.filter(
-            source=source,
-            payload_hash=payload_hash,
-        ).order_by("-last_seen_at", "-id").first()
-        if raw_opportunity is None:
-            raw_opportunity = RawOpportunite.objects.create(
-                source=source,
-                processing_status=RawOpportuniteProcessingStatus.NEW,
-                **raw_data,
+    return Q(source=source) & identity_query
+
+
+def _find_raw_opportunity_by_identity(source, raw_data, *, lock=False):
+    identity_query = _identity_filter(source, raw_data)
+    if identity_query is None:
+        return None
+
+    source_record_id = raw_data.get("source_record_id")
+    source_item_url = raw_data.get("source_item_url")
+    queryset = RawOpportunite.objects.filter(identity_query)
+    if lock:
+        queryset = queryset.select_for_update()
+    identity_cases = []
+    if source_record_id:
+        identity_cases.append(When(source_record_id=source_record_id, then=Value(0)))
+    if source_item_url:
+        identity_cases.append(When(source_item_url=source_item_url, then=Value(1)))
+
+    return (
+        queryset.annotate(
+            identity_rank=Case(
+                *identity_cases,
+                default=Value(2),
+                output_field=IntegerField(),
             )
-            return raw_opportunity, True, payload_hash
+        )
+        .order_by("identity_rank", "-last_seen_at", "-id")
+        .first()
+    )
 
+
+def _drop_conflicting_identity_updates(raw_opportunity, source, update_values):
+    for field in ("source_record_id", "source_item_url"):
+        value = update_values.get(field)
+        if not value:
+            continue
+
+        conflict = (
+            RawOpportunite.objects.filter(source=source, **{field: value})
+            .exclude(pk=raw_opportunity.pk)
+            .only("id")
+            .first()
+        )
+        if conflict is None:
+            continue
+
+        logger.warning(
+            "Raw opportunity identity conflict skipped raw_id=%s conflict_id=%s field=%s value=%s",
+            raw_opportunity.pk,
+            conflict.pk,
+            field,
+            value,
+        )
+        update_values.pop(field)
+
+
+def _apply_raw_opportunity_update(raw_opportunity, source, raw_data):
     update_values = {
         field: value
         for field, value in raw_data.items()
         if getattr(raw_opportunity, field) != value
     }
+    _drop_conflicting_identity_updates(raw_opportunity, source, update_values)
 
     impactful_fields = {
         "raw_payload",
@@ -178,6 +184,87 @@ def _shadow_store_raw_record(raw_record, source, *, payload_hash, content_finger
     update_values["last_seen_at"] = timezone.now()
     RawOpportunite.objects.filter(pk=raw_opportunity.pk).update(**update_values)
     raw_opportunity.refresh_from_db()
+    return raw_opportunity, False
+
+
+def _upsert_raw_opportunity_by_identity(source, raw_data):
+    with transaction.atomic():
+        raw_opportunity = _find_raw_opportunity_by_identity(source, raw_data, lock=True)
+        if raw_opportunity is not None:
+            return _apply_raw_opportunity_update(raw_opportunity, source, raw_data)
+
+        raw_opportunity = RawOpportunite.objects.create(
+            source=source,
+            processing_status=RawOpportuniteProcessingStatus.NEW,
+            **raw_data,
+        )
+        return raw_opportunity, True
+
+
+def _shadow_store_raw_record(raw_record, source, *, payload_hash, content_fingerprint):
+    raw_data = {
+        "raw_payload": raw_record,
+        "raw_titre": _as_text(raw_record.get("titre") or raw_record.get("title")),
+        "raw_description": _as_text(raw_record.get("raw_description") or raw_record.get("description")),
+        "raw_organisation_nom": _as_text(
+            raw_record.get("organisation_nom")
+            or raw_record.get("organisation")
+            or raw_record.get("organization")
+        ),
+        "raw_type": _as_text(raw_record.get("type_opportunite") or raw_record.get("type")),
+        "raw_status": _as_text(raw_record.get("statut") or raw_record.get("status")),
+        "raw_date_publication": _as_text(raw_record.get("date_publication") or raw_record.get("publication_date")),
+        "raw_date_limite": _as_text(raw_record.get("date_limite") or raw_record.get("deadline")),
+        "source_item_url": canonicalize_source_item_url(
+            raw_record.get("source_item_url") or raw_record.get("item_url") or raw_record.get("url")
+        ),
+        "source_listing_url": canonicalize_source_item_url(
+            raw_record.get("source_listing_url") or raw_record.get("listing_url")
+        ),
+        "source_record_id": _as_text(
+            raw_record.get("source_record_id") or raw_record.get("record_id") or raw_record.get("external_id")
+        )
+        or None,
+        "payload_hash": payload_hash,
+        "content_fingerprint": content_fingerprint,
+    }
+
+    # Use DB-backed identity keys when available. Native source IDs are checked
+    # before URLs because listings can emit the same record with changing URLs.
+    has_identity = bool(raw_data["source_record_id"] or raw_data["source_item_url"])
+    if has_identity:
+        try:
+            raw_opportunity, created = _upsert_raw_opportunity_by_identity(source, raw_data)
+            return raw_opportunity, created, payload_hash
+        except IntegrityError:
+            logger.warning(
+                "Raw opportunity duplicate recovered by identity source=%s record_id=%s url=%s",
+                source.nom,
+                raw_data.get("source_record_id"),
+                raw_data.get("source_item_url"),
+            )
+            with transaction.atomic():
+                raw_opportunity = _find_raw_opportunity_by_identity(source, raw_data, lock=True)
+                if raw_opportunity is None:
+                    raise
+                raw_opportunity, _ = _apply_raw_opportunity_update(raw_opportunity, source, raw_data)
+            return raw_opportunity, False, payload_hash
+    else:
+        # payload_hash is still a best-effort fallback because it is not backed
+        # by a unique DB constraint. We reuse the newest matching row if found.
+        raw_opportunity = RawOpportunite.objects.filter(
+            source=source,
+            payload_hash=payload_hash,
+        ).order_by("-last_seen_at", "-id").first()
+        if raw_opportunity is None:
+            raw_opportunity = RawOpportunite.objects.create(
+                source=source,
+                processing_status=RawOpportuniteProcessingStatus.NEW,
+                **raw_data,
+            )
+            return raw_opportunity, True, payload_hash
+
+    raw_opportunity, _ = _apply_raw_opportunity_update(raw_opportunity, source, raw_data)
     return raw_opportunity, False, payload_hash
 
 

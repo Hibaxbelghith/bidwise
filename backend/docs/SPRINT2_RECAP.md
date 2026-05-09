@@ -1,12 +1,12 @@
 # Sprint 2 - Technical recap
 
-Last updated: 2026-05-03
+Last updated: 2026-05-05
 
 ## Verdict
 
 Sprint 2 is complete for the opportunities pipeline scope.
 
-The implementation is no longer a simple scraper command. It is now a production-oriented ingestion architecture with a shared pipeline core, manual CLI entry point, Celery workers, Celery Beat scheduling, Redis-backed locks, operational monitoring, anomaly detection, Discord alerting, automatic recovery, raw replay safety, canonical materialization, API exposure, embeddings, and similarity search.
+The implementation is no longer a simple scraper command. It is now a production-oriented ingestion architecture with a scheduler/orchestration core, manual CLI entry point, Celery workers, Celery Beat scheduling, Redis-backed locks, operational monitoring, anomaly detection, Discord alerting, automatic recovery, raw replay safety, canonical materialization, API exposure, embeddings, and similarity search.
 
 The original Sprint 2 target was the backend data layer behind opportunity discovery. That scope is implemented end to end: collection, raw persistence, normalization, enrichment, quality scoring, materialization, API exposure, embedding generation, and similarity.
 
@@ -25,13 +25,13 @@ These are the strongest Sprint 2 talking points for a technical presentation:
 | Goal | State | Evidence in code |
 | --- | --- | --- |
 | Scraping stability | Complete | `opportunities/scraping/pipeline.py`, `opportunities/scraping/sources/*`, scraper regression tests |
-| Unified pipeline core | Complete | `opportunities/pipeline.py`, `opportunities/management/commands/collect_opportunities.py` |
+| Scheduler/orchestration core | Complete | `opportunities/pipeline.py`, `opportunities/management/commands/collect_opportunities.py` |
 | Async execution | Complete | `opportunities/tasks.py`, `backend/config/celery.py`, `docker-compose.yml` |
 | Scheduled execution | Complete | `CELERY_BEAT_SCHEDULE` in `backend/config/settings.py`, `celery_beat` service |
 | Intelligent scheduling | Complete | `get_source_schedule_state`, `get_due_sources`, `select_sources_for_pipeline` |
 | Raw shadow storage | Complete | `RawOpportunite`, raw identity constraints, payload hash, content fingerprint |
 | Normalization | Complete | `opportunities/normalization/service.py` |
-| Enrichment | Complete | `opportunities/enrichment/text_enrichment.py` |
+| Enrichment and NLP layer | Complete | `opportunities/enrichment/text_enrichment.py`, `opportunities/nlp/extraction.py`, `opportunities/nlp/skills.py` |
 | Quality gate | Complete | `opportunities/quality/quality_gate.py`, `opportunities/scoring/quality.py` |
 | Materialization | Complete | `opportunities/materialization/service.py`, `opportunities/processing.py` |
 | API | Complete | `opportunities/views.py`, `opportunities/filters.py`, `opportunities/serializers.py` |
@@ -59,7 +59,7 @@ Legacy aliases are supported:
 - `emploitunisie` maps to `emploi_tn`
 - `marchespublics` maps to `marches_publics`
 
-The source registry and aliases live in `opportunities/pipeline.py`. Runtime source order comes from `OPPORTUNITY_PIPELINE_SOURCES`, then `OPPORTUNITY_SOURCE_CONFIG.priority`.
+The source registry and aliases live in the scheduler/orchestrator module, `opportunities/pipeline.py`. Runtime source order comes from `OPPORTUNITY_PIPELINE_SOURCES`, then `OPPORTUNITY_SOURCE_CONFIG.priority`.
 
 ## Actual pipeline path
 
@@ -67,13 +67,13 @@ Production data path:
 
 ```text
 Celery Beat or CLI
-  -> shared pipeline core
+  -> scheduler/orchestrator (`opportunities/pipeline.py`)
   -> source scraper
   -> run_collection
   -> RawOpportunite
-  -> materialization task or manual processing
+  -> materialization task or manual processing (`opportunities/processing.py`)
   -> normalize_raw_opportunity
-  -> enrich_opportunity_text
+  -> enrich_opportunity_text (delegates to NLP extraction helpers)
   -> evaluate_opportunity
   -> materialize_opportunity
   -> Opportunite
@@ -84,12 +84,15 @@ Celery Beat or CLI
 Role boundaries in the raw-to-canonical step:
 
 - Normalization maps raw source payloads into canonical structured fields. It owns source schema mapping, date parsing, canonical type/status values, city/company cleanup, URL canonicalization, and structured experience parsing.
-- Enrichment does not remap source schemas. It derives extra fields from already-normalized text, such as salary, skills, language fallback, and experience fallback from description text only when no structured experience is present.
+- Enrichment does not remap source schemas and no longer owns direct NLP extraction logic. It orchestrates structured normalized values with NLP-derived output, preserves fallback rules, and returns stable fields such as salary, skills, language fallback, and experience fallback from description text only when no structured experience is present.
+- The NLP layer owns reusable text extraction helpers and the canonical skill keyword list. It does not schedule sources, persist raw data, score quality, or materialize canonical rows.
 - Scoring evaluates the normalized and enriched payload quality; it does not extract new business fields.
 - Materialization persists the final payload to `Opportunite`, applies DB safety checks, deduplication, merge rules, and status policy.
 
 Important distinction:
 
+- `opportunities/pipeline.py` is the source collection scheduler/orchestrator. It selects due sources, applies adaptive scheduling rules, constructs scrapers, and records collection results; it is not the raw-to-canonical business data pipeline.
+- `opportunities/processing.py` is the real data pipeline for one raw opportunity or a raw batch. It runs normalization, enrichment orchestration, quality scoring, materialization, raw state transitions, and optional inline embeddings.
 - CLI execution runs the shared source selection and collection core. It is useful for manual collection and smoke tests.
 - Celery execution is the production orchestration path. It creates `PipelineRun` rows, applies per-source locks, retries failures, schedules materialization, schedules embeddings, and feeds monitoring.
 
@@ -103,6 +106,8 @@ Current implementation modules:
 - `opportunities/processing.py`
 - `opportunities/normalization/service.py`
 - `opportunities/enrichment/text_enrichment.py`
+- `opportunities/nlp/extraction.py`
+- `opportunities/nlp/skills.py`
 - `opportunities/quality/quality_gate.py`
 - `opportunities/materialization/service.py`
 - `opportunities/embeddings/service.py`
@@ -111,6 +116,15 @@ Current implementation modules:
 - `opportunities/views_admin.py`
 - `opportunities/dataset_metrics.py`
 - `frontend/src/features/admin/DashboardAdminPage.jsx`
+
+## NLP Layer
+
+The NLP layer is separate from enrichment so extraction behavior can evolve without changing pipeline orchestration.
+
+- `opportunities/nlp/extraction.py` owns reusable extraction helpers for salary, hard skills, soft skills, and language detection.
+- `opportunities/nlp/skills.py` owns the canonical skill keyword list used by extraction.
+- `opportunities/enrichment/text_enrichment.py` consumes NLP extraction, merges it with normalized structured fields, and returns the stable enrichment contract expected by `processing.py`.
+- NLP extraction has no source scheduling, raw persistence, quality scoring, materialization, embedding, or API responsibility.
 
 ## Execution architecture
 
@@ -125,7 +139,7 @@ It supports:
 - scheduler-aware execution with `--respect-schedule`
 - source-specific controls such as `--max-pages`, `--max-records`, `--keyword`, `--location`, `--timeout`, `--min-delay`, `--max-delay`, `--stage-only`, and `--fetch-details`
 
-The command delegates to `run_opportunity_pipeline`, which uses the same registry, source normalization, source priority, scraper construction, and scheduling logic used by Celery dispatch.
+The command delegates to `run_opportunity_pipeline` in `opportunities/pipeline.py`, the same scheduler/orchestrator used by Celery for source registry lookup, source-key normalization, source priority, scraper construction, and scheduling decisions.
 
 ### Celery worker path
 
@@ -204,16 +218,18 @@ This design reduces external load while still protecting freshness.
 
 | Module | Role in pipeline | Execution flow | Advanced features |
 | --- | --- | --- | --- |
-| `opportunities/pipeline.py` | Shared pipeline core: source registry, aliases, priority, source config, scheduler state, scraper construction, result building | Called by the CLI command and Celery tasks | due/stale/retry/running-stale decisions, source priority ordering, source aliases, stale running cleanup before synchronous relaunch, fallback when no source is due |
+| `opportunities/pipeline.py` | Source scheduler/orchestrator: source registry, aliases, priority, source config, adaptive scheduler state, scraper construction, collection result building | Called by the CLI command and Celery dispatch to choose due sources and launch collection; not used for raw-to-canonical processing | due/stale/retry/running-stale decisions, EMA-smoothed metrics, adaptive score, hard failure cooldown, source priority ordering, source aliases, stale running cleanup before synchronous relaunch, fallback when no source is due |
 | `opportunities/tasks.py` | Production Celery orchestration | Beat calls `collect_opportunities_pipeline`; it dispatches `collect_source_task`; source task schedules materialization; materialization schedules embeddings; monitor task evaluates health | Redis locks, `PipelineRun` persistence, retry after source exception, failed-page threshold, bounded batches, self-requeue, no-progress embedding alert, DB connection cleanup |
 | `opportunities/monitoring.py` | Observability, anomaly detection, alerting, recovery | Called by source observation, monitor task, and admin dashboard | structured logs, Redis/cache alert state, Discord alerts, threshold/cooldown anti-spam, recovery notifications, stuck-run detection, failed-streak detection, duration anomalies, embedding backlog detection, automatic stuck recovery |
 | `opportunities/scraping/pipeline.py` | Raw ingestion boundary | Called by `run_source_collection` after a scraper yields records | shadow storage, source upsert, URL and record-id identity, payload hash, content fingerprint, requeue on impactful raw changes, max empty pages, max failed pages, page-level stats |
 | `opportunities/scraping/sources/*` | Source-specific adapters for Keejob, EmploiTunisie, LinkedIn, MarchesPublics | Each scraper returns raw records or raw pages to the shared scraping pipeline | HTTP retry adapters, random request delays, pagination caps, max records, duplicate skipping, 403 block detection, detail-page enrichment, listing fallback for MarchesPublics, fail-safe LinkedIn scraper, structured field extraction |
 | `opportunities/normalization/service.py` | Canonical mapping from raw payload to normalized dict | Called first by `process_raw_opportunity` | deterministic field mapping, date/type/status parsing, source URL canonicalization, structured field cleanup, structured experience bounds |
-| `opportunities/enrichment/text_enrichment.py` | Deterministic derived-field extraction from normalized text | Called after normalization and before quality scoring | salary parsing, skills extraction, language fallback, description-only experience fallback, safe default output on parser failure |
+| `opportunities/enrichment/text_enrichment.py` | Enrichment orchestration that merges normalized structured values with NLP-derived fields | Called by `process_raw_opportunity` after normalization and before quality scoring; delegates reusable extraction to `opportunities/nlp/extraction.py` | stable enrichment contract, structured skill merge, salary resolution, language fallback, description-only experience fallback, safe default output on parser failure |
+| `opportunities/nlp/extraction.py` | Reusable NLP extraction helpers for enrichment | Called by `opportunities/enrichment/text_enrichment.py` | salary extraction, hard skill detection, soft skill detection, language detection, normalized token matching |
+| `opportunities/nlp/skills.py` | Canonical skill keyword registry | Imported by NLP extraction and kept as a stable skill vocabulary surface | centralized skill list, consistent matching vocabulary, legacy import compatibility through enrichment |
 | `opportunities/quality/quality_gate.py` | Quality scoring and usability gate | Called after enrichment | quality score, quality tier, recommendation readiness, minimum title/description/source URL checks |
 | `opportunities/materialization/service.py` | Canonical persistence for `Opportunite` | Called by `process_raw_opportunity` after normalization, enrichment, and quality gate | transactional deduplication, source+URL identity, external-id fallback, required-field validation, choice validation, URL quality policy, quality score persistence, non-destructive merge rules, status correction, previous duplicate archiving |
-| `opportunities/processing.py` | Raw-to-canonical batch processor | Called by manual shell tests and `materialize_opportunities_task` | per-record isolation, row locks, rejection without deleting raw data, replay-safe state transitions, optional inline embeddings, deterministic batch order |
+| `opportunities/processing.py` | Real raw-to-canonical data pipeline and batch processor | Called by manual shell tests and `materialize_opportunities_task`; `process_raw_opportunity` runs normalization, enrichment orchestration, scoring, and materialization in order | per-record isolation, row locks, rejection without deleting raw data, replay-safe state transitions, optional inline embeddings, deterministic batch order |
 | `opportunities/embeddings/service.py` | Embedding model abstraction | Called by `generate_embeddings` command and optional inline processing | model whitelist, model versioning, cached CPU model, batch encoding, L2-normalized vectors, text preprocessing |
 | `opportunities/dataset_metrics.py` | Lightweight operational and data quality metrics | Called by `/api/metrics/pipeline/` and admin dashboard enrichment | raw processing distribution, last-run summary, pipeline flow, description/salary/skills/embedding coverage, source reliability, throughput, freshness delay |
 | `opportunities/views_admin.py` | Staff-only dashboard API | Frontend calls `/api/admin/dashboard/` | Celery inspect snapshot, KPI aggregation, source monitoring, embedding coverage, raw lag, recent run history, live anomaly list |

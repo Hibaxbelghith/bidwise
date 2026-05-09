@@ -1,25 +1,18 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMemo } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 
+import ProfileSection from '@/src/features/profile/components/ProfileSection';
+import ResumeSection from '@/src/features/profile/components/ResumeSection';
+import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
-
-const PROFILE_STORAGE_KEY = 'bidwise_user_profile';
-
-type StoredProfile = {
-  target_roles?: unknown;
-  employment_types?: unknown;
-  remote_preference?: unknown;
-};
-
-const toStringArray = (value: unknown) => {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
-};
+import type { BidWiseProfile, ProfileUser } from '@/src/features/profile/types';
+import {
+  normalizeInterestList,
+  normalizeLocations,
+  normalizeSkillList,
+  normalizeTextList,
+} from '@/src/features/profile/utils/profileValidation';
 
 const formatPreference = (value: unknown) => {
   const normalized = String(value || '').trim();
@@ -32,11 +25,19 @@ const formatPreference = (value: unknown) => {
     .join(' ');
 };
 
+const formatList = (value: unknown) => normalizeTextList(value).map(formatPreference);
+
+const formatSalary = (profile?: BidWiseProfile) => {
+  if (!profile?.compensation_expectation) return 'Not specified';
+  const period = formatPreference(profile.compensation_period || 'MONTHLY').toLowerCase();
+  return `${profile.compensation_expectation} ${profile.compensation_currency || 'TND'} / ${period}`;
+};
+
 export default function ProfileScreen() {
   const router = useRouter();
-  const [targetRoles, setTargetRoles] = useState<string[]>([]);
-  const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
-  const [remotePreference, setRemotePreference] = useState('');
+  const { user, loadUserProfile, loading } = useAuth();
+  const typedUser = user as ProfileUser | null;
+  const profile = typedUser?.profil;
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -44,31 +45,24 @@ export default function ProfileScreen() {
   const tintColor = useThemeColor({}, 'tint');
   const cardColor = useThemeColor({}, 'card');
   const borderColor = useThemeColor({}, 'border');
+  const sectionColors = useMemo(
+    () => ({ card: cardColor, border: borderColor, text: textColor, muted: mutedColor }),
+    [borderColor, cardColor, mutedColor, textColor],
+  );
+  const controlColors = useMemo(
+    () => ({ tint: tintColor, border: borderColor, text: textColor, muted: mutedColor, card: cardColor }),
+    [borderColor, cardColor, mutedColor, textColor, tintColor],
+  );
 
-  const hasProfileData = targetRoles.length > 0 || employmentTypes.length > 0 || remotePreference;
-
-  const handleOpenOnboarding = () => {
-    router.push('/onboarding' as Href);
-  };
-
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const storedProfile = await AsyncStorage.getItem(PROFILE_STORAGE_KEY);
-        const parsed = storedProfile ? (JSON.parse(storedProfile) as StoredProfile) : null;
-
-        setTargetRoles(toStringArray(parsed?.target_roles));
-        setEmploymentTypes(toStringArray(parsed?.employment_types));
-        setRemotePreference(formatPreference(parsed?.remote_preference));
-      } catch {
-        setTargetRoles([]);
-        setEmploymentTypes([]);
-        setRemotePreference('');
-      }
-    };
-
-    loadProfile();
-  }, []);
+  const completion = profile?.profile_completion || { score: 0, missing: [] };
+  const missing = Array.isArray(completion.missing) ? completion.missing.slice(0, 3) : [];
+  const displayName = [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || typedUser?.email || 'BidWise profile';
+  const hasProfileData = Boolean(
+    profile?.target_roles?.length
+      || profile?.competences?.length
+      || profile?.domaines_interet?.length
+      || profile?.preferred_locations?.length,
+  );
 
   const renderChips = (items: string[]) => {
     if (!items.length) {
@@ -78,7 +72,7 @@ export default function ProfileScreen() {
     return (
       <View style={styles.chipWrap}>
         {items.map((item) => (
-          <View key={item} style={[styles.chip, { borderColor: tintColor, backgroundColor: cardColor }]}>
+          <View key={item} style={[styles.chip, { borderColor: tintColor, backgroundColor: tintColor + '14' }]}>
             <Text style={[styles.chipText, { color: tintColor }]}>{item}</Text>
           </View>
         ))}
@@ -86,48 +80,140 @@ export default function ProfileScreen() {
     );
   };
 
+  const openOnboarding = () => {
+    router.push('/onboarding' as Href);
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadUserProfile} tintColor={tintColor} />}
     >
-      <Text style={[styles.title, { color: textColor }]}>My Profile</Text>
-
-      {!hasProfileData ? (
-        <TouchableOpacity
-          style={[styles.card, { backgroundColor: cardColor, borderColor }]}
-          onPress={handleOpenOnboarding}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.sectionTitle, { color: textColor }]}>Complete onboarding</Text>
-          <Text style={[styles.description, { color: mutedColor }]}>
-            Add your preferences to personalize your BidWise experience.
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.eyebrow, { color: tintColor }]}>Recommendation-ready profile</Text>
+          <Text style={[styles.title, { color: textColor }]}>{displayName}</Text>
+          <Text style={[styles.subtitle, { color: mutedColor }]}>
+            Keep your signals clean so matching stays precise.
           </Text>
+        </View>
+        <TouchableOpacity activeOpacity={0.75} onPress={openOnboarding} style={[styles.editButton, { backgroundColor: tintColor }]}>
+          <Text style={styles.editButtonText}>{hasProfileData ? 'Edit' : 'Start'}</Text>
         </TouchableOpacity>
-      ) : null}
-
-      <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>Target roles</Text>
-        {renderChips(targetRoles)}
       </View>
 
-      <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>Employment types</Text>
-        {renderChips(employmentTypes)}
+      <View style={[styles.completionCard, { backgroundColor: cardColor, borderColor }]}>
+        <View style={styles.completionTop}>
+          <Text style={[styles.completionScore, { color: textColor }]}>{completion.score}% complete</Text>
+          <Text style={[styles.completionHint, { color: mutedColor }]}>
+            {missing.length ? `Next: ${missing.join(', ')}` : 'Core matching signals are present.'}
+          </Text>
+        </View>
+        <View style={[styles.progressTrack, { backgroundColor: borderColor }]}>
+          <View
+            style={[
+              styles.progressFill,
+              { backgroundColor: tintColor, width: `${Math.min(Math.max(completion.score || 0, 0), 100)}%` },
+            ]}
+          />
+        </View>
       </View>
 
-      <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>Remote preference</Text>
-        <Text style={[styles.valueText, { color: remotePreference ? textColor : mutedColor }]}>
-          {remotePreference || 'Not specified'}
+      <ProfileSection
+        title="Basic Information"
+        description="Identity and experience level."
+        defaultOpen
+        colors={sectionColors}
+      >
+        <View style={styles.infoGrid}>
+          <InfoItem label="First name" value={profile?.prenom || 'Not specified'} muted={mutedColor} text={textColor} />
+          <InfoItem label="Last name" value={profile?.nom || 'Not specified'} muted={mutedColor} text={textColor} />
+          <InfoItem label="Experience" value={formatPreference(profile?.niveau_experience) || 'Not specified'} muted={mutedColor} text={textColor} />
+          <InfoItem label="Years" value={profile?.annees_experience != null ? String(profile.annees_experience) : 'Not specified'} muted={mutedColor} text={textColor} />
+        </View>
+      </ProfileSection>
+
+      <ProfileSection
+        title="Work Preferences"
+        description="Location, mode, contract and compensation."
+        defaultOpen
+        colors={sectionColors}
+      >
+        <InfoItem label="Salary" value={formatSalary(profile)} muted={mutedColor} text={textColor} />
+        <InfoItem label="Locations" value={normalizeLocations(profile?.preferred_locations).join(', ') || 'Not specified'} muted={mutedColor} text={textColor} />
+        <View style={styles.block}>
+          <Text style={[styles.blockLabel, { color: mutedColor }]}>Work modes</Text>
+          {renderChips(formatList(profile?.work_mode_preferences))}
+        </View>
+        <View style={styles.block}>
+          <Text style={[styles.blockLabel, { color: mutedColor }]}>Employment types</Text>
+          {renderChips(formatList(profile?.employment_types))}
+        </View>
+      </ProfileSection>
+
+      <ProfileSection
+        title="Career Signals"
+        description="Skills, target roles and industries."
+        defaultOpen
+        colors={sectionColors}
+      >
+        <View style={styles.block}>
+          <Text style={[styles.blockLabel, { color: mutedColor }]}>Target roles</Text>
+          {renderChips(normalizeTextList(profile?.target_roles))}
+        </View>
+        <View style={styles.block}>
+          <Text style={[styles.blockLabel, { color: mutedColor }]}>Skills</Text>
+          {renderChips(normalizeSkillList(profile?.competences))}
+        </View>
+        <View style={styles.block}>
+          <Text style={[styles.blockLabel, { color: mutedColor }]}>Industries / Interests</Text>
+          {renderChips(normalizeInterestList(profile?.domaines_interet))}
+        </View>
+      </ProfileSection>
+
+      <ProfileSection
+        title="Resume / CV"
+        description="Upload a resume or preview a BidWise resume draft."
+        defaultOpen
+        colors={sectionColors}
+      >
+        <ResumeSection profile={profile} onChanged={loadUserProfile} colors={controlColors} />
+      </ProfileSection>
+
+      <ProfileSection
+        title="Profile Settings"
+        description="Visibility and future recommendation controls."
+        defaultOpen={false}
+        colors={sectionColors}
+      >
+        <InfoItem
+          label="Visibility"
+          value={profile?.profile_visibility === false ? 'Hidden' : 'Visible to recruiters'}
+          muted={mutedColor}
+          text={textColor}
+        />
+        <InfoItem
+          label="Onboarding"
+          value={profile?.onboarding_completed ? 'Completed' : 'Not completed'}
+          muted={mutedColor}
+          text={textColor}
+        />
+        <Text style={[styles.settingsNote, { color: mutedColor }]}>
+          Future match tuning controls will live here when recommendation settings are introduced.
         </Text>
-      </View>
-
-      <TouchableOpacity style={[styles.editButton, { backgroundColor: tintColor }]} activeOpacity={0.8}>
-        <Text style={styles.editButtonText}>Edit Profile</Text>
-      </TouchableOpacity>
+      </ProfileSection>
     </ScrollView>
+  );
+}
+
+function InfoItem({ label, value, muted, text }: { label: string; value: string; muted: string; text: string }) {
+  return (
+    <View style={styles.infoItem}>
+      <Text style={[styles.infoLabel, { color: muted }]}>{label}</Text>
+      <Text style={[styles.infoValue, { color: value === 'Not specified' ? muted : text }]}>{value}</Text>
+    </View>
   );
 }
 
@@ -136,28 +222,89 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
-    paddingTop: 60,
     gap: 16,
+    padding: 16,
+    paddingBottom: 40,
+    paddingTop: 58,
+  },
+  header: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 14,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 6,
+    textTransform: 'uppercase',
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 8,
+    fontWeight: '800',
+    marginBottom: 6,
   },
-  card: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  description: {
+  subtitle: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  editButton: {
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  editButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  completionCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+    padding: 16,
+  },
+  completionTop: {
+    gap: 4,
+  },
+  completionScore: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  completionHint: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  progressTrack: {
+    borderRadius: 999,
+    height: 8,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    borderRadius: 999,
+    height: '100%',
+  },
+  infoGrid: {
+    gap: 12,
+  },
+  infoItem: {
+    gap: 4,
+  },
+  infoLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  infoValue: {
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  block: {
+    gap: 8,
+  },
+  blockLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
   chipWrap: {
     flexDirection: 'row',
@@ -165,32 +312,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    borderWidth: 1,
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   chipText: {
     fontSize: 13,
-    fontWeight: '600',
-  },
-  valueText: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontWeight: '700',
   },
   emptyText: {
-    fontSize: 14,
+    fontSize: 13,
     fontStyle: 'italic',
   },
-  editButton: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  editButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
+  settingsNote: {
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

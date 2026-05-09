@@ -126,6 +126,8 @@
 
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   html {
@@ -305,4 +307,12 @@ h3:focus-visible,
 .high-contrast .text-neutral-500,
 .high-contrast .text-neutral-600 {
   color: #333333;
+}
+
+.bidwise-browse-page .text-neutral-500 {
+  color: #525252;
+}
+
+.bidwise-browse-page .text-neutral-600 {
+  color: #404040;
 }

@@ -1,5 +1,6 @@
 import logging
 import secrets
+from pathlib import Path
 
 import requests
 from django.db import models
@@ -31,15 +32,55 @@ class Profil(models.Model):
     )
     nom = models.CharField(max_length=100, blank=True)
     prenom = models.CharField(max_length=100, blank=True)
-    competences = models.TextField(
+    competences = models.JSONField(
+        default=list,
         blank=True,
-        help_text="Liste des compétences séparées par des virgules"
+        help_text="Structured list of profile skills used for ML features"
     )
-    domaines_interet = models.TextField(
+    domaines_interet = models.JSONField(
+        default=list,
         blank=True,
-        help_text="Domaines d'intérêt (ex: web, IA, finance)"
+        help_text="Structured list of interest domains used for recommendations"
     )
-    
+    embedding = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Cached user embedding generated from normalized profile features"
+    )
+    embedding_features_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Hash of the normalized profile features used for the cached embedding"
+    )
+    last_embedding_update = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last time the cached profile embedding was generated"
+    )
+    embedding_model = models.CharField(
+        max_length=160,
+        blank=True,
+        default="",
+        help_text="Embedding model identifier used for the cached profile vector"
+    )
+    embedding_dimensions = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Dimension count of the cached profile embedding vector"
+    )
+    embedding_updated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last time the versioned profile embedding metadata was updated"
+    )
+    embedding_content_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Deterministic hash of semantic profile content used for embeddings"
+    )
+
     class NiveauExperience(models.TextChoices):
         DEBUTANT = 'DEBUTANT', 'Débutant (0–1 an)'
         JUNIOR = 'JUNIOR', 'Junior (1–3 ans)'
@@ -66,15 +107,19 @@ class Profil(models.Model):
     )
 
     # ── Onboarding: Location & Remote (Step 1) ─────────────
-    preferred_location = models.CharField(
-        max_length=255, null=True, blank=True,
-        help_text="Preferred city/region, free text"
+    preferred_locations = models.JSONField(
+        default=list, blank=True,
+        help_text="Preferred Tunisian cities/regions and custom locations"
     )
     remote_preference = models.CharField(
         max_length=10,
         choices=[('ON_SITE', 'On-site'), ('REMOTE', 'Remote'), ('HYBRID', 'Hybrid')],
         null=True, blank=True,
-        help_text="Remote work preference"
+        help_text="Legacy single remote work preference"
+    )
+    work_mode_preferences = models.JSONField(
+        default=list, blank=True,
+        help_text="Canonical desired work modes, e.g. ['REMOTE','HYBRID']"
     )
 
     # ── Onboarding: Salary (Step 2) ────────────────────────
@@ -82,9 +127,20 @@ class Profil(models.Model):
         null=True, blank=True,
         help_text="Expected compensation amount"
     )
+    compensation_currency = models.CharField(
+        max_length=3,
+        default="TND",
+        blank=True,
+        help_text="ISO currency code for expected compensation"
+    )
     compensation_period = models.CharField(
         max_length=10,
-        choices=[('HOURLY', 'Hourly'), ('MONTHLY', 'Monthly'), ('YEARLY', 'Yearly')],
+        choices=[
+            ('MONTHLY', 'Monthly'),
+            ('YEARLY', 'Yearly'),
+            ('DAILY', 'Daily'),
+            ('HOURLY', 'Hourly'),
+        ],
         null=True, blank=True,
         help_text="Compensation period"
     )
@@ -92,7 +148,7 @@ class Profil(models.Model):
     # ── Onboarding: Employment Type (Step 3) ───────────────
     employment_types = models.JSONField(
         default=list, blank=True,
-        help_text="Desired employment types, e.g. ['FULL_TIME','CONTRACT']"
+        help_text="Canonical desired contract/employment types"
     )
 
     # ── Onboarding: Target Roles (Step 4) ──────────────────
@@ -119,6 +175,141 @@ class Profil(models.Model):
 
     def __str__(self):
         return f"{self.prenom} {self.nom}" if self.prenom and self.nom else f"Profil #{self.id}"
+
+
+def profile_resume_upload_to(instance, filename):
+    extension = Path(filename or "").suffix.lower()
+    if extension not in {".pdf", ".docx"}:
+        extension = ".bin"
+    return f"profile_resumes/{instance.profile_id}/{secrets.token_hex(16)}{extension}"
+
+
+class ProfileResume(models.Model):
+    class SourceType(models.TextChoices):
+        UPLOAD = "UPLOAD", "Upload"
+        BUILDER = "BUILDER", "BidWise Builder"
+
+    class ParsingStatus(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        PROCESSING = "PROCESSING", "Processing"
+        SUCCEEDED = "SUCCEEDED", "Succeeded"
+        EMPTY = "EMPTY", "Empty"
+        FAILED = "FAILED", "Failed"
+        UNSUPPORTED = "UNSUPPORTED", "Unsupported"
+
+    profile = models.ForeignKey(
+        Profil,
+        on_delete=models.CASCADE,
+        related_name="resumes",
+    )
+    file = models.FileField(upload_to=profile_resume_upload_to, null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    parsed_text = models.TextField(blank=True, default="")
+    parsing_status = models.CharField(
+        max_length=20,
+        choices=ParsingStatus.choices,
+        default=ParsingStatus.PENDING,
+        db_index=True,
+        help_text="Asynchronous resume parsing lifecycle status",
+    )
+    parsing_error = models.TextField(
+        blank=True,
+        default="",
+        help_text="Safe user-neutral parsing error detail for operators",
+    )
+    parsed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when resume parsing last completed",
+    )
+    resume_text_embedding_source = models.TextField(
+        blank=True,
+        default="",
+        help_text="Clean deterministic resume text source prepared for future embeddings"
+    )
+    extracted_skills = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Canonical semantic skills extracted from the resume. Does not overwrite user-entered skills.",
+    )
+    extracted_domains = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Canonical semantic domains inferred from the resume.",
+    )
+    extracted_tools = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Canonical tools and platforms extracted from the resume.",
+    )
+    extracted_languages = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Languages detected in the parsed resume text.",
+    )
+    semantic_resume_version = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Version of the semantic resume enrichment pipeline.",
+    )
+    semantic_resume_content_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Content hash used to skip repeated semantic CV inference.",
+    )
+    semantic_resume_updated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last time semantic resume enrichment completed.",
+    )
+    semantic_resume_confidence = models.FloatField(
+        default=0.0,
+        help_text="Confidence score for extracted semantic resume signals.",
+    )
+    semantic_resume_status = models.CharField(
+        max_length=20,
+        blank=True,
+        default="PENDING",
+        db_index=True,
+        help_text="Lifecycle status for semantic resume enrichment.",
+    )
+    semantic_resume_error = models.TextField(
+        blank=True,
+        default="",
+        help_text="Safe operator-facing semantic enrichment error.",
+    )
+    semantic_resume_metadata = models.JSONField(
+        blank=True,
+        default=dict,
+        help_text="Diagnostic metadata for semantic resume enrichment.",
+    )
+    source_type = models.CharField(
+        max_length=16,
+        choices=SourceType.choices,
+        default=SourceType.UPLOAD,
+        db_index=True,
+    )
+    metadata = models.JSONField(blank=True, default=dict)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["-uploaded_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_resume_per_profile",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["profile", "is_active", "-uploaded_at"], name="profile_resume_active_idx"),
+        ]
+
+    def __str__(self):
+        return f"ProfileResume<{self.profile_id}:{self.source_type}:{self.is_active}>"
 
 
 class OTPChallenge(models.Model):

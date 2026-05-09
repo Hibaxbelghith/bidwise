@@ -21,9 +21,11 @@ class OpportuniteSerializer(serializers.ModelSerializer):
     contract_type = serializers.SerializerMethodField(read_only=True)
     education_level = serializers.SerializerMethodField(read_only=True)
     availability = serializers.SerializerMethodField(read_only=True)
+    normalized_work_mode = serializers.CharField(read_only=True)
     experience = serializers.SerializerMethodField(read_only=True)
     salary = serializers.SerializerMethodField(read_only=True)
     skills = serializers.SerializerMethodField(read_only=True)
+    normalized_industries = serializers.JSONField(read_only=True)
     languages = serializers.SerializerMethodField(read_only=True)
     languages_fallback = serializers.SerializerMethodField(read_only=True)
     extra_data = serializers.JSONField(read_only=True)
@@ -56,8 +58,10 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "experience",
             "education_level",
             "availability",
+            "normalized_work_mode",
             "salary",
             "skills",
+            "normalized_industries",
             "languages",
             "languages_fallback",
             "extra_data",

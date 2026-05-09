@@ -1,15 +1,12 @@
 import { Link } from 'react-router-dom';
-import { useAuth } from '../auth/AuthContext.jsx';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
 import PipelineMetrics from '../../components/PipelineMetrics.jsx';
 import { Briefcase, Clock, Bookmark, Building2, MapPin, DollarSign, Calendar, TrendingUp } from 'lucide-react';
 
 const Dashboard = () => {
-	const { user } = useAuth();
-
 	// Mock data - replace with backend fetch
 	const savedOpportunities = [
 		{
@@ -136,7 +133,6 @@ const Dashboard = () => {
 					<TabsList aria-label="Opportunity categories">
 						<TabsTrigger value="saved">Saved Opportunities</TabsTrigger>
 						<TabsTrigger value="applied">Applications</TabsTrigger>
-						<TabsTrigger value="recommended">Recommended</TabsTrigger>
 					</TabsList>
 
 					{/* Saved Opportunities */}
@@ -264,26 +260,6 @@ const Dashboard = () => {
 								</Card>
 							))
 						)}
-					</TabsContent>
-
-					{/* Recommended */}
-					<TabsContent value="recommended">
-						<Card>
-							<CardHeader>
-								<CardTitle>Recommended for You</CardTitle>
-								<CardDescription>
-									Based on your profile and saved opportunities
-								</CardDescription>
-							</CardHeader>
-							<CardContent>
-								<p className="text-neutral-600 mb-4">
-									We're working on personalized recommendations. Check back soon!
-								</p>
-								<Button asChild>
-									<Link to="/opportunities">Browse All Opportunities</Link>
-								</Button>
-							</CardContent>
-						</Card>
 					</TabsContent>
 				</Tabs>
 			</div>

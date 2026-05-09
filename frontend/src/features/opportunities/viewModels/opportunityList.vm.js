@@ -2,6 +2,7 @@ import {
   buildDescriptionPreview,
   formatDate,
   formatExperienceLabel,
+  formatRelativeDate,
   formatSimilarityScore,
   getCardAiHint,
   getCompanyLogoAsset,
@@ -10,6 +11,12 @@ import {
   formatOrganizationLabel,
 } from '../utils/opportunityFormatters.js';
 import { getLanguagePreview } from '../utils/opportunityHelpers.js';
+
+const WORK_MODE_LABELS = {
+  REMOTE: 'Remote',
+  HYBRID: 'Hybrid',
+  ON_SITE: 'On site',
+};
 
 export const buildOpportunityBrowseCardViewModel = (opportunity, isUserAuthenticated) => {
   const organizationLabel = formatOrganizationLabel(opportunity);
@@ -22,10 +29,17 @@ export const buildOpportunityBrowseCardViewModel = (opportunity, isUserAuthentic
     organizationLabel,
     locationLabel: String(opportunity?.ville || '').trim(),
     publishedDateLabel: formatDate(opportunity?.date_publication),
+    publishedAgoLabel: formatRelativeDate(opportunity?.date_creation || opportunity?.date_publication),
     deadlineDateLabel: opportunity?.date_limite ? formatDate(opportunity.date_limite) : '',
     salaryLabel: String(opportunity?.salary || '').trim(),
+    contractTypeLabel: String(opportunity?.contract_type || '').trim(),
+    workModeLabel:
+      WORK_MODE_LABELS[String(opportunity?.normalized_work_mode || '').trim().toUpperCase()] ||
+      String(opportunity?.availability || '').trim(),
     experienceLabel: formatExperienceLabel(opportunity),
     languagePreview: getLanguagePreview(opportunity, 2),
+    skillsPreview: (opportunity?.skills || []).filter(Boolean).slice(0, 6),
+    sourceLabel: String(opportunity?.source?.nom || '').trim(),
     companyLogo: getCompanyLogoAsset(opportunity),
     descriptionPreview: buildDescriptionPreview(opportunity),
     aiHint: getCardAiHint(opportunity, isUserAuthenticated),

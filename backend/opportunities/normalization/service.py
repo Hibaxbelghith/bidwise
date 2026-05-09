@@ -16,6 +16,7 @@ from datetime import date, datetime
 from typing import Any
 
 from opportunities.models import RawOpportunite, StatutOpportunite, TypeOpportunite
+from opportunities.normalization.industries import normalize_industries
 from opportunities.scoring.quality import infer_date_confidence, normalize_date_confidence
 from opportunities.scraping.scraper_utils import (
     canonicalize_source_item_url,
@@ -805,6 +806,9 @@ def normalize_raw_opportunity(raw_obj: RawOpportunite) -> dict[str, Any]:
     experience_text = _as_optional_text(payload.get("experience"))
     experience_min, experience_max = parse_experience_bounds(experience_text)
 
+    extra_data = _as_optional_dict(payload.get("extra_data"))
+    company_sector = _as_optional_text(payload.get("company_sector"))
+
     structured_data = {
         "reference": _as_optional_text(payload.get("reference")),
         "published_at": published_at_iso,
@@ -818,13 +822,17 @@ def normalize_raw_opportunity(raw_obj: RawOpportunite) -> dict[str, Any]:
         "education_level": _as_optional_text(payload.get("education_level")),
         "education_levels": _parse_education_levels(payload.get("education_level")),
         "availability": _as_optional_text(payload.get("availability")),
+        "remote": _as_optional_text(payload.get("remote")),
         "salary": _as_optional_text(payload.get("salary")),
         "skills": _as_optional_skills(payload.get("skills")),
         "job_qualifications": _as_optional_text(payload.get("job_qualifications")),
         "languages": _as_optional_languages(payload.get("languages")),
-        "company_sector": _as_optional_text(payload.get("company_sector")),
+        "company_sector": company_sector,
         "company_size": _as_optional_text(payload.get("company_size")),
-        "extra_data": _as_optional_dict(payload.get("extra_data")),
+        "extra_data": extra_data,
+        "normalized_industries": normalize_industries(
+            [company_sector, extra_data.get("company_sector")]
+        ),
     }
 
     return {

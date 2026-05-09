@@ -11,6 +11,9 @@ const emptyMetrics = {
   updated_avg: 0,
   failure_rate: 0,
   zero_runs: 0,
+  freshness_lag: null,
+  created_per_run: 0,
+  trend: [],
   score: null,
   adaptive_raw_score: null,
 };
@@ -96,6 +99,11 @@ const normalizeMetrics = (metrics) => ({
   updated_avg: toNumber(metrics?.updated_avg),
   failure_rate: toNumber(metrics?.failure_rate),
   zero_runs: toNumber(metrics?.zero_runs),
+  freshness_lag: toOptionalNumber(metrics?.freshness_lag),
+  created_per_run: toNumber(metrics?.created_per_run),
+  trend: Array.isArray(metrics?.trend)
+    ? metrics.trend.map((value) => toNumber(value)).filter((value) => Number.isFinite(value))
+    : [],
   score: toOptionalNumber(metrics?.score),
   adaptive_raw_score: toOptionalNumber(metrics?.adaptive_raw_score),
 });
@@ -107,6 +115,9 @@ export const normalizeDecision = (decision) => ({
   next_run_at: decision?.next_run_at || null,
   is_due: typeof decision?.is_due === 'boolean' ? decision.is_due : null,
   latest_run_status: decision?.latest_run_status || null,
+  score_history: Array.isArray(decision?.score_history)
+    ? decision.score_history.map((value) => toNumber(value)).filter((value) => Number.isFinite(value))
+    : [],
   metrics: normalizeMetrics(decision?.metrics),
 });
 
@@ -230,7 +241,7 @@ export const getScoreMeta = (metrics) => {
 
   return {
     label: 'LOW',
-    tone: 'orange',
+    tone: 'red',
     description: 'Low activity or failure pressure is reducing scheduling urgency.',
   };
 };
@@ -314,6 +325,31 @@ export const getDecisionBadges = (decision) => {
 export const getTrendMeta = (decision) => {
   const reason = normalizeReason(decision?.reason);
   const metrics = normalizeMetrics(decision?.metrics);
+  const trend = metrics.trend;
+
+  if (trend.length >= 2) {
+    const first = trend[0];
+    const last = trend[trend.length - 1];
+    const delta = last - first;
+
+    if (delta > 0) {
+      return {
+        direction: 'up',
+        label: 'Created trend rising',
+        tone: 'green',
+        strength: Math.min(5, Math.max(1, Math.ceil(delta))),
+      };
+    }
+
+    if (delta < 0) {
+      return {
+        direction: 'down',
+        label: 'Created trend falling',
+        tone: 'red',
+        strength: Math.min(5, Math.max(1, Math.ceil(Math.abs(delta)))),
+      };
+    }
+  }
 
   if (
     failureReasons.has(reason)
@@ -324,7 +360,7 @@ export const getTrendMeta = (decision) => {
     return {
       direction: 'down',
       label: 'Decreasing activity',
-      tone: 'orange',
+      tone: 'red',
       strength: 1,
     };
   }

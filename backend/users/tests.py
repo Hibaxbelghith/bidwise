@@ -13,6 +13,7 @@ from unittest.mock import patch, MagicMock
 
 from django.core.cache import cache
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password
@@ -20,7 +21,7 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 
-from .models import Utilisateur, Profil, OTPChallenge, LoginEvent
+from .models import Utilisateur, Profil, ProfileResume, OTPChallenge, LoginEvent
 from .serializers import (
     UtilisateurSerializer,
     ProfilSerializer,
@@ -98,14 +99,19 @@ class ProfilModelTests(TestCase):
     def test_default_values(self):
         self.assertEqual(self.profil.nom, "")
         self.assertEqual(self.profil.prenom, "")
-        self.assertEqual(self.profil.competences, "")
-        self.assertEqual(self.profil.domaines_interet, "")
+        self.assertEqual(self.profil.competences, [])
+        self.assertEqual(self.profil.domaines_interet, [])
+        self.assertIsNone(self.profil.embedding)
+        self.assertEqual(self.profil.embedding_features_hash, "")
+        self.assertIsNone(self.profil.last_embedding_update)
         self.assertEqual(self.profil.niveau_experience, "")
         self.assertIsNone(self.profil.annees_experience)
         self.assertEqual(self.profil.opportunity_types, [])
-        self.assertIsNone(self.profil.preferred_location)
+        self.assertEqual(self.profil.preferred_locations, [])
         self.assertIsNone(self.profil.remote_preference)
+        self.assertEqual(self.profil.work_mode_preferences, [])
         self.assertIsNone(self.profil.compensation_expectation)
+        self.assertEqual(self.profil.compensation_currency, "TND")
         self.assertIsNone(self.profil.compensation_period)
         self.assertEqual(self.profil.employment_types, [])
         self.assertEqual(self.profil.target_roles, [])
@@ -130,11 +136,13 @@ class ProfilModelTests(TestCase):
 
     def test_onboarding_fields(self):
         self.profil.opportunity_types = ["JOB", "INTERNSHIP"]
-        self.profil.preferred_location = "Paris"
+        self.profil.preferred_locations = ["Paris"]
         self.profil.remote_preference = "HYBRID"
+        self.profil.work_mode_preferences = ["HYBRID"]
         self.profil.compensation_expectation = 50000
+        self.profil.compensation_currency = "TND"
         self.profil.compensation_period = "YEARLY"
-        self.profil.employment_types = ["FULL_TIME"]
+        self.profil.employment_types = ["CDI"]
         self.profil.target_roles = ["Backend Developer"]
         self.profil.profile_visibility = False
         self.profil.onboarding_completed = True
@@ -142,6 +150,8 @@ class ProfilModelTests(TestCase):
         self.profil.save()
         self.profil.refresh_from_db()
         self.assertEqual(self.profil.opportunity_types, ["JOB", "INTERNSHIP"])
+        self.assertEqual(self.profil.preferred_locations, ["Paris"])
+        self.assertEqual(self.profil.work_mode_preferences, ["HYBRID"])
         self.assertEqual(self.profil.last_onboarding_step, 5)
 
 
@@ -256,12 +266,28 @@ class ProfilSerializerTests(TestCase):
         expected_fields = {
             'id', 'nom', 'prenom', 'competences', 'domaines_interet',
             'niveau_experience', 'annees_experience',
-            'opportunity_types', 'preferred_location', 'remote_preference',
-            'compensation_expectation', 'compensation_period',
+            'opportunity_types', 'preferred_locations', 'preferred_location',
+            'remote_preference', 'work_mode_preferences',
+            'compensation_expectation', 'compensation_currency', 'compensation_period',
             'employment_types', 'target_roles', 'profile_visibility',
             'onboarding_completed', 'last_onboarding_step',
+            'active_resume', 'profile_completion',
         }
         self.assertEqual(set(data.keys()), expected_fields)
+
+    def test_profile_completion_is_deterministic_and_explicable(self):
+        self.profil.prenom = "Hiba"
+        self.profil.nom = "Bel"
+        self.profil.competences = ["Python"]
+        self.profil.target_roles = ["Data Engineer"]
+        self.profil.domaines_interet = ["FINTECH"]
+        self.profil.save()
+
+        data = ProfilSerializer(self.profil).data
+
+        self.assertIn("profile_completion", data)
+        self.assertGreater(data["profile_completion"]["score"], 0)
+        self.assertIn("resume", data["profile_completion"]["missing"])
 
     def test_id_is_read_only(self):
         serializer = ProfilSerializer(self.profil, data={"id": 999, "nom": "Test"}, partial=True)
@@ -338,8 +364,160 @@ class ProfilUpdateSerializerTests(TestCase):
         serializer = ProfilUpdateSerializer(self.profil, data=data, partial=True)
         self.assertTrue(serializer.is_valid())
         instance = serializer.save()
-        self.assertEqual(instance.preferred_location, "Lyon")
+        self.assertEqual(instance.preferred_locations, ["Lyon"])
+        self.assertEqual(instance.work_mode_preferences, ["REMOTE"])
+        self.assertEqual(instance.remote_preference, "REMOTE")
+        self.assertEqual(instance.employment_types, ["CDD"])
         self.assertTrue(instance.onboarding_completed)
+
+    def test_employment_types_are_normalized_to_shared_contract_vocabulary(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "employment_types": [
+                    " Stage ",
+                    "internship",
+                    "تربص",
+                    "CDI - CDD",
+                ]
+            },
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.employment_types, ["INTERNSHIP", "CDI", "CDD"])
+
+    def test_employment_types_reject_non_list_payloads(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"employment_types": "Stage"},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("employment_types", serializer.errors)
+
+    def test_employment_types_reject_non_string_items(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"employment_types": [123]},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("employment_types", serializer.errors)
+
+    def test_employment_types_reject_unknown_values(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"employment_types": ["Rocketship"]},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("employment_types", serializer.errors)
+
+    def test_work_mode_preferences_are_normalized_and_deduplicated(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "work_mode_preferences": [
+                    " remote ",
+                    "REMOTE",
+                    "Hybride",
+                    "عمل عن بعد",
+                    "Non",
+                ]
+            },
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.work_mode_preferences, ["REMOTE", "HYBRID", "ON_SITE"])
+        self.assertEqual(instance.remote_preference, "REMOTE")
+
+    def test_work_mode_preferences_reject_non_list_payloads(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"work_mode_preferences": "remote"},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("work_mode_preferences", serializer.errors)
+
+    def test_work_mode_preferences_reject_non_string_items(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"work_mode_preferences": [123]},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("work_mode_preferences", serializer.errors)
+
+    def test_rejects_conflicting_legacy_and_new_work_mode_payloads(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "remote_preference": "REMOTE",
+                "work_mode_preferences": ["HYBRID"],
+            },
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("remote_preference", serializer.errors)
+
+    def test_rejects_conflicting_legacy_and_new_location_payloads(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "preferred_location": "Tunis",
+                "preferred_locations": ["Sfax"],
+            },
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("preferred_location", serializer.errors)
+
+    def test_profile_interests_are_canonical_and_cross_type_safe(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"domaines_interet": ["sante", "React", "Backend Developer"]},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.domaines_interet, ["HEALTHCARE"])
+
+    def test_salary_validation_is_tunisia_monthly_safe(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "compensation_expectation": 100,
+                "compensation_currency": "TND",
+                "compensation_period": "MONTHLY",
+            },
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("compensation_expectation", serializer.errors)
+
+    def test_salary_rejects_unsupported_currency(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"compensation_expectation": 1800, "compensation_currency": "USD"},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("compensation_currency", serializer.errors)
 
 
 class OTPRequestSerializerTests(TestCase):
@@ -578,10 +756,14 @@ class ProfileDetailViewTests(APITestCase):
         self.assertEqual(self.user.profil.prenom, "Jean")
 
     def test_put_profile_partial(self):
-        response = self.client.put(self.url, {"competences": "Python, Django"})
+        response = self.client.put(
+            self.url,
+            {"competences": ["Python", "Django"]},
+            format="json",
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.profil.refresh_from_db()
-        self.assertEqual(self.user.profil.competences, "Python, Django")
+        self.assertEqual(self.user.profil.competences, ["Python", "Django"])
 
     def test_put_onboarding_fields(self):
         data = {
@@ -590,7 +772,7 @@ class ProfileDetailViewTests(APITestCase):
             "remote_preference": "REMOTE",
             "compensation_expectation": 60000,
             "compensation_period": "YEARLY",
-            "employment_types": ["FULL_TIME"],
+            "employment_types": ["Stage"],
             "target_roles": ["Data Engineer"],
             "profile_visibility": False,
             "onboarding_completed": True,
@@ -600,12 +782,46 @@ class ProfileDetailViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.profil.refresh_from_db()
         self.assertTrue(self.user.profil.onboarding_completed)
-        self.assertEqual(self.user.profil.preferred_location, "Tunis")
+        self.assertEqual(self.user.profil.preferred_locations, ["Tunis"])
+        self.assertEqual(self.user.profil.work_mode_preferences, ["REMOTE"])
+        self.assertEqual(self.user.profil.employment_types, ["INTERNSHIP"])
 
     def test_put_returns_full_user_serializer(self):
         response = self.client.put(self.url, {"nom": "Test"})
         self.assertIn("username", response.data)
         self.assertIn("profil", response.data)
+
+    def test_resume_upload_accepts_pdf_and_keeps_one_active(self):
+        first = SimpleUploadedFile(
+            "resume.pdf",
+            b"%PDF-1.4 test",
+            content_type="application/pdf",
+        )
+        response = self.client.post("/api/profile/resume/", {"file": first}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ProfileResume.objects.filter(profile=self.user.profil, is_active=True).count(), 1)
+
+        second = SimpleUploadedFile(
+            "resume2.pdf",
+            b"%PDF-1.4 test 2",
+            content_type="application/pdf",
+        )
+        response = self.client.post("/api/profile/resume/", {"file": second}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ProfileResume.objects.filter(profile=self.user.profil, is_active=True).count(), 1)
+        self.assertEqual(ProfileResume.objects.filter(profile=self.user.profil).count(), 2)
+
+    def test_resume_upload_rejects_bad_type(self):
+        upload = SimpleUploadedFile(
+            "resume.exe",
+            b"bad",
+            content_type="application/octet-stream",
+        )
+
+        response = self.client.post("/api/profile/resume/", {"file": upload}, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data)
 
 
 @override_settings(

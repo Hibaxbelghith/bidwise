@@ -1,4 +1,4 @@
-import { Activity, Ban, CircleSlash, TimerReset } from 'lucide-react';
+import { Activity, Ban, CircleSlash, RefreshCw, TimerReset, Waves } from 'lucide-react';
 
 import {
   formatDuration,
@@ -13,6 +13,18 @@ const MetricsGrid = ({ decision }) => {
       label: 'Created avg (EMA)',
       value: formatMetricNumber(metrics.created_avg),
       icon: Activity,
+      tone: 'text-green-700 bg-green-50',
+    },
+    {
+      label: 'Updated avg (EMA)',
+      value: formatMetricNumber(metrics.updated_avg),
+      icon: RefreshCw,
+      tone: 'text-blue-700 bg-blue-50',
+    },
+    {
+      label: 'Created / run',
+      value: formatMetricNumber(metrics.created_per_run),
+      icon: Waves,
       tone: 'text-green-700 bg-green-50',
     },
     {
@@ -32,6 +44,12 @@ const MetricsGrid = ({ decision }) => {
       value: formatDuration(decision?.interval_seconds),
       icon: TimerReset,
       tone: 'text-blue-700 bg-blue-50',
+    },
+    {
+      label: 'Freshness lag',
+      value: formatDuration(metrics.freshness_lag),
+      icon: TimerReset,
+      tone: 'text-yellow-800 bg-yellow-50',
     },
   ];
 

@@ -8,10 +8,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEDULER_BEAT_INTERVAL_SECONDS = 15 * 60
 SCHEDULER_DECISION_CACHE_KEY_PREFIX = "scheduler_decision"
+SCHEDULER_SCORE_HISTORY_CACHE_KEY_PREFIX = "scheduler_score_history"
 
 
 def scheduler_decision_cache_key(source):
     return f"{SCHEDULER_DECISION_CACHE_KEY_PREFIX}:{source}"
+
+
+def scheduler_score_history_cache_key(source):
+    return f"{SCHEDULER_SCORE_HISTORY_CACHE_KEY_PREFIX}:{source}"
 
 
 def serialize_scheduler_decision(state):
@@ -23,6 +28,9 @@ def serialize_scheduler_decision(state):
         "updated_avg": _coerce_number(metrics.get("recent_updated_avg")),
         "failure_rate": _coerce_float(metrics.get("failure_rate")),
         "zero_runs": _coerce_int(metrics.get("consecutive_zero_runs")),
+        "freshness_lag": _coerce_optional_int(metrics.get("freshness_lag")),
+        "created_per_run": _coerce_number(metrics.get("created_per_run")),
+        "trend": _coerce_number_list(metrics.get("trend")),
     }
     if score is not None:
         serialized_metrics["score"] = _coerce_float(score)
@@ -35,6 +43,7 @@ def serialize_scheduler_decision(state):
         "interval_seconds": _coerce_int(state.get("interval_seconds")),
         "next_run_at": _isoformat_or_none(state.get("next_run_at")),
         "metrics": serialized_metrics,
+        "score_history": _coerce_number_list(state.get("score_history")),
     }
     return decision
 
@@ -47,10 +56,30 @@ def cache_scheduler_decision_snapshot(state):
         return decision
 
     try:
+        cache_key = scheduler_decision_cache_key(source)
+        decision["score_history"] = _update_scheduler_score_history(
+            source,
+            decision.get("metrics", {}).get("score"),
+        )
+        timeout = get_scheduler_decision_cache_timeout_seconds()
         cache.set(
-            scheduler_decision_cache_key(source),
+            cache_key,
             decision,
-            timeout=get_scheduler_decision_cache_timeout_seconds(),
+            timeout=timeout,
+        )
+        logger.info(
+            "scheduler_decision_written",
+            extra={
+                "source": source,
+                "cache_key": cache_key,
+                "timeout_seconds": timeout,
+                "score": decision.get("metrics", {}).get("score"),
+                "raw_score": decision.get("metrics", {}).get("adaptive_raw_score"),
+                "reason": decision.get("reason"),
+                "interval": decision.get("interval_seconds"),
+                "failure_rate": decision.get("metrics", {}).get("failure_rate"),
+                "created_avg": decision.get("metrics", {}).get("created_avg"),
+            },
         )
     except Exception:
         logger.exception("Could not cache scheduler decision source=%s", source)
@@ -80,11 +109,15 @@ def normalize_scheduler_decision_snapshot(source, decision):
         "reason": _serialize_reason(decision.get("reason")),
         "interval_seconds": _coerce_optional_int(decision.get("interval_seconds")),
         "next_run_at": _isoformat_or_none(decision.get("next_run_at")),
+        "score_history": _coerce_number_list(decision.get("score_history")),
         "metrics": {
             "created_avg": _coerce_number(metrics.get("created_avg")),
             "updated_avg": _coerce_number(metrics.get("updated_avg")),
             "failure_rate": _coerce_float(metrics.get("failure_rate")),
             "zero_runs": _coerce_int(metrics.get("zero_runs")),
+            "freshness_lag": _coerce_optional_int(metrics.get("freshness_lag")),
+            "created_per_run": _coerce_number(metrics.get("created_per_run")),
+            "trend": _coerce_number_list(metrics.get("trend")),
             **_optional_scores(metrics),
         },
     }
@@ -96,8 +129,25 @@ def fallback_scheduler_decision(source):
         "reason": "NO_DATA",
         "interval_seconds": None,
         "next_run_at": None,
+        "score_history": [],
         "metrics": {},
     }
+
+
+def _update_scheduler_score_history(source, score):
+    history_key = scheduler_score_history_cache_key(source)
+    existing_history = _coerce_number_list(cache.get(history_key))
+    if score is None:
+        return existing_history
+
+    history_limit = get_scheduler_score_history_limit()
+    history = [*existing_history, _coerce_float(score)][-history_limit:]
+    cache.set(
+        history_key,
+        history,
+        timeout=get_scheduler_decision_cache_timeout_seconds(),
+    )
+    return history
 
 
 def get_scheduler_decision_cache_timeout_seconds():
@@ -118,6 +168,11 @@ def get_scheduler_decision_cache_timeout_seconds():
         DEFAULT_SCHEDULER_BEAT_INTERVAL_SECONDS,
     )
     return 2 * beat_interval
+
+
+def get_scheduler_score_history_limit():
+    configured_limit = getattr(settings, "OPPORTUNITY_SCHEDULER_SCORE_HISTORY_LIMIT", 10)
+    return _coerce_positive_int(configured_limit, 10)
 
 
 def _get_source_keys(sources):
@@ -144,6 +199,12 @@ def _coerce_optional_int(value):
     if value is None:
         return None
     return _coerce_int(value)
+
+
+def _coerce_number_list(value):
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [_coerce_number(item) for item in value]
 
 
 def _coerce_positive_int(value, default):

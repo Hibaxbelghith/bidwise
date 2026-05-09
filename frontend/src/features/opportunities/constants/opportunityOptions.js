@@ -13,12 +13,6 @@ export const STATUS_OPTIONS = [
   { value: 'ARCHIVEE', label: 'Archived' },
 ];
 
-export const ORDER_OPTIONS = [
-  { value: '-date_publication', label: 'Most recent' },
-  { value: 'date_publication', label: 'Oldest first' },
-  { value: 'date_limite', label: 'Deadline' },
-];
-
 const buildLabelMap = (items) =>
   items.reduce((accumulator, item) => {
     accumulator[item.value] = item.label;

@@ -25,8 +25,11 @@ from .pipeline import (
     build_collection_result,
     get_configured_sources,
     get_due_source_schedule_states,
+    get_scheduler_max_sources_per_tick,
     get_source_config,
     normalize_source,
+    record_source_schedule_decision,
+    reserve_source_dispatch,
     run_source_collection,
 )
 from .models import (
@@ -114,6 +117,16 @@ def _finalize_pipeline_run(
     )
 
 
+def _record_source_schedule_decision_safely(source, *, level=logging.INFO):
+    try:
+        if level == logging.INFO:
+            record_source_schedule_decision(source)
+        else:
+            record_source_schedule_decision(source, level=level)
+    except Exception:
+        logger.exception("Could not record scheduler decision for source=%s", source)
+
+
 @shared_task(
     bind=True,
     name="opportunities.collect_opportunities",
@@ -126,16 +139,53 @@ def collect_opportunities_pipeline(self, force=False, sources=None, **command_op
     else:
         configured_sources = sources or get_configured_sources()
     due_states = get_due_source_schedule_states(configured_sources, force=force)
-    due_sources = [state["source"] for state in due_states]
+    dispatch_limit = get_scheduler_max_sources_per_tick(len(due_states))
+    dispatched_sources = []
+    skipped_sources = []
     logger.info(
-        "Dispatching opportunity pipeline task_id=%s sources=%s due_sources=%s force=%s",
+        "Dispatching opportunity pipeline task_id=%s sources=%s due_sources=%s force=%s max_sources_per_tick=%s",
         task_id,
         configured_sources,
-        due_sources,
+        [state["source"] for state in due_states],
         force,
+        dispatch_limit,
     )
     for state in due_states:
         source = state["source"]
+        if dispatch_limit is not None and len(dispatched_sources) >= dispatch_limit:
+            skipped_sources.append({"source": source, "reason": "dispatch_limit"})
+            logger.info(
+                "Opportunity source dispatch skipped task_id=%s source=%s reason=dispatch_limit max_sources_per_tick=%s",
+                task_id,
+                source,
+                dispatch_limit,
+                extra={
+                    "task_id": task_id,
+                    "source": source,
+                    "reason": "dispatch_limit",
+                    "max_sources_per_tick": dispatch_limit,
+                },
+            )
+            continue
+
+        reservation = reserve_source_dispatch(source, state=state)
+        if not reservation["reserved"]:
+            skipped_sources.append({"source": source, "reason": reservation["reason"]})
+            logger.info(
+                "Opportunity source dispatch skipped task_id=%s source=%s reason=%s",
+                task_id,
+                source,
+                reservation["reason"],
+                extra={
+                    "task_id": task_id,
+                    "source": source,
+                    "reason": reservation["reason"],
+                    "dedup_seconds": reservation.get("dedup_seconds"),
+                    "run_id": reservation.get("run_id"),
+                },
+            )
+            continue
+
         log_structured_event(
             "source_dispatch",
             source=source,
@@ -148,12 +198,14 @@ def collect_opportunities_pipeline(self, force=False, sources=None, **command_op
             args=[source],
             kwargs={key: value for key, value in command_options.items() if value is not None},
         )
+        dispatched_sources.append(source)
 
-    status = "dispatched" if due_sources else "skipped"
+    status = "dispatched" if dispatched_sources else "skipped"
     return {
         "status": status,
-        "sources": due_sources,
+        "sources": dispatched_sources,
         "configured_sources": configured_sources,
+        "skipped_sources": skipped_sources,
     }
 
 
@@ -323,6 +375,7 @@ def collect_source_task(self, source, **command_options):
     client = opportunity_pipeline_redis_client()
 
     if not acquire_pipeline_lock(client, lock_key, lock_token):
+        _record_source_schedule_decision_safely(source)
         logger.info(
             "Opportunity source task skipped task_id=%s source=%s reason=locked",
             task_id,
@@ -397,6 +450,7 @@ def collect_source_task(self, source, **command_options):
             result["duration_seconds"],
         )
         observe_source_run(source, result, pipeline_status=status)
+        _record_source_schedule_decision_safely(source)
         if RawOpportunite.objects.filter(
             processing_status=RawOpportuniteProcessingStatus.NEW,
         ).exists():
@@ -430,6 +484,7 @@ def collect_source_task(self, source, **command_options):
             extra={"task_id": task_id, "source": source},
         )
         observe_source_run(source, result, pipeline_status=PipelineRunStatus.FAILED)
+        _record_source_schedule_decision_safely(source)
         request = getattr(self, "request", None)
         retries = int(getattr(request, "retries", 0) or 0)
         called_directly = bool(getattr(request, "called_directly", False))

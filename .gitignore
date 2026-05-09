@@ -21,3 +21,6 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Celery beat local state
+backend/celerybeat-schedule

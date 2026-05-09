@@ -9,7 +9,7 @@ from opportunities.management.commands.collect_opportunities import (
     collect_opportunities_pipeline,
     normalize_source,
 )
-from opportunities.models import PipelineRun, PipelineRunStatus
+from opportunities.models import PipelineRun, PipelineRunStatus, SourceSchedulerState
 from opportunities.pipeline import (
     build_collection_result,
     compute_adaptive_interval,
@@ -96,6 +96,57 @@ class PipelineDispatchTests(TestCase):
             "linkedin",
         )
 
+    @override_settings(
+        OPPORTUNITY_PIPELINE_SOURCES=[
+            "keejob",
+            "linkedin",
+            "emploi_tn",
+            "marches_publics",
+        ],
+        OPPORTUNITY_SOURCE_CONFIG={
+            "linkedin": {"priority": 1},
+            "keejob": {"priority": 2},
+            "emploi_tn": {"priority": 3},
+            "marches_publics": {"priority": 4},
+        },
+        OPPORTUNITY_SCHEDULER_MAX_SOURCES_PER_TICK=2,
+    )
+    @patch("opportunities.tasks.collect_source_task.apply_async")
+    def test_celery_dispatch_respects_max_sources_per_tick(self, apply_async_mock):
+        result = collect_opportunities_task.run(force=True)
+
+        self.assertEqual(result["sources"], ["linkedin", "keejob"])
+        self.assertEqual(
+            [item["source"] for item in result["skipped_sources"]],
+            ["emploi_tn", "marches_publics"],
+        )
+        apply_async_mock.assert_has_calls(
+            [
+                call(args=["linkedin"], kwargs={}),
+                call(args=["keejob"], kwargs={}),
+            ]
+        )
+        self.assertEqual(apply_async_mock.call_count, 2)
+
+    @override_settings(
+        OPPORTUNITY_PIPELINE_SOURCES=["keejob"],
+        OPPORTUNITY_SOURCE_CONFIG={"keejob": {"priority": 1}},
+        OPPORTUNITY_SCHEDULER_DISPATCH_DEDUP_SECONDS=5 * 60,
+    )
+    @patch("opportunities.tasks.collect_source_task.apply_async")
+    def test_celery_dispatch_skips_recently_dispatched_source(self, apply_async_mock):
+        SourceSchedulerState.objects.create(
+            source="keejob",
+            last_dispatched_at=timezone.now() - timedelta(seconds=30),
+        )
+
+        result = collect_opportunities_task.run(force=True)
+
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["sources"], [])
+        self.assertEqual(result["skipped_sources"], [{"source": "keejob", "reason": "recently_dispatched"}])
+        apply_async_mock.assert_not_called()
+
 
 class PipelineCoreExecutionTests(TestCase):
     @override_settings(
@@ -135,6 +186,39 @@ class PipelineCoreExecutionTests(TestCase):
 
         self.assertEqual(results, [])
         run_source_mock.assert_not_called()
+
+    @override_settings(
+        OPPORTUNITY_PIPELINE_SOURCES=["keejob"],
+        OPPORTUNITY_SOURCE_CONFIG={
+            "keejob": {
+                "priority": 1,
+                "schedule_seconds": 60 * 60,
+                "stale_after_seconds": 24 * 60 * 60,
+                "max_duration_seconds": 60,
+            },
+        },
+    )
+    @patch("opportunities.pipeline.run_source_collection")
+    def test_schedule_bypass_still_writes_scheduler_decision_cache(self, run_source_mock):
+        cache.clear()
+        run_source_mock.return_value = {
+            "source": "keejob",
+            "stats": {
+                "created": 1,
+                "updated": 0,
+                "skipped": 0,
+                "failed_pages": 0,
+                "errors": [],
+            },
+        }
+
+        results = run_opportunity_pipeline(respect_schedule=False)
+
+        self.assertEqual([result["source"] for result in results], ["keejob"])
+        cached = cache.get(scheduler_decision_cache_key("keejob"))
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached["source"], "keejob")
+        self.assertIn("score", cached["metrics"])
 
     @override_settings(
         OPPORTUNITY_SOURCE_CONFIG={
@@ -615,8 +699,8 @@ class PipelineMetricsTests(SimpleTestCase):
 
         self.assertEqual(run.success_rate, 0.75)
 
-    @patch("opportunities.pipeline.logger.info")
-    def test_adaptive_interval_logs_structured_scheduler_decision(self, logger_info_mock):
+    @patch("opportunities.pipeline.logger.debug")
+    def test_adaptive_interval_logs_structured_scheduler_metrics(self, logger_debug_mock):
         metrics = {
             "recent_created_avg": 0.0,
             "recent_updated_avg": 0.0,
@@ -640,26 +724,30 @@ class PipelineMetricsTests(SimpleTestCase):
             metrics,
         )
 
-        logger_info_mock.assert_called_once()
-        self.assertEqual(logger_info_mock.call_args.args[0], "scheduler_decision")
-        log_extra = logger_info_mock.call_args.kwargs["extra"]
+        logger_debug_mock.assert_called_once()
+        self.assertEqual(logger_debug_mock.call_args.args[0], "scheduler_decision_metrics")
+        log_extra = logger_debug_mock.call_args.kwargs["extra"]
         self.assertEqual(log_extra["source"], "keejob")
-        self.assertEqual(log_extra["score"], metrics["adaptive_score"])
-        self.assertEqual(log_extra["reason"], result["reason"])
-        self.assertEqual(log_extra["interval"], result["interval_seconds"])
         self.assertEqual(log_extra["mode"], "adaptive_hybrid")
         self.assertIn("adaptive_raw_score", log_extra)
 
 
 class SourceTaskTests(SimpleTestCase):
+    @patch("opportunities.tasks.record_source_schedule_decision")
     @patch("opportunities.tasks.opportunity_pipeline_redis_client")
     @patch("opportunities.tasks.acquire_pipeline_lock", return_value=False)
-    def test_collect_source_task_skips_when_locked(self, acquire_lock_mock, redis_client_mock):
+    def test_collect_source_task_skips_when_locked(
+        self,
+        acquire_lock_mock,
+        redis_client_mock,
+        record_source_schedule_decision_mock,
+    ):
         result = collect_source_task.run("keejob")
 
         self.assertEqual(result, {"status": "skipped", "reason": "locked", "source": "keejob"})
         acquire_lock_mock.assert_called_once()
         redis_client_mock.assert_called_once()
+        record_source_schedule_decision_mock.assert_called_once_with("keejob")
 
 
 class MaterializationTaskTests(SimpleTestCase):
@@ -843,6 +931,7 @@ class SourceTaskIntegrationTests(TestCase):
         raw_opportunite_mock,
         close_old_connections_mock,
     ):
+        cache.clear()
         raw_opportunite_mock.objects.filter.return_value.exists.return_value = True
         run_source_collection_mock.return_value = {
             "stats": {
@@ -859,6 +948,10 @@ class SourceTaskIntegrationTests(TestCase):
         materialize_delay_mock.assert_called_once_with(countdown=2)
         self.assertEqual(PipelineRun.objects.count(), 1)
         self.assertEqual(PipelineRun.objects.first().status, PipelineRunStatus.SUCCESS)
+        self.assertEqual(
+            cache.get(scheduler_decision_cache_key("keejob"))["source"],
+            "keejob",
+        )
         acquire_lock_mock.assert_called_once()
         redis_client_mock.assert_called_once()
         release_lock_mock.assert_called_once()

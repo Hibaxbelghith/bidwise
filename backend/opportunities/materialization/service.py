@@ -7,6 +7,14 @@ from typing import Any
 from django.db import transaction
 
 from opportunities.models import Opportunite, StatutOpportunite, TypeOpportunite
+from opportunities.normalization.employment import (
+    SCHEDULE_UNSPECIFIED,
+    WORK_MODE_UNSPECIFIED,
+    normalize_contract_types,
+    normalize_schedule,
+    normalize_work_mode,
+)
+from opportunities.normalization.industries import normalize_industries
 from opportunities.scoring.quality import (
     DATE_CONFIDENCE_ESTIMATED,
     DATE_CONFIDENCE_EXACT,
@@ -91,6 +99,30 @@ def _merge_unique_list(existing: Any, incoming: Any) -> list[str]:
         seen.add(key)
         merged.append(item)
     return merged
+
+
+def _build_normalized_employment_fields(
+    normalized_data: dict[str, Any],
+    *,
+    contract_type: str,
+    availability: str,
+) -> dict[str, Any]:
+    contract_type_inputs: list[Any] = [normalized_data.get("contract_type"), contract_type]
+    contract_types = normalized_data.get("contract_types")
+    if contract_types:
+        contract_type_inputs.append(contract_types)
+
+    return {
+        "normalized_contract_types": normalize_contract_types(contract_type_inputs),
+        "normalized_work_mode": normalize_work_mode(
+            [
+                normalized_data.get("remote"),
+                availability,
+                contract_type,
+            ]
+        ),
+        "normalized_schedule": normalize_schedule([availability, contract_type]),
+    }
 
 
 def _is_more_specific_location(incoming: str, existing: str) -> bool:
@@ -283,6 +315,24 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
         opportunity.contract_type = incoming_contract_type
         update_fields.append("contract_type")
 
+    incoming_normalized_contract_types = defaults.get("normalized_contract_types")
+    if (
+        isinstance(incoming_normalized_contract_types, list)
+        and incoming_normalized_contract_types
+        and incoming_normalized_contract_types != getattr(opportunity, "normalized_contract_types", [])
+    ):
+        opportunity.normalized_contract_types = incoming_normalized_contract_types
+        update_fields.append("normalized_contract_types")
+
+    incoming_normalized_industries = defaults.get("normalized_industries")
+    if (
+        isinstance(incoming_normalized_industries, list)
+        and incoming_normalized_industries
+        and incoming_normalized_industries != getattr(opportunity, "normalized_industries", [])
+    ):
+        opportunity.normalized_industries = incoming_normalized_industries
+        update_fields.append("normalized_industries")
+
     incoming_extra_data = defaults.get("extra_data")
     if isinstance(incoming_extra_data, dict) and incoming_extra_data:
         current_extra_data = getattr(opportunity, "extra_data", None)
@@ -324,6 +374,24 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
     if incoming_availability and not _persist_text(getattr(opportunity, "availability", "")).strip():
         opportunity.availability = incoming_availability
         update_fields.append("availability")
+
+    incoming_normalized_work_mode = _persist_text(defaults.get("normalized_work_mode", "")).strip()
+    if (
+        incoming_normalized_work_mode
+        and incoming_normalized_work_mode != WORK_MODE_UNSPECIFIED
+        and incoming_normalized_work_mode != getattr(opportunity, "normalized_work_mode", "")
+    ):
+        opportunity.normalized_work_mode = incoming_normalized_work_mode
+        update_fields.append("normalized_work_mode")
+
+    incoming_normalized_schedule = _persist_text(defaults.get("normalized_schedule", "")).strip()
+    if (
+        incoming_normalized_schedule
+        and incoming_normalized_schedule != SCHEDULE_UNSPECIFIED
+        and incoming_normalized_schedule != getattr(opportunity, "normalized_schedule", "")
+    ):
+        opportunity.normalized_schedule = incoming_normalized_schedule
+        update_fields.append("normalized_schedule")
 
     incoming_experience_min = defaults.get("experience_min")
     incoming_experience_max = defaults.get("experience_max")
@@ -600,6 +668,11 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
             availability_max_length,
         )
     availability = _truncate(availability_value, availability_max_length)
+    normalized_employment_fields = _build_normalized_employment_fields(
+        normalized_data,
+        contract_type=contract_type,
+        availability=availability,
+    )
 
     experience_min = _to_optional_non_negative_int(normalized_data.get("experience_min"))
     experience_max = _to_optional_non_negative_int(normalized_data.get("experience_max"))
@@ -627,6 +700,13 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
     languages = _clean_optional_list(normalized_data.get("languages", []))
     languages_fallback = _clean_optional_list(normalized_data.get("languages_fallback", []))
     extra_data = _merge_structured_extra_data(normalized_data)
+    normalized_industries = normalize_industries(
+        [
+            normalized_data.get("normalized_industries"),
+            normalized_data.get("company_sector"),
+            extra_data.get("company_sector") if isinstance(extra_data, dict) else None,
+        ]
+    )
 
     source = normalized_data["source"]
     date_publication = normalized_data["date_publication"]
@@ -687,6 +767,7 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         "source_item_url": source_item_url or None,
         "external_id": external_id,
         "contract_type": contract_type,
+        **normalized_employment_fields,
         "experience_min": experience_min,
         "experience_max": experience_max,
         "education_level": education_level,
@@ -694,6 +775,7 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         "salary": salary,
         "experience_years": legacy_experience_years,
         "skills": skills,
+        "normalized_industries": normalized_industries,
         "languages": languages,
         "languages_fallback": languages_fallback,
         "date_confidence": date_confidence,

@@ -1,0 +1,432 @@
+[
+  {
+    "profile_id": "python_backend_01",
+    "language": "EN",
+    "categories": ["tech", "backend", "english"],
+    "fields": {
+      "competences": ["Python", "Django", "PostgreSQL", "REST API"],
+      "target_roles": ["Python Backend Developer", "Django Engineer"],
+      "domaines_interet": ["SaaS", "Backend Engineering"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID", "REMOTE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_python_backend"]
+  },
+  {
+    "profile_id": "frontend_react_01",
+    "language": "EN",
+    "categories": ["tech", "frontend", "english"],
+    "fields": {
+      "competences": ["React", "TypeScript", "CSS", "JavaScript"],
+      "target_roles": ["Frontend React Developer", "React Engineer"],
+      "domaines_interet": ["Web", "SaaS"],
+      "niveau_experience": "JUNIOR",
+      "annees_experience": 2,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "REMOTE",
+      "work_mode_preferences": ["REMOTE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_frontend_react"]
+  },
+  {
+    "profile_id": "devops_01",
+    "language": "EN",
+    "categories": ["tech", "devops", "english"],
+    "fields": {
+      "competences": ["Docker", "Kubernetes", "CI/CD", "AWS"],
+      "target_roles": ["DevOps Engineer", "Site Reliability Engineer"],
+      "domaines_interet": ["Cloud", "Infrastructure"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Remote"],
+      "remote_preference": "REMOTE",
+      "work_mode_preferences": ["REMOTE"],
+      "employment_types": ["FULL_TIME", "CONTRACT"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_devops"]
+  },
+  {
+    "profile_id": "ai_engineer_01",
+    "language": "EN",
+    "categories": ["tech", "ai", "english"],
+    "fields": {
+      "competences": ["Python", "Machine Learning", "PyTorch", "NLP"],
+      "target_roles": ["AI Engineer", "Machine Learning Engineer"],
+      "domaines_interet": ["Artificial Intelligence", "Data"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_ai_engineer"]
+  },
+  {
+    "profile_id": "data_engineer_01",
+    "language": "EN",
+    "categories": ["tech", "data", "english"],
+    "fields": {
+      "competences": ["Python", "SQL", "Airflow", "Spark"],
+      "target_roles": ["Data Engineer", "Data Platform Engineer"],
+      "domaines_interet": ["Data", "Analytics"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 3,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_data_engineer"]
+  },
+  {
+    "profile_id": "cybersecurity_01",
+    "language": "EN",
+    "categories": ["tech", "cybersecurity", "english"],
+    "fields": {
+      "competences": ["Cybersecurity", "SIEM", "Incident Response", "Network Security"],
+      "target_roles": ["Cybersecurity Analyst", "Security Engineer"],
+      "domaines_interet": ["Security", "Risk"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_cybersecurity"]
+  },
+  {
+    "profile_id": "hr_specialist_01",
+    "language": "EN",
+    "categories": ["non_tech", "hr", "english"],
+    "fields": {
+      "competences": ["Recruitment", "Onboarding", "HRIS", "Employee Relations"],
+      "target_roles": ["HR Specialist", "Talent Acquisition Specialist"],
+      "domaines_interet": ["Human Resources"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 5,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "ON_SITE",
+      "work_mode_preferences": ["ON_SITE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_hr"]
+  },
+  {
+    "profile_id": "accountant_01",
+    "language": "EN",
+    "categories": ["non_tech", "accounting", "english"],
+    "fields": {
+      "competences": ["Accounting", "Excel", "Tax", "Payroll"],
+      "target_roles": ["Accountant", "Accounting Assistant"],
+      "domaines_interet": ["Finance", "Accounting"],
+      "niveau_experience": "JUNIOR",
+      "annees_experience": 2,
+      "preferred_locations": ["Sfax"],
+      "remote_preference": "ON_SITE",
+      "work_mode_preferences": ["ON_SITE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_accounting"]
+  },
+  {
+    "profile_id": "marketing_01",
+    "language": "EN",
+    "categories": ["non_tech", "marketing", "english"],
+    "fields": {
+      "competences": ["SEO", "Content Marketing", "Google Analytics", "Campaigns"],
+      "target_roles": ["Marketing Manager", "Digital Marketing Specialist"],
+      "domaines_interet": ["Marketing", "Growth"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_marketing"]
+  },
+  {
+    "profile_id": "nurse_01",
+    "language": "EN",
+    "categories": ["non_tech", "nurse", "english"],
+    "fields": {
+      "competences": ["Nursing", "Patient Care", "Clinical Documentation"],
+      "target_roles": ["Registered Nurse", "Nurse"],
+      "domaines_interet": ["Healthcare"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Sousse"],
+      "remote_preference": "ON_SITE",
+      "work_mode_preferences": ["ON_SITE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_nurse"]
+  },
+  {
+    "profile_id": "sparse_python_01",
+    "language": "EN",
+    "categories": ["edge", "sparse", "tech", "python"],
+    "fields": {
+      "competences": ["Python"],
+      "opportunity_types": ["JOB"]
+    },
+    "cv_variant_ids": ["cv_python_backend", "cv_python_ai", "cv_python_data"],
+    "notes": "One-skill profile used for sparse-profile and CV-specialization tests."
+  },
+  {
+    "profile_id": "empty_profile_01",
+    "language": "EN",
+    "categories": ["edge", "empty_profile", "sparse"],
+    "fields": {
+      "opportunity_types": ["JOB"]
+    },
+    "cv_variant_ids": ["cv_empty_backend"]
+  },
+  {
+    "profile_id": "cv_only_backend_01",
+    "language": "EN",
+    "categories": ["edge", "cv_only", "backend"],
+    "fields": {
+      "opportunity_types": ["JOB"]
+    },
+    "cv_variant_ids": ["cv_python_backend"]
+  },
+  {
+    "profile_id": "role_only_frontend_01",
+    "language": "EN",
+    "categories": ["edge", "role_only", "frontend"],
+    "fields": {
+      "target_roles": ["Frontend React Developer"],
+      "opportunity_types": ["JOB"]
+    },
+    "cv_variant_ids": ["cv_frontend_react"]
+  },
+  {
+    "profile_id": "multilingual_fullstack_01",
+    "language": "MULTI",
+    "categories": ["edge", "multilingual", "backend", "frontend"],
+    "fields": {
+      "competences": ["Python", "React", "Django", "JavaScript"],
+      "target_roles": ["Full Stack Developer", "Développeur Full Stack"],
+      "domaines_interet": ["Web", "SaaS"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_multilingual_fullstack"]
+  },
+  {
+    "profile_id": "arabic_backend_01",
+    "language": "AR",
+    "categories": ["tech", "backend", "arabic", "multilingual"],
+    "fields": {
+      "competences": ["بايثون", "Django", "واجهات API"],
+      "target_roles": ["مهندس برمجيات بايثون"],
+      "domaines_interet": ["تطوير البرمجيات"],
+      "niveau_experience": "JUNIOR",
+      "annees_experience": 2,
+      "preferred_locations": ["تونس"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_backend_ar"]
+  },
+  {
+    "profile_id": "french_backend_01",
+    "language": "FR",
+    "categories": ["tech", "backend", "french", "multilingual"],
+    "fields": {
+      "competences": ["Python", "Django", "API REST"],
+      "target_roles": ["Développeur Backend Python"],
+      "domaines_interet": ["Développement logiciel"],
+      "niveau_experience": "JUNIOR",
+      "annees_experience": 2,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_backend_fr"]
+  },
+  {
+    "profile_id": "english_profile_01",
+    "language": "EN",
+    "categories": ["tech", "backend", "english"],
+    "fields": {
+      "competences": ["Python", "FastAPI", "SQL"],
+      "target_roles": ["Backend Software Engineer"],
+      "domaines_interet": ["Backend Engineering"],
+      "niveau_experience": "JUNIOR",
+      "annees_experience": 2,
+      "preferred_locations": ["Remote"],
+      "remote_preference": "REMOTE",
+      "work_mode_preferences": ["REMOTE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_python_backend"]
+  },
+  {
+    "profile_id": "french_accounting_01",
+    "language": "FR",
+    "categories": ["non_tech", "accounting", "french", "multilingual"],
+    "fields": {
+      "competences": ["Comptabilité", "Excel", "Fiscalité"],
+      "target_roles": ["Comptable", "Assistant Comptable"],
+      "domaines_interet": ["Finance", "Comptabilité"],
+      "niveau_experience": "JUNIOR",
+      "annees_experience": 2,
+      "preferred_locations": ["Sfax"],
+      "remote_preference": "ON_SITE",
+      "work_mode_preferences": ["ON_SITE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_accounting_fr"]
+  },
+  {
+    "profile_id": "arabic_accounting_01",
+    "language": "AR",
+    "categories": ["non_tech", "accounting", "arabic", "multilingual"],
+    "fields": {
+      "competences": ["محاسبة", "Excel", "ضرائب"],
+      "target_roles": ["محاسب"],
+      "domaines_interet": ["المالية"],
+      "niveau_experience": "JUNIOR",
+      "annees_experience": 2,
+      "preferred_locations": ["صفاقس"],
+      "remote_preference": "ON_SITE",
+      "work_mode_preferences": ["ON_SITE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_accounting_ar"]
+  },
+  {
+    "profile_id": "arabic_nurse_01",
+    "language": "AR",
+    "categories": ["non_tech", "nurse", "arabic", "multilingual"],
+    "fields": {
+      "competences": ["تمريض", "رعاية المرضى", "ملفات طبية"],
+      "target_roles": ["ممرض"],
+      "domaines_interet": ["الرعاية الصحية"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["سوسة"],
+      "remote_preference": "ON_SITE",
+      "work_mode_preferences": ["ON_SITE"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_nurse_ar"]
+  },
+  {
+    "profile_id": "hr_data_profile_01",
+    "language": "EN",
+    "categories": ["edge", "confusing", "hr", "data"],
+    "fields": {
+      "competences": ["HR Analytics", "Recruitment", "Excel", "Reporting"],
+      "target_roles": ["HR Data Analyst"],
+      "domaines_interet": ["Human Resources", "Analytics"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 3,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_hr_data"]
+  },
+  {
+    "profile_id": "ai_recruitment_profile_01",
+    "language": "EN",
+    "categories": ["edge", "confusing", "hr", "ai"],
+    "fields": {
+      "competences": ["Recruitment", "AI Tools", "Sourcing", "HR Tech"],
+      "target_roles": ["AI Recruitment Specialist"],
+      "domaines_interet": ["Human Resources", "AI"],
+      "niveau_experience": "CONFIRME",
+      "annees_experience": 4,
+      "preferred_locations": ["Tunis"],
+      "remote_preference": "HYBRID",
+      "work_mode_preferences": ["HYBRID"],
+      "employment_types": ["FULL_TIME"],
+      "opportunity_types": ["JOB"],
+      "onboarding_completed": true,
+      "last_onboarding_step": 5
+    },
+    "cv_variant_ids": ["cv_ai_recruitment"]
+  },
+  {
+    "profile_id": "devops_sparse_01",
+    "language": "EN",
+    "categories": ["edge", "sparse", "devops", "tech"],
+    "fields": {
+      "competences": ["Docker"],
+      "opportunity_types": ["JOB"]
+    },
+    "cv_variant_ids": ["cv_devops"]
+  }
+]
+

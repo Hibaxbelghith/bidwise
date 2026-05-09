@@ -1,80 +1,75 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  ScrollView,
-  ActivityIndicator,
-  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import ProfileAutocompleteInput from '@/src/features/profile/components/ProfileAutocompleteInput';
+import PreferenceChipGroup from '@/src/features/profile/components/PreferenceChipGroup';
+import SalaryExpectationField from '@/src/features/profile/components/SalaryExpectationField';
+import {
+  DEFAULT_COMPENSATION_CURRENCY,
+  DEFAULT_COMPENSATION_PERIOD,
+  EMPLOYMENT_TYPE_OPTIONS,
+  OPPORTUNITY_TYPE_OPTIONS,
+  TUNISIAN_LOCATION_OPTIONS,
+  WORK_MODE_OPTIONS,
+} from '@/src/features/profile/constants/profileOptions';
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { updateProfile } from '@/src/features/profile/services/profileService';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
+import {
+  normalizeLocations,
+  normalizeProfilePreferenceData,
+  validateSalaryExpectation,
+} from '@/src/features/profile/utils/profileValidation';
 
-// ── Step definitions ─────────────────────────────────────
 const STEPS = [
-  { title: 'What brings you to BidWise?', description: 'Select the types of opportunities you\'re looking for.' },
-  { title: 'Where would you like to work?', description: 'Tell us your preferred location and work style.' },
-  { title: 'Compensation expectations', description: 'What are your salary expectations? This stays private.' },
-  { title: 'Work arrangement', description: 'What type of work arrangement do you prefer?' },
-  { title: 'Target roles', description: 'What roles are you targeting? Add up to 5.' },
-  { title: 'Profile visibility', description: 'Control who can see your profile.' },
-];
-
-// ── Options ──────────────────────────────────────────────
-const OPPORTUNITY_OPTIONS = [
-  { value: 'JOB', label: '💼  Jobs', desc: 'Full-time, part-time, contract', enabled: true },
-  { value: 'INTERNSHIP', label: '🎓  Internships', desc: 'Internship & trainee programs', enabled: false },
-  { value: 'RESEARCH', label: '📚  Research', desc: 'Academic & R&D opportunities', enabled: false },
-  { value: 'FUNDING', label: '📈  Funding', desc: 'Grants, scholarships, funding', enabled: false },
-];
-
-const REMOTE_OPTIONS = [
-  { value: 'ON_SITE', label: '🏢  On-site', desc: 'Work from the office' },
-  { value: 'REMOTE', label: '🌐  Remote', desc: 'Work from anywhere' },
-  { value: 'HYBRID', label: '🔄  Hybrid', desc: 'Mix of office & remote' },
-];
-
-const PERIOD_OPTIONS = [
-  { value: 'YEARLY', label: 'per year' },
-  { value: 'MONTHLY', label: 'per month' },
-  { value: 'HOURLY', label: 'per hour' },
-];
-
-const EMPLOYMENT_OPTIONS = [
-  { value: 'FULL_TIME', label: 'Full-time' },
-  { value: 'PART_TIME', label: 'Part-time' },
-  { value: 'CONTRACT', label: 'Contract' },
-  { value: 'FREELANCE', label: 'Freelance' },
-  { value: 'INTERNSHIP', label: 'Internship' },
+  { title: 'Opportunity goals', description: 'Choose what you want BidWise to prioritize.' },
+  { title: 'Location and work mode', description: 'Keep this Tunisia-first, with custom values when needed.' },
+  { title: 'Expected salary', description: 'Tunisia market defaults to TND per month.' },
+  { title: 'Employment type', description: 'Select the contract types that fit your search.' },
+  { title: 'Target roles', description: 'Roles must come from suggestions to protect matching quality.' },
+  { title: 'Career signals', description: 'Skills are what you can do. Interests are industries you want.' },
+  { title: 'Profile visibility', description: 'Control how recruiters see your profile.' },
 ];
 
 const MAX_ROLES = 5;
 
-// ── Initial data ─────────────────────────────────────────
-interface OnboardingData {
+type OnboardingData = {
   opportunity_types: string[];
-  preferred_location: string;
-  remote_preference: string | null;
+  preferred_locations: string[];
+  work_mode_preferences: string[];
   compensation_expectation: string;
-  compensation_period: string | null;
+  compensation_currency: string;
+  compensation_period: string;
   employment_types: string[];
   target_roles: string[];
+  competences: string[];
+  domaines_interet: string[];
   profile_visibility: boolean;
-}
+};
 
 const initialData: OnboardingData = {
   opportunity_types: [],
-  preferred_location: '',
-  remote_preference: null,
+  preferred_locations: [],
+  work_mode_preferences: [],
   compensation_expectation: '',
-  compensation_period: null,
+  compensation_currency: DEFAULT_COMPENSATION_CURRENCY,
+  compensation_period: DEFAULT_COMPENSATION_PERIOD,
   employment_types: [],
   target_roles: [],
+  competences: [],
+  domaines_interet: [],
   profile_visibility: true,
 };
 
@@ -83,8 +78,9 @@ export default function OnboardingScreen() {
   const { loadUserProfile } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [locationInput, setLocationInput] = useState('');
   const [data, setData] = useState<OnboardingData>(initialData);
-  const [roleInput, setRoleInput] = useState('');
 
   const bg = useThemeColor({}, 'background');
   const text = useThemeColor({}, 'text');
@@ -92,271 +88,245 @@ export default function OnboardingScreen() {
   const tint = useThemeColor({}, 'tint');
   const card = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
-
-  const step = STEPS[currentStep];
+  const colors = useMemo(() => ({ tint, border, text, muted, card }), [border, card, muted, text, tint]);
   const isLast = currentStep === STEPS.length - 1;
+  const step = STEPS[currentStep];
 
-  // ── Helpers ────────────────────────────────────────────
-  const toggleArray = (key: 'opportunity_types' | 'employment_types', value: string) => {
-    setData((prev) => {
-      const arr = prev[key];
-      return { ...prev, [key]: arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value] };
-    });
+  const salaryValidation = useMemo(
+    () => validateSalaryExpectation(data.compensation_expectation, data.compensation_period),
+    [data.compensation_expectation, data.compensation_period],
+  );
+
+  const addLocation = (location: string) => {
+    const normalized = normalizeLocations([location])[0];
+    if (!normalized) return;
+    setData((prev) => ({
+      ...prev,
+      preferred_locations: normalizeLocations([...prev.preferred_locations, normalized]),
+    }));
+    setLocationInput('');
   };
 
-  const addRole = () => {
-    const trimmed = roleInput.trim();
-    if (!trimmed || data.target_roles.length >= MAX_ROLES || data.target_roles.includes(trimmed)) return;
-    setData((prev) => ({ ...prev, target_roles: [...prev.target_roles, trimmed] }));
-    setRoleInput('');
+  const removeLocation = (location: string) => {
+    setData((prev) => ({
+      ...prev,
+      preferred_locations: prev.preferred_locations.filter((item) => item !== location),
+    }));
   };
 
-  const removeRole = (index: number) => {
-    setData((prev) => ({ ...prev, target_roles: prev.target_roles.filter((_, i) => i !== index) }));
+  const validateCurrentStep = () => {
+    if (currentStep === 2 && salaryValidation.error) return salaryValidation.error;
+    return '';
   };
 
-  // ── Navigation ─────────────────────────────────────────
   const handleNext = async () => {
+    const validationError = validateCurrentStep();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setError('');
+
     if (isLast) {
       await finishOnboarding(false);
     } else {
-      setCurrentStep((s) => s + 1);
+      setCurrentStep((value) => value + 1);
     }
   };
 
   const handleBack = () => {
-    if (currentStep > 0) setCurrentStep((s) => s - 1);
-  };
-
-  const handleSkip = async () => {
-    await finishOnboarding(true);
+    if (currentStep > 0) setCurrentStep((value) => value - 1);
   };
 
   const finishOnboarding = async (skipData: boolean) => {
     try {
       setSaving(true);
+      setError('');
       const payload: Record<string, unknown> = {
         onboarding_completed: true,
         last_onboarding_step: currentStep,
       };
+
       if (!skipData) {
-        payload.opportunity_types = data.opportunity_types;
-        payload.preferred_location = data.preferred_location || null;
-        payload.remote_preference = data.remote_preference;
-        payload.compensation_expectation = data.compensation_expectation ? parseInt(data.compensation_expectation, 10) : null;
-        payload.compensation_period = data.compensation_period;
-        payload.employment_types = data.employment_types;
-        payload.target_roles = data.target_roles;
-        payload.profile_visibility = data.profile_visibility;
+        Object.assign(payload, {
+          ...normalizeProfilePreferenceData(data),
+          compensation_expectation: salaryValidation.value,
+          compensation_currency: DEFAULT_COMPENSATION_CURRENCY,
+          compensation_period: data.compensation_period || DEFAULT_COMPENSATION_PERIOD,
+        });
       }
+
       await updateProfile(payload);
       await loadUserProfile();
       router.replace('/dashboard');
     } catch {
-      router.replace('/dashboard');
+      setError('Could not save your profile. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  // ── Step renderers ─────────────────────────────────────
-  const renderStep0 = () => (
-    <View style={styles.optionsGrid}>
-      {OPPORTUNITY_OPTIONS.map((opt) => {
-        const selected = data.opportunity_types.includes(opt.value);
-        return (
-          <TouchableOpacity
-            key={opt.value}
-            disabled={!opt.enabled}
-            onPress={() => toggleArray('opportunity_types', opt.value)}
-            activeOpacity={0.7}
-            style={[
-              styles.cardOption,
-              { borderColor: selected ? tint : border, backgroundColor: selected ? tint + '15' : card },
-              !opt.enabled && styles.disabledCard,
-            ]}
-          >
-            {!opt.enabled && (
-              <View style={[styles.soonBadge, { backgroundColor: border }]}>
-                <Text style={[styles.soonBadgeText, { color: muted }]}>Soon</Text>
-              </View>
-            )}
-            <Text style={styles.cardEmoji}>{opt.label.slice(0, 3)}</Text>
-            <Text style={[styles.cardLabel, { color: opt.enabled ? text : muted }]}>{opt.label.slice(3)}</Text>
-            <Text style={[styles.cardDesc, { color: muted }]}>{opt.desc}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-
-  const renderStep1 = () => (
-    <View style={{ gap: 24 }}>
-      <View style={{ gap: 8 }}>
-        <Text style={[styles.label, { color: text }]}>📍  Preferred location</Text>
-        <TextInput
-          style={[styles.input, { borderColor: border, color: text, backgroundColor: card }]}
-          placeholder="e.g. Paris, London, New York"
-          placeholderTextColor={muted}
-          value={data.preferred_location}
-          onChangeText={(v) => setData((p) => ({ ...p, preferred_location: v }))}
-        />
-      </View>
-      <View style={{ gap: 8 }}>
-        <Text style={[styles.label, { color: text }]}>Work style</Text>
-        <View style={styles.remoteRow}>
-          {REMOTE_OPTIONS.map((opt) => {
-            const selected = data.remote_preference === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                onPress={() => setData((p) => ({ ...p, remote_preference: selected ? null : opt.value }))}
-                activeOpacity={0.7}
-                style={[styles.remoteCard, { borderColor: selected ? tint : border, backgroundColor: selected ? tint + '15' : card }]}
-              >
-                <Text style={styles.cardEmoji}>{opt.label.slice(0, 3)}</Text>
-                <Text style={[styles.remoteLabel, { color: text }]}>{opt.label.slice(3)}</Text>
-                <Text style={[styles.cardDesc, { color: muted }]}>{opt.desc}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderStep2 = () => (
-    <View style={{ gap: 16 }}>
-      <Text style={[styles.label, { color: text }]}>Desired minimum compensation</Text>
-      <View style={{ flexDirection: 'row', gap: 12 }}>
-        <View style={{ flex: 1 }}>
+  const renderLocationStep = () => (
+    <View style={styles.stepBody}>
+      <View style={styles.inputGroup}>
+        <Text style={[styles.label, { color: text }]}>Preferred locations</Text>
+        <View style={styles.inputRow}>
           <TextInput
-            style={[styles.input, { borderColor: border, color: text, backgroundColor: card }]}
-            placeholder="e.g. 55000"
+            value={locationInput}
+            onChangeText={setLocationInput}
+            onSubmitEditing={() => addLocation(locationInput)}
+            placeholder="Tunis, Sfax, Sousse..."
             placeholderTextColor={muted}
-            keyboardType="numeric"
-            value={data.compensation_expectation}
-            onChangeText={(v) => setData((p) => ({ ...p, compensation_expectation: v.replace(/[^0-9]/g, '') }))}
+            style={[styles.input, { backgroundColor: card, borderColor: border, color: text }]}
           />
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => addLocation(locationInput)}
+            style={[styles.addButton, { backgroundColor: tint, opacity: locationInput.trim() ? 1 : 0.45 }]}
+          >
+            <Text style={styles.addText}>+</Text>
+          </TouchableOpacity>
         </View>
       </View>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        {PERIOD_OPTIONS.map((opt) => {
-          const selected = data.compensation_period === opt.value;
-          return (
-            <TouchableOpacity
-              key={opt.value}
-              onPress={() => setData((p) => ({ ...p, compensation_period: selected ? null : opt.value }))}
-              activeOpacity={0.7}
-              style={[styles.pill, { borderColor: selected ? tint : border, backgroundColor: selected ? tint : 'transparent' }]}
-            >
-              <Text style={[styles.pillText, { color: selected ? '#fff' : text }]}>{opt.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      <Text style={[styles.hint, { color: muted }]}>Your compensation expectations are private and never shared.</Text>
-    </View>
-  );
 
-  const renderStep3 = () => (
-    <View style={{ gap: 16 }}>
-      <View style={styles.pillsWrap}>
-        {EMPLOYMENT_OPTIONS.map((opt) => {
-          const selected = data.employment_types.includes(opt.value);
-          return (
-            <TouchableOpacity
-              key={opt.value}
-              onPress={() => toggleArray('employment_types', opt.value)}
-              activeOpacity={0.7}
-              style={[styles.pill, { borderColor: selected ? tint : border, backgroundColor: selected ? tint : 'transparent' }]}
-            >
-              <Text style={[styles.pillText, { color: selected ? '#fff' : text }]}>{opt.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
+      <View style={styles.quickWrap}>
+        {TUNISIAN_LOCATION_OPTIONS.slice(0, 8).map((location) => (
+          <TouchableOpacity
+            key={location}
+            activeOpacity={0.75}
+            onPress={() => addLocation(location)}
+            style={[styles.quickChip, { borderColor: border, backgroundColor: card }]}
+          >
+            <Text style={[styles.quickText, { color: text }]}>{location}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
-      {data.employment_types.length > 0 && (
-        <Text style={[styles.hint, { color: muted }]}>{data.employment_types.length} selected</Text>
-      )}
-    </View>
-  );
 
-  const renderStep4 = () => (
-    <View style={{ gap: 16 }}>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <TextInput
-          style={[styles.input, { flex: 1, borderColor: border, color: text, backgroundColor: card }]}
-          placeholder="e.g. Frontend Developer"
-          placeholderTextColor={muted}
-          value={roleInput}
-          onChangeText={setRoleInput}
-          onSubmitEditing={addRole}
-          editable={data.target_roles.length < MAX_ROLES}
-        />
-        <TouchableOpacity
-          onPress={addRole}
-          activeOpacity={0.7}
-          disabled={!roleInput.trim() || data.target_roles.length >= MAX_ROLES}
-          style={[styles.addBtn, { backgroundColor: tint, opacity: roleInput.trim() ? 1 : 0.4 }]}
-        >
-          <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700' }}>+</Text>
-        </TouchableOpacity>
-      </View>
-      {data.target_roles.length > 0 && (
-        <View style={styles.pillsWrap}>
-          {data.target_roles.map((role, i) => (
-            <View key={i} style={[styles.roleBadge, { backgroundColor: tint + '20', borderColor: tint }]}>
-              <Text style={[styles.roleBadgeText, { color: tint }]}>{role}</Text>
-              <TouchableOpacity onPress={() => removeRole(i)} hitSlop={8}>
-                <Text style={{ color: tint, fontSize: 16, fontWeight: '700' }}>✕</Text>
-              </TouchableOpacity>
-            </View>
+      {data.preferred_locations.length ? (
+        <View style={styles.selectedWrap}>
+          {data.preferred_locations.map((location) => (
+            <TouchableOpacity
+              key={location}
+              activeOpacity={0.75}
+              onPress={() => removeLocation(location)}
+              style={[styles.selectedChip, { borderColor: tint, backgroundColor: tint + '18' }]}
+            >
+              <Text style={[styles.selectedText, { color: tint }]}>{location} ×</Text>
+            </TouchableOpacity>
           ))}
         </View>
-      )}
-      <Text style={[styles.hint, { color: muted }]}>{data.target_roles.length}/{MAX_ROLES} roles — press Enter or + to add</Text>
+      ) : null}
+
+      <View style={styles.inputGroup}>
+        <Text style={[styles.label, { color: text }]}>Work modes</Text>
+        <PreferenceChipGroup
+          options={WORK_MODE_OPTIONS}
+          value={data.work_mode_preferences}
+          onChange={(value) => setData((prev) => ({ ...prev, work_mode_preferences: value }))}
+          colors={colors}
+          compact
+        />
+      </View>
     </View>
   );
 
-  const renderStep5 = () => (
-    <TouchableOpacity
-      onPress={() => setData((p) => ({ ...p, profile_visibility: !p.profile_visibility }))}
-      activeOpacity={0.8}
-      style={[styles.visibilityCard, { borderColor: data.profile_visibility ? tint : border, backgroundColor: data.profile_visibility ? tint + '10' : card }]}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-        <View style={[styles.visIcon, { backgroundColor: data.profile_visibility ? tint + '25' : border }]}>
-          <Text style={{ fontSize: 22 }}>{data.profile_visibility ? '👁️' : '🙈'}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.visTitle, { color: text }]}>Allow recruiters to view my profile</Text>
-          <Text style={[styles.visDesc, { color: muted }]}>
-            {data.profile_visibility
-              ? 'Your profile is visible to recruiters and hiring managers.'
-              : 'Your profile is hidden. Only you can see it.'}
+  const stepRenderers = [
+    () => (
+      <PreferenceChipGroup
+        options={OPPORTUNITY_TYPE_OPTIONS}
+        value={data.opportunity_types}
+        onChange={(value) => setData((prev) => ({ ...prev, opportunity_types: value }))}
+        colors={colors}
+      />
+    ),
+    renderLocationStep,
+    () => (
+      <SalaryExpectationField
+        amount={data.compensation_expectation}
+        period={data.compensation_period}
+        onAmountChange={(value) => setData((prev) => ({ ...prev, compensation_expectation: value }))}
+        onPeriodChange={(value) => setData((prev) => ({ ...prev, compensation_period: value }))}
+        colors={colors}
+      />
+    ),
+    () => (
+      <PreferenceChipGroup
+        options={EMPLOYMENT_TYPE_OPTIONS}
+        value={data.employment_types}
+        onChange={(value) => setData((prev) => ({ ...prev, employment_types: value }))}
+        colors={colors}
+        compact
+      />
+    ),
+    () => (
+      <ProfileAutocompleteInput
+        label="Target roles"
+        termType="role"
+        value={data.target_roles}
+        onChange={(value) => setData((prev) => ({ ...prev, target_roles: value }))}
+        placeholder="Frontend Developer, Backend Developer..."
+        maxItems={MAX_ROLES}
+        colors={colors}
+      />
+    ),
+    () => (
+      <View style={styles.stepBody}>
+        <ProfileAutocompleteInput
+          label="Skills"
+          termType="skill"
+          value={data.competences}
+          onChange={(value) => setData((prev) => ({ ...prev, competences: value }))}
+          placeholder="React, Python, CSS..."
+          colors={colors}
+        />
+        <ProfileAutocompleteInput
+          label="Industries / Interests"
+          termType="interest"
+          value={data.domaines_interet}
+          onChange={(value) => setData((prev) => ({ ...prev, domaines_interet: value }))}
+          placeholder="Healthcare, Fintech, AI..."
+          maxItems={8}
+          colors={colors}
+        />
+      </View>
+    ),
+    () => (
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => setData((prev) => ({ ...prev, profile_visibility: !prev.profile_visibility }))}
+        style={[
+          styles.visibilityCard,
+          {
+            borderColor: data.profile_visibility ? tint : border,
+            backgroundColor: data.profile_visibility ? tint + '10' : card,
+          },
+        ]}
+      >
+        <View style={styles.visibilityText}>
+          <Text style={[styles.visibilityTitle, { color: text }]}>Profile visible to recruiters</Text>
+          <Text style={[styles.visibilityDesc, { color: muted }]}>
+            You can hide your profile while keeping recommendations active.
           </Text>
         </View>
         <Switch
           value={data.profile_visibility}
-          onValueChange={(v) => setData((p) => ({ ...p, profile_visibility: v }))}
+          onValueChange={(value) => setData((prev) => ({ ...prev, profile_visibility: value }))}
           trackColor={{ false: border, true: tint }}
           thumbColor="#fff"
         />
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    ),
+  ];
 
-  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5];
-
-  // ── Render ─────────────────────────────────────────────
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
-      {/* Progress bar */}
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: bg }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.progressContainer}>
-        {STEPS.map((_, index) => (
+        {STEPS.map((item, index) => (
           <View
-            key={index}
+            key={item.title}
             style={[
               styles.progressDot,
               { backgroundColor: index <= currentStep ? tint : border, flex: 1 },
@@ -369,24 +339,26 @@ export default function OnboardingScreen() {
         <Text style={[styles.stepLabel, { color: tint }]}>Step {currentStep + 1} of {STEPS.length}</Text>
         <Text style={[styles.title, { color: text }]}>{step.title}</Text>
         <Text style={[styles.subtitle, { color: muted }]}>{step.description}</Text>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        {stepRenderers[currentStep]()}
+        <View style={styles.stepCard}>{stepRenderers[currentStep]()}</View>
       </ScrollView>
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        {saving && <ActivityIndicator color={tint} style={{ marginBottom: 8 }} />}
+      <View style={[styles.footer, { backgroundColor: bg, borderTopColor: border }]}>
+        {saving ? <ActivityIndicator color={tint} style={styles.saving} /> : null}
         <View style={styles.footerRow}>
           {currentStep > 0 ? (
-            <TouchableOpacity style={[styles.secondaryButton, { borderColor: border }]} onPress={handleBack} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.secondaryButton, { borderColor: border }]} onPress={handleBack} activeOpacity={0.75}>
               <Text style={[styles.secondaryButtonText, { color: text }]}>Back</Text>
             </TouchableOpacity>
           ) : (
-            <View />
+            <TouchableOpacity onPress={() => finishOnboarding(true)} activeOpacity={0.75} disabled={saving}>
+              <Text style={[styles.skipText, { color: muted }]}>Skip</Text>
+            </TouchableOpacity>
           )}
 
           <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: tint }]}
+            style={[styles.primaryButton, { backgroundColor: tint, opacity: saving ? 0.6 : 1 }]}
             onPress={handleNext}
             activeOpacity={0.8}
             disabled={saving}
@@ -394,67 +366,174 @@ export default function OnboardingScreen() {
             <Text style={styles.primaryButtonText}>{isLast ? 'Finish' : 'Next'}</Text>
           </TouchableOpacity>
         </View>
-        {/* Skip always visible */}
-        <TouchableOpacity onPress={handleSkip} activeOpacity={0.7} style={styles.skipContainer} disabled={saving}>
-          <Text style={[styles.skipText, { color: muted }]}>Skip for now</Text>
-        </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60 },
-  progressContainer: { flexDirection: 'row', gap: 6, paddingHorizontal: 32, marginBottom: 32 },
-  progressDot: { height: 4, borderRadius: 2 },
-  scrollContent: { paddingHorizontal: 32, paddingBottom: 32, flexGrow: 1 },
-  stepLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
-  title: { fontSize: 26, fontWeight: '700', marginBottom: 8 },
-  subtitle: { fontSize: 15, lineHeight: 22, marginBottom: 32 },
-
-  // Cards grid (step 0)
-  optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  cardOption: { width: '47%', borderWidth: 1.5, borderRadius: 14, padding: 18, alignItems: 'center', gap: 4 },
-  disabledCard: { opacity: 0.45 },
-  soonBadge: { position: 'absolute', top: 8, right: 8, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  soonBadgeText: { fontSize: 10, fontWeight: '600' },
-  cardEmoji: { fontSize: 24, marginBottom: 4 },
-  cardLabel: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  cardDesc: { fontSize: 11, textAlign: 'center', lineHeight: 15 },
-
-  // Remote (step 1)
-  remoteRow: { flexDirection: 'row', gap: 10 },
-  remoteCard: { flex: 1, borderWidth: 1.5, borderRadius: 12, padding: 14, alignItems: 'center', gap: 4 },
-  remoteLabel: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
-
-  // Input
-  label: { fontSize: 15, fontWeight: '600' },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
-  hint: { fontSize: 12 },
-
-  // Pills (step 2, 3)
-  pill: { borderWidth: 1.5, borderRadius: 50, paddingHorizontal: 18, paddingVertical: 10 },
-  pillText: { fontSize: 14, fontWeight: '600' },
-  pillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-
-  // Roles (step 4)
-  addBtn: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  roleBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 50, paddingHorizontal: 14, paddingVertical: 8 },
-  roleBadgeText: { fontSize: 14, fontWeight: '500' },
-
-  // Visibility (step 5)
-  visibilityCard: { borderWidth: 1.5, borderRadius: 16, padding: 20 },
-  visIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  visTitle: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  visDesc: { fontSize: 13, lineHeight: 18 },
-
-  // Footer
-  footer: { paddingHorizontal: 32, paddingBottom: 36, paddingTop: 12 },
-  footerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  secondaryButton: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
-  secondaryButtonText: { fontSize: 16, fontWeight: '600' },
-  primaryButton: { borderRadius: 12, paddingVertical: 12, paddingHorizontal: 32 },
-  primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
-  skipContainer: { alignItems: 'center', marginTop: 16 },
-  skipText: { fontSize: 15 },
+  container: {
+    flex: 1,
+    paddingTop: 58,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 26,
+    paddingHorizontal: 24,
+  },
+  progressDot: {
+    borderRadius: 2,
+    height: 4,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 32,
+    paddingHorizontal: 24,
+  },
+  stepLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 22,
+  },
+  stepCard: {
+    gap: 16,
+  },
+  stepBody: {
+    gap: 18,
+  },
+  inputGroup: {
+    gap: 10,
+  },
+  label: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  input: {
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  addButton: {
+    alignItems: 'center',
+    borderRadius: 12,
+    height: 46,
+    justifyContent: 'center',
+    width: 46,
+  },
+  addText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  quickWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  quickText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  selectedWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  selectedChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  selectedText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  visibilityCard: {
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1.25,
+    flexDirection: 'row',
+    gap: 16,
+    padding: 18,
+  },
+  visibilityText: {
+    flex: 1,
+    gap: 4,
+  },
+  visibilityTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  visibilityDesc: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  errorText: {
+    color: '#dc2626',
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 30,
+    paddingHorizontal: 24,
+    paddingTop: 14,
+  },
+  saving: {
+    marginBottom: 10,
+  },
+  footerRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  secondaryButton: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  primaryButton: {
+    borderRadius: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  skipText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });

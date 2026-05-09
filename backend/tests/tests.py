@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 from django.db import connection, models
@@ -22,6 +23,7 @@ from opportunities.models import (
     TypeOpportunite,
 )
 from opportunities.normalization import normalize_raw_opportunity
+from opportunities.scraping import pipeline as scraping_pipeline
 from opportunities.scraping.pipeline import run_collection
 from opportunities.scraping.scraper_base import BaseOpportunityScraper
 from opportunities.scraping.sources import EmploiTunisieScraper
@@ -1857,6 +1859,45 @@ class OpportuniteAPITests(APITestCase):
         titles = [item["titre"] for item in response.data["results"]]
         self.assertEqual(titles[0], "New")
 
+    def test_default_list_prioritizes_quality_score(self):
+        lower_quality_recent = self.create_opp(
+            titre="Lower Quality Recent",
+            description="Short description",
+            quality_score=0.70,
+            date_publication=date.today(),
+        )
+        medium_quality_complete = self.create_opp(
+            titre="Medium Quality Complete",
+            description="Detailed role description",
+            description_html="<p>Detailed role description</p>",
+            organisation_nom="Acme",
+            company_logo="https://example.com/logo.png",
+            ville="Tunis",
+            salary="1800 TND",
+            contract_type="CDI",
+            education_level="Bac + 3",
+            availability="Remote",
+            skills=["python", "django"],
+            languages=["français"],
+            normalized_industries=["software"],
+            source_item_url="https://example.com/complete",
+            quality_score=0.80,
+            date_publication=date.today() - timedelta(days=2),
+        )
+        highest_quality = self.create_opp(
+            titre="Highest Quality",
+            description="Sparse but high quality",
+            quality_score=0.95,
+            date_publication=date.today() - timedelta(days=5),
+        )
+
+        response = self.client.get(self.base_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = [item["id"] for item in response.data["results"]]
+        self.assertLess(returned_ids.index(highest_quality.pk), returned_ids.index(medium_quality_complete.pk))
+        self.assertLess(returned_ids.index(medium_quality_complete.pk), returned_ids.index(lower_quality_recent.pk))
+
     def test_page_size_is_capped_to_50(self):
         for index in range(60):
             self.create_opp(
@@ -2095,6 +2136,129 @@ class PipelineTests(TestCase):
         self.assertEqual(raw_records[0].processing_status, RawOpportuniteProcessingStatus.NEW)
         self.assertEqual(raw_records[1].processing_status, RawOpportuniteProcessingStatus.NEW)
         self.assertEqual(Opportunite.objects.count(), 0)
+
+    def test_pipeline_updates_existing_raw_record_when_source_record_id_repeats_with_new_url(self):
+        class DuplicateSourceRecordScraper(BaseOpportunityScraper):
+            source_name = "LinkedIn"
+            source_url = "https://www.linkedin.com/jobs/"
+            source_type = "SITE_EMPLOI"
+
+            def fetch_raw_records(self):
+                return [
+                    {
+                        "title": "Data Engineer",
+                        "description": "Version 1",
+                        "organization": "Company A",
+                        "opportunity_type": "job",
+                        "status": "active",
+                        "publication_date": "2026-03-10",
+                        "source_record_id": "job-123",
+                        "source_item_url": "https://www.linkedin.com/jobs/view/job-123-a",
+                    },
+                    {
+                        "title": "Data Engineer",
+                        "description": "Version 2",
+                        "organization": "Company A",
+                        "opportunity_type": "job",
+                        "status": "active",
+                        "publication_date": "2026-03-10",
+                        "source_record_id": "job-123",
+                        "source_item_url": "https://www.linkedin.com/jobs/view/job-123-b?utm_source=newsletter&ref=feed",
+                    },
+                ]
+
+        stats = run_collection(DuplicateSourceRecordScraper())
+
+        self.assertEqual(stats["created"], 1)
+        self.assertEqual(stats["updated"], 1)
+        self.assertEqual(stats["skipped"], 0)
+        self.assertEqual(RawOpportunite.objects.count(), 1)
+        raw_record = RawOpportunite.objects.get()
+        self.assertEqual(raw_record.source_record_id, "job-123")
+        self.assertEqual(raw_record.source_item_url, "https://www.linkedin.com/jobs/view/job-123-b")
+        self.assertEqual(raw_record.raw_description, "Version 2")
+
+    def test_pipeline_updates_existing_raw_record_by_url_when_record_id_changes(self):
+        class DuplicateUrlScraper(BaseOpportunityScraper):
+            source_name = "LinkedIn"
+            source_url = "https://www.linkedin.com/jobs/"
+            source_type = "SITE_EMPLOI"
+
+            def fetch_raw_records(self):
+                return [
+                    {
+                        "title": "ML Engineer",
+                        "description": "Version 1",
+                        "organization": "Company A",
+                        "status": "active",
+                        "publication_date": "2026-03-10",
+                        "source_record_id": "job-a",
+                        "source_item_url": "https://www.linkedin.com/jobs/view/job-shared?utm_campaign=old",
+                    },
+                    {
+                        "title": "ML Engineer",
+                        "description": "Version 2",
+                        "organization": "Company A",
+                        "status": "active",
+                        "publication_date": "2026-03-10",
+                        "source_record_id": "job-b",
+                        "source_item_url": "https://www.linkedin.com/jobs/view/job-shared?utm_campaign=new",
+                    },
+                ]
+
+        stats = run_collection(DuplicateUrlScraper())
+
+        self.assertEqual(stats["created"], 1)
+        self.assertEqual(stats["updated"], 1)
+        self.assertEqual(stats["skipped"], 0)
+        self.assertEqual(RawOpportunite.objects.count(), 1)
+        raw_record = RawOpportunite.objects.get()
+        self.assertEqual(raw_record.source_record_id, "job-b")
+        self.assertEqual(raw_record.source_item_url, "https://www.linkedin.com/jobs/view/job-shared")
+        self.assertEqual(raw_record.raw_description, "Version 2")
+
+    def test_pipeline_recovers_when_concurrent_insert_wins_race(self):
+        source = SourceOpportunite.objects.create(
+            nom="LinkedIn",
+            url="https://www.linkedin.com/jobs/",
+            type_source="SITE_EMPLOI",
+        )
+        RawOpportunite.objects.create(
+            source=source,
+            raw_payload={"title": "Race"},
+            raw_titre="Race",
+            raw_description="Before",
+            source_record_id="race-1",
+            source_item_url="https://www.linkedin.com/jobs/view/race-1",
+            payload_hash="existing-race-hash",
+            content_fingerprint="race-fingerprint",
+        )
+
+        raw_record = {
+            "title": "Race",
+            "description": "After",
+            "organization": "Company A",
+            "status": "active",
+            "publication_date": "2026-03-10",
+            "source_record_id": "race-1",
+            "source_item_url": "https://www.linkedin.com/jobs/view/race-1?utm_medium=email",
+        }
+
+        with patch(
+            "opportunities.scraping.pipeline._upsert_raw_opportunity_by_identity",
+            side_effect=IntegrityError("duplicate key"),
+        ):
+            raw_opportunity, created, _ = scraping_pipeline._shadow_store_raw_record(
+                raw_record,
+                source,
+                payload_hash="race-hash",
+                content_fingerprint="race-fingerprint-new",
+            )
+
+        self.assertFalse(created)
+        self.assertEqual(RawOpportunite.objects.count(), 1)
+        self.assertEqual(raw_opportunity.raw_description, "After")
+        self.assertEqual(raw_opportunity.payload_hash, "race-hash")
 
     def test_pipeline_skips_invalid_records(self):
         class InvalidScraper(BaseOpportunityScraper):

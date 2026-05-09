@@ -1,6 +1,7 @@
 from django.db import models
 from django.db.models import Q
 from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from pgvector.django import VectorField
 from users.models import Utilisateur
 
@@ -216,6 +217,75 @@ class PipelineRun(models.Model):
         return f"PipelineRun<{source}:{self.status}>"
 
 
+class SourceSchedulerState(models.Model):
+    source = models.CharField(max_length=64, unique=True, db_index=True)
+    last_dispatched_at = models.DateTimeField(null=True, blank=True)
+    last_decision_at = models.DateTimeField(null=True, blank=True)
+    last_reason = models.CharField(max_length=80, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["source"]
+
+    def __str__(self):
+        return f"SourceSchedulerState<{self.source}>"
+
+
+class ProfileSuggestionType(models.TextChoices):
+    SKILL = "SKILL", "Skill"
+    ROLE = "ROLE", "Role"
+    INTEREST = "INTEREST", "Interest"
+
+
+class ProfileSuggestion(models.Model):
+    term_type = models.CharField(
+        max_length=16,
+        choices=ProfileSuggestionType.choices,
+        db_index=True,
+    )
+    canonical = models.CharField(max_length=160)
+    normalized_key = models.CharField(max_length=180)
+    aliases = models.JSONField(blank=True, default=list)
+    frequency = models.PositiveIntegerField(default=0, db_index=True)
+    confidence = models.FloatField(default=0.0, db_index=True)
+    language_counts = models.JSONField(blank=True, default=dict)
+    metadata = models.JSONField(blank=True, default=dict)
+    is_active = models.BooleanField(default=True, db_index=True)
+    last_built_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["term_type", "normalized_key"],
+                name="uniq_profile_suggestion_type_key",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["term_type", "is_active", "-frequency"],
+                name="prof_sugg_type_act_freq_idx",
+            ),
+            models.Index(
+                fields=["term_type", "normalized_key"],
+                name="profile_sugg_type_key_idx",
+            ),
+            models.Index(
+                fields=["term_type", "is_active", "normalized_key"],
+                name="prof_sugg_type_act_key_idx",
+            ),
+            models.Index(
+                fields=["term_type", "is_active", "confidence", "frequency"],
+                name="prof_sugg_quality_idx",
+            ),
+        ]
+        ordering = ["term_type", "-frequency", "canonical"]
+
+    def __str__(self):
+        return f"{self.term_type}:{self.canonical}"
+
+
 class Opportunite(models.Model):
     titre = models.CharField(max_length=255)
     description = models.TextField()
@@ -224,13 +294,35 @@ class Opportunite(models.Model):
     company_logo = models.URLField(max_length=1000, blank=True, default="")
     ville = models.CharField(max_length=120, blank=True, default="", db_index=True)
     contract_type = models.CharField(max_length=64, blank=True, default="")
+    normalized_contract_types = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Canonical contract/employment types derived from raw source values",
+    )
     experience_min = models.PositiveSmallIntegerField(null=True, blank=True)
     experience_max = models.PositiveSmallIntegerField(null=True, blank=True)
     education_level = models.CharField(max_length=120, blank=True, default="")
     availability = models.CharField(max_length=120, blank=True, default="")
+    normalized_work_mode = models.CharField(
+        max_length=20,
+        blank=True,
+        default="UNSPECIFIED",
+        help_text="Canonical work mode derived from raw availability/remote values",
+    )
+    normalized_schedule = models.CharField(
+        max_length=20,
+        blank=True,
+        default="UNSPECIFIED",
+        help_text="Canonical schedule derived from raw availability/contract values",
+    )
     salary = models.CharField(max_length=120, blank=True, default="")
     experience_years = models.PositiveSmallIntegerField(null=True, blank=True)
     skills = ArrayField(models.CharField(max_length=64), blank=True, default=list)
+    normalized_industries = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Canonical industry/interest sectors derived from source company sector metadata",
+    )
     languages = ArrayField(models.CharField(max_length=64), blank=True, default=list)
     languages_fallback = ArrayField(models.CharField(max_length=64), blank=True, default=list)
     extra_data = models.JSONField(blank=True, default=dict)
@@ -293,6 +385,7 @@ class Opportunite(models.Model):
             models.Index(fields=["date_limite"], name="opp_date_limite_idx"),
             models.Index(fields=["date_creation"], name="opp_date_creation_idx"),
             models.Index(fields=["statut", "date_publication"], name="opp_statut_date_pub_idx"),
+            GinIndex(fields=["normalized_industries"], name="opp_norm_industries_gin"),
         ]
         ordering = ["-date_publication"]
 

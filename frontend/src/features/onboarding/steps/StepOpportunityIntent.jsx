@@ -1,12 +1,19 @@
 import { Briefcase, GraduationCap, BookOpen, TrendingUp } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
+import { OPPORTUNITY_TYPE_OPTIONS } from '../../profile/profilePreferences.js';
 
-const OPTIONS = [
-	{ value: 'JOB', label: 'Jobs', description: 'Full-time, part-time, and contract positions', icon: Briefcase, enabled: true },
-	{ value: 'INTERNSHIP', label: 'Internships', description: 'Internship and trainee programs', icon: GraduationCap, enabled: true },
-	{ value: 'RESEARCH', label: 'Research projects', description: 'Academic and R&D opportunities', icon: BookOpen, enabled: true },
-	{ value: 'FUNDING', label: 'Funding', description: 'Grants, scholarships, and funding', icon: TrendingUp, enabled: true },
-];
+const OPTION_META = {
+	JOB: { description: 'Full-time, part-time, and contract positions', icon: Briefcase },
+	INTERNSHIP: { description: 'Internship and trainee programs', icon: GraduationCap },
+	RESEARCH: { description: 'Academic and R&D opportunities', icon: BookOpen },
+	FUNDING: { description: 'Grants, scholarships, and funding', icon: TrendingUp },
+};
+
+const OPTIONS = OPPORTUNITY_TYPE_OPTIONS.map((option) => ({
+	...option,
+	...(OPTION_META[option.value] || {}),
+	enabled: true,
+}));
 
 const StepOpportunityIntent = ({ data, onChange }) => {
 	const selected = data.opportunity_types || [];

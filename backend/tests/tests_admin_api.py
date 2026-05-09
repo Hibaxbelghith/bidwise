@@ -163,7 +163,11 @@ class AdminApiTests(APITestCase):
                     "recent_updated_avg": 40.5,
                     "failure_rate": 0.02,
                     "consecutive_zero_runs": 0,
+                    "freshness_lag": 600,
+                    "created_per_run": 12.5,
+                    "trend": [2, 8, 15],
                 },
+                "score_history": [0.2, 0.5],
             }
         )
 
@@ -174,11 +178,15 @@ class AdminApiTests(APITestCase):
                 "reason": "ADAPTIVE_HIGH_CREATED_VOLUME",
                 "interval_seconds": 1800,
                 "next_run_at": next_run_at.isoformat(),
+                "score_history": [0.2, 0.5],
                 "metrics": {
                     "created_avg": 25,
                     "updated_avg": 40.5,
                     "failure_rate": 0.02,
                     "zero_runs": 0,
+                    "freshness_lag": 600,
+                    "created_per_run": 12.5,
+                    "trend": [2, 8, 15],
                 },
             },
         )
@@ -190,11 +198,15 @@ class AdminApiTests(APITestCase):
             "reason": "NORMAL",
             "interval_seconds": 3600,
             "next_run_at": "2026-05-04T12:00:00+01:00",
+            "score_history": [0.3, 0.6],
             "metrics": {
                 "created_avg": 3,
                 "updated_avg": 5,
                 "failure_rate": 0.0,
                 "zero_runs": 0,
+                "freshness_lag": 120,
+                "created_per_run": 3,
+                "trend": [1, 2, 3],
             },
         }
         cache.set(scheduler_decision_cache_key("linkedin"), cached_decision, timeout=3600)
@@ -213,6 +225,7 @@ class AdminApiTests(APITestCase):
                 "reason": "NO_DATA",
                 "interval_seconds": None,
                 "next_run_at": None,
+                "score_history": [],
                 "metrics": {},
             },
         )
@@ -226,8 +239,29 @@ class AdminApiTests(APITestCase):
                     "reason": "scheduled",
                     "interval_seconds": 1800,
                     "next_run_at": timezone.now(),
-                    "schedule_metrics": {},
+                    "schedule_metrics": {"adaptive_score": 0.4},
                 }
             )
 
         self.assertEqual(cache_set.call_args.kwargs["timeout"], 1200)
+
+    @override_settings(OPPORTUNITY_SCHEDULER_SCORE_HISTORY_LIMIT=3)
+    def test_scheduler_decision_cache_snapshot_exposes_score_history(self):
+        for score in (0.2, 0.4, 0.7, 0.9):
+            cache_scheduler_decision_snapshot(
+                {
+                    "source": "linkedin",
+                    "reason": "scheduled",
+                    "interval_seconds": 1800,
+                    "next_run_at": timezone.now(),
+                    "schedule_metrics": {
+                        "adaptive_score": score,
+                        "adaptive_raw_score": score * 10,
+                    },
+                }
+            )
+
+        cached = cache.get(scheduler_decision_cache_key("linkedin"))
+
+        self.assertEqual(cached["score_history"], [0.4, 0.7, 0.9])
+        self.assertEqual(cached["metrics"]["score"], 0.9)

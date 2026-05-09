@@ -96,6 +96,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
 
     # Third-party
     'rest_framework',
@@ -243,6 +244,9 @@ REST_FRAMEWORK = {
 
         # Public Google auth endpoint
         'google_auth': os.getenv('GOOGLE_AUTH_RATE', '60/hour'),
+
+        # Authenticated profile autocomplete endpoints
+        'profile_suggestions': os.getenv('PROFILE_SUGGESTIONS_RATE', '120/min'),
     },
 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -297,8 +301,34 @@ OPPORTUNITY_PGVECTOR_ENABLED = os.getenv("OPPORTUNITY_PGVECTOR_ENABLED", "false"
 )
 OPPORTUNITY_PGVECTOR_DIMENSIONS = int(os.getenv("OPPORTUNITY_PGVECTOR_DIMENSIONS", "384"))
 
+# CrossEncoder reranking
+CROSS_ENCODER_ENABLED = _env_flag("CROSS_ENCODER_ENABLED", True)
+CROSS_ENCODER_MODEL = os.getenv(
+    "CROSS_ENCODER_MODEL",
+    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+)
+CROSS_ENCODER_MAX_CANDIDATES = int(os.getenv("CROSS_ENCODER_MAX_CANDIDATES", "15"))
+CROSS_ENCODER_WEIGHT = float(os.getenv("CROSS_ENCODER_WEIGHT", "0.25"))
+CROSS_ENCODER_BATCH_SIZE = int(os.getenv("CROSS_ENCODER_BATCH_SIZE", "8"))
+CROSS_ENCODER_TIMEOUT_SECONDS = float(os.getenv("CROSS_ENCODER_TIMEOUT_SECONDS", "8.0"))
+CROSS_ENCODER_MAX_TEXT_CHARS = int(os.getenv("CROSS_ENCODER_MAX_TEXT_CHARS", "2400"))
+CROSS_ENCODER_REASON_THRESHOLD = float(os.getenv("CROSS_ENCODER_REASON_THRESHOLD", "0.82"))
+CROSS_ENCODER_LOCAL_FILES_ONLY = _env_flag("CROSS_ENCODER_LOCAL_FILES_ONLY", True)
+CROSS_ENCODER_UNAVAILABLE_TTL_SECONDS = int(os.getenv("CROSS_ENCODER_UNAVAILABLE_TTL_SECONDS", "300"))
+
 # Celery / scheduled opportunity pipeline
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+DJANGO_CACHE_URL = os.getenv("DJANGO_CACHE_URL", "redis://redis:6379/1")
+OPPORTUNITY_FACET_CACHE_TTL_SECONDS = int(os.getenv("OPPORTUNITY_FACET_CACHE_TTL_SECONDS", "60"))
+OPPORTUNITY_FACET_CACHE_VERSION = os.getenv("OPPORTUNITY_FACET_CACHE_VERSION", "v1")
+OPPORTUNITY_SLOW_QUERY_MS = float(os.getenv("OPPORTUNITY_SLOW_QUERY_MS", "250"))
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": DJANGO_CACHE_URL,
+    }
+}
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
@@ -331,6 +361,15 @@ OPPORTUNITY_SCHEDULER_DECISION_CACHE_TIMEOUT_SECONDS = int(
         "OPPORTUNITY_SCHEDULER_DECISION_CACHE_TIMEOUT_SECONDS",
         str(2 * OPPORTUNITY_SCHEDULER_BEAT_INTERVAL_SECONDS),
     )
+)
+OPPORTUNITY_SCHEDULER_MAX_SOURCES_PER_TICK = int(
+    os.getenv("OPPORTUNITY_SCHEDULER_MAX_SOURCES_PER_TICK", "0")
+)
+OPPORTUNITY_SCHEDULER_DISPATCH_DEDUP_SECONDS = int(
+    os.getenv("OPPORTUNITY_SCHEDULER_DISPATCH_DEDUP_SECONDS", str(5 * 60))
+)
+OPPORTUNITY_SCHEDULER_SCORE_HISTORY_LIMIT = int(
+    os.getenv("OPPORTUNITY_SCHEDULER_SCORE_HISTORY_LIMIT", "10")
 )
 
 OPPORTUNITY_PIPELINE_SOURCES = ["keejob", "linkedin", "marches_publics", "emploi_tn"]

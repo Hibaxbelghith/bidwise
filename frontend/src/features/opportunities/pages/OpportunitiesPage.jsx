@@ -1,10 +1,9 @@
-import { useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { useAuth } from '../../auth/AuthContext.jsx';
 import OpportunitiesBrowseFilters from '../components/browse/OpportunitiesBrowseFilters.jsx';
 import OpportunitiesBrowseHeader from '../components/browse/OpportunitiesBrowseHeader.jsx';
 import OpportunitiesBrowseResults from '../components/browse/OpportunitiesBrowseResults.jsx';
-import { DEFAULT_ORDERING } from '../constants/opportunityBrowse.js';
 import { useOpportunitiesBrowse } from '../hooks/useOpportunitiesBrowse.js';
 
 const VISIBLE_PAGE_BUTTONS = 5;
@@ -26,28 +25,14 @@ const getVisiblePageNumbers = (currentPage, totalPages) => {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 };
 
-const getSourceName = (opportunity) => {
-  const source = opportunity?.source;
-  if (!source) return '';
-  if (typeof source === 'string') return source;
-  return source.nom || source.name || '';
-};
-
-const sortKeejobFirst = (items) =>
-  [...items].sort((first, second) => {
-    const firstIsKeejob = getSourceName(first).toLowerCase().includes('keejob');
-    const secondIsKeejob = getSourceName(second).toLowerCase().includes('keejob');
-
-    if (firstIsKeejob === secondIsKeejob) return 0;
-    return firstIsKeejob ? -1 : 1;
-  });
-
 const OpportunitiesPage = () => {
   const resultsSectionRef = useRef(null);
   const { isAuthenticated, loading: authLoading } = useAuth();
   const {
     opportunities,
     cityOptions,
+    sourceOptions,
+    facets,
     count,
     page,
     totalPages,
@@ -65,16 +50,27 @@ const OpportunitiesPage = () => {
     setStatusFilter,
     cityFilter,
     setCityFilter,
-    ordering,
-    setOrdering,
+    sourceFilter,
+    setSourceFilter,
+    workModeFilter,
+    setWorkModeFilter,
+    experienceFilter,
+    setExperienceFilter,
     setPage,
     resetFilters,
     refetch,
   } = useOpportunitiesBrowse();
 
   const isUserAuthenticated = !authLoading && isAuthenticated;
-  const hasActiveFilters =
-    Boolean(searchInput || typeFilter || statusFilter || cityFilter) || ordering !== DEFAULT_ORDERING;
+  const hasActiveFilters = Boolean(
+    searchInput ||
+      typeFilter ||
+      statusFilter ||
+      cityFilter ||
+      sourceFilter ||
+      workModeFilter ||
+      experienceFilter
+  );
 
   const countLabel = useMemo(() => {
     if (loading && opportunities.length === 0) return 'Loading opportunities...';
@@ -85,12 +81,7 @@ const OpportunitiesPage = () => {
     () => getVisiblePageNumbers(page, totalPages),
     [page, totalPages]
   );
-  const displayedOpportunities = useMemo(
-    () => (page === 1 ? sortKeejobFirst(opportunities) : opportunities),
-    [opportunities, page]
-  );
-
-  const scrollToResultsTop = () => {
+  const scrollToResultsTop = useCallback(() => {
     if (typeof window === 'undefined') return;
 
     if (resultsSectionRef.current) {
@@ -99,7 +90,28 @@ const OpportunitiesPage = () => {
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  }, []);
+
+  const scrollToResultsTopAfterFilter = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    window.requestAnimationFrame(() => {
+      scrollToResultsTop();
+    });
+  }, [scrollToResultsTop]);
+
+  const updateFilterAndScroll = useCallback(
+    (setter) => (value) => {
+      setter(value);
+      scrollToResultsTopAfterFilter();
+    },
+    [scrollToResultsTopAfterFilter]
+  );
+
+  const resetFiltersAndScroll = useCallback(() => {
+    resetFilters();
+    scrollToResultsTopAfterFilter();
+  }, [resetFilters, scrollToResultsTopAfterFilter]);
 
   const handlePreviousPage = () => {
     setPage((previousPage) => Math.max(1, previousPage - 1));
@@ -117,46 +129,59 @@ const OpportunitiesPage = () => {
     scrollToResultsTop();
   };
 
+  const filterProps = {
+    hasActiveFilters,
+    searchInput,
+    setSearchInput,
+    cityFilter,
+    setCityFilter: updateFilterAndScroll(setCityFilter),
+    cityOptions,
+    typeFilter,
+    setTypeFilter: updateFilterAndScroll(setTypeFilter),
+    statusFilter,
+    setStatusFilter: updateFilterAndScroll(setStatusFilter),
+    sourceFilter,
+    setSourceFilter: updateFilterAndScroll(setSourceFilter),
+    sourceOptions,
+    facets,
+    workModeFilter,
+    setWorkModeFilter: updateFilterAndScroll(setWorkModeFilter),
+    experienceFilter,
+    setExperienceFilter: updateFilterAndScroll(setExperienceFilter),
+    opportunities,
+    resetFilters: resetFiltersAndScroll,
+  };
+
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="bidwise-browse-page min-h-screen bg-neutral-50">
       <OpportunitiesBrowseHeader isUserAuthenticated={isUserAuthenticated} />
 
-      <OpportunitiesBrowseFilters
-        hasActiveFilters={hasActiveFilters}
-        searchInput={searchInput}
-        setSearchInput={setSearchInput}
-        cityFilter={cityFilter}
-        setCityFilter={setCityFilter}
-        cityOptions={cityOptions}
-        typeFilter={typeFilter}
-        setTypeFilter={setTypeFilter}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-        ordering={ordering}
-        setOrdering={setOrdering}
-        resetFilters={resetFilters}
-      />
+      <OpportunitiesBrowseFilters {...filterProps} />
 
-      <OpportunitiesBrowseResults
-        resultsSectionRef={resultsSectionRef}
-        countLabel={countLabel}
-        page={page}
-        totalPages={totalPages}
-        showFetchingSpinner={showFetchingSpinner}
-        loading={loading}
-        isFetching={isFetching}
-        error={error}
-        opportunities={displayedOpportunities}
-        isUserAuthenticated={isUserAuthenticated}
-        hasPrevious={hasPrevious}
-        hasNext={hasNext}
-        visiblePageNumbers={visiblePageNumbers}
-        onPageChange={handlePageChange}
-        onPreviousPage={handlePreviousPage}
-        onNextPage={handleNextPage}
-        onResetFilters={resetFilters}
-        onRetry={refetch}
-      />
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:px-8">
+        <OpportunitiesBrowseFilters {...filterProps} variant="sidebar" />
+
+        <OpportunitiesBrowseResults
+          resultsSectionRef={resultsSectionRef}
+          countLabel={countLabel}
+          page={page}
+          totalPages={totalPages}
+          showFetchingSpinner={showFetchingSpinner}
+          loading={loading}
+          isFetching={isFetching}
+          error={error}
+          opportunities={opportunities}
+          isUserAuthenticated={isUserAuthenticated}
+          hasPrevious={hasPrevious}
+          hasNext={hasNext}
+          visiblePageNumbers={visiblePageNumbers}
+          onPageChange={handlePageChange}
+          onPreviousPage={handlePreviousPage}
+          onNextPage={handleNextPage}
+          onResetFilters={resetFilters}
+          onRetry={refetch}
+        />
+      </div>
     </div>
   );
 };

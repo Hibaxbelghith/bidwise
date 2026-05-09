@@ -114,8 +114,11 @@ export const getCurrentUser = async (config = {}) => {
  * @param {object} profileData - Données à mettre à jour
  *   - first_name: string (optionnel)
  *   - last_name: string (optionnel)
- *   - competences: string (optionnel)
- *   - domaines_interet: string (optionnel)
+ *   - competences: string[] (optionnel)
+ *   - domaines_interet: string[] (optionnel)
+ *   - preferred_locations: string[] (optionnel)
+ *   - work_mode_preferences: string[] (optionnel)
+ *   - employment_types: string[] (optionnel)
  *   - niveau_experience: string (optionnel)
  *   - bio: string (optionnel)
  * @returns {Promise<object>} Profil mis à jour

@@ -1,14 +1,14 @@
 # Sprint 2 - Testing guide
 
-Last updated: 2026-05-03
+Last updated: 2026-05-05
 
-This guide validates the Sprint 2 opportunities pipeline for release or defense. It focuses on the production architecture that exists in the codebase: CLI collection, Celery orchestration, Beat scheduling, monitoring, alerting, stuck-run recovery, materialization, embeddings, API, and dashboard visibility.
+This guide validates the Sprint 2 opportunities pipeline for release or defense. It focuses on the production architecture that exists in the codebase: CLI collection, Celery orchestration, Beat scheduling, monitoring, alerting, stuck-run recovery, raw-to-canonical processing, NLP extraction, enrichment orchestration, materialization, embeddings, API, and dashboard visibility.
 
 ## Executive demo message
 
 Use these five points to frame the defense:
 
-- Pipeline: a complete, automated, idempotent data pipeline processes opportunities from scraping to API exposure without manual intervention.
+- Pipeline: a complete, automated, idempotent data pipeline processes opportunities through scraping, normalization, enrichment, scoring, materialization, embeddings, and API exposure without manual intervention.
 - Celery: scraping, materialization, embeddings, and monitoring run outside request handling, keeping the API fast and scalable.
 - Monitoring: the system detects anomalies, tracks freshness, exposes operational metrics, and can recover stuck runs automatically.
 - AI: embeddings and similarity search provide semantic matching today and prepare the recommendation engine.
@@ -55,7 +55,7 @@ The dashboard requires an authenticated staff or superuser account.
 
 ## 2. Manual CLI execution test
 
-Purpose: prove that manual execution uses the same source registry, source options, scraper construction, raw shadow storage, and schedule logic as the production pipeline core.
+Purpose: prove that manual execution uses the same scheduler/orchestrator for source registry lookup, source options, scraper construction, raw shadow storage, and schedule logic as the production Celery path.
 
 ### Command
 
@@ -92,7 +92,7 @@ docker compose run --rm backend python manage.py shell -c "from opportunities.pr
 
 ### What to explain orally
 
-The CLI is an operator tool for controlled collection and smoke tests. It reuses the same pipeline core as Celery for source selection, aliases, scraper options, schedule decisions, and raw ingestion. The full production DAG is handled by Celery because that path records `PipelineRun`, applies locks, retries, materializes, embeds, and monitors.
+The CLI is an operator tool for controlled collection and smoke tests. It reuses `opportunities/pipeline.py` as the same scheduler/orchestrator as Celery for source selection, aliases, scraper options, schedule decisions, and raw ingestion. The actual raw-to-canonical data pipeline lives in `opportunities/processing.py`; the full production DAG is handled by Celery because that path records `PipelineRun`, applies locks, retries, materializes, embeds, and monitors.
 
 ## 3. Celery async execution test
 
@@ -136,7 +136,7 @@ docker compose exec backend python manage.py shell -c "from opportunities.models
 
 ### What to explain orally
 
-Beat only dispatches the top-level task. The top-level task checks due sources and dispatches one task per source. The source task owns locking and `PipelineRun`. Downstream tasks are event-driven: materialization starts only when raw records exist, and embeddings start only when materialization has drained the raw backlog.
+Beat only dispatches the top-level task. The top-level task checks due sources through the scheduler/orchestrator and dispatches one task per source. The source task owns locking and `PipelineRun`. Downstream tasks are event-driven: the materialization task calls `process_pending_raw_opportunities` from `opportunities/processing.py` only when raw records exist, and embeddings start only when the raw backlog is drained.
 
 ## 4. Monitoring anomaly detection test
 
@@ -354,7 +354,7 @@ curl -X GET http://localhost:8000/api/admin/dashboard/ -H "Authorization: Bearer
 Expected:
 
 - list endpoint returns active opportunities by default
-- detail endpoint exposes enrichment fields
+- detail endpoint exposes enrichment and NLP-derived fields
 - similar endpoint returns ranked, same-type, active candidates when embeddings exist
 - similar endpoint includes `similarity_score` between `0` and `1`
 - opportunities expose `last_updated_at` and `is_new`
@@ -404,7 +404,7 @@ docker compose exec backend python manage.py shell -c "from opportunities.datase
 }
 ```
 
-Numbers vary by dataset; the important part is that the fields exist, are computed from existing models, and do not require schema changes.
+Numbers vary by dataset; the important part is that the fields exist, are computed from existing models, and do not require schema changes. In this API, `Processing` summarizes the raw-to-canonical work handled by `opportunities/processing.py`, including normalization, enrichment orchestration, quality scoring, and materialization.
 
 ### What to show on dashboard
 
@@ -447,7 +447,41 @@ docker compose exec backend python manage.py shell -c "from opportunities.serial
 
 Image handling is now explicit data consistency logic. A missing source image is represented as a placeholder, not as an inherited or cached image from another opportunity.
 
-## 12. Recommended automated test suites
+## 12. NLP layer regression test
+
+Purpose: prove that NLP extraction was moved out of enrichment without changing the enrichment contract used by the data pipeline.
+
+### Command
+
+Run the enrichment contract tests:
+
+```bash
+docker compose run --rm backend python manage.py test tests.tests.OpportunityTextEnrichmentTests
+```
+
+Run the NLP preprocessing regressions:
+
+```bash
+docker compose run --rm backend python manage.py test tests.test_nlp_preprocessing
+```
+
+Optional direct extraction smoke check:
+
+```bash
+docker compose run --rm backend python manage.py shell -c "from opportunities.nlp.extraction import find_languages, find_salary, find_skills; print({'salary': find_salary('Salaire 1200-1800 TND'), 'skills': find_skills('Python Django SQL'), 'languages': find_languages('anglais et arabe')})"
+```
+
+### Expected behavior
+
+- `OpportunityTextEnrichmentTests` passes and verifies the public enrichment output: salary, skills, language fallback, experience fallback, safe defaults, and structured-field preservation.
+- `test_nlp_preprocessing` passes and protects the text cleanup helpers used before NLP-oriented matching.
+- The direct smoke check returns a salary range, detected skills, and detected languages from `opportunities/nlp/extraction.py`.
+
+### What to explain orally
+
+`opportunities/enrichment/text_enrichment.py` is now an orchestration layer. It merges normalized structured data with NLP-derived values while `opportunities/nlp/extraction.py` and `opportunities/nlp/skills.py` own reusable extraction rules and skill vocabulary.
+
+## 13. Recommended automated test suites
 
 Pipeline orchestration tests:
 
@@ -455,12 +489,18 @@ Pipeline orchestration tests:
 docker compose run --rm backend python manage.py test tests.tests_pipeline_tasks
 ```
 
+NLP/enrichment refactor tests:
+
+```bash
+docker compose run --rm backend python manage.py test tests.tests.OpportunityTextEnrichmentTests
+docker compose run --rm backend python manage.py test tests.test_nlp_preprocessing
+```
+
 Targeted Sprint 2 suites:
 
 ```bash
 docker compose run --rm backend python manage.py test tests.tests.RawNormalizationTests
 docker compose run --rm backend python manage.py test tests.tests.EmploiTunisieScraperStructuredParsingTests
-docker compose run --rm backend python manage.py test tests.tests.OpportunityTextEnrichmentTests
 docker compose run --rm backend python manage.py test tests.tests.OpportunityMaterializationTests
 docker compose run --rm backend python manage.py test tests.tests.OpportuniteAPITests
 docker compose run --rm backend python manage.py test tests.tests.PipelineTests
@@ -474,7 +514,6 @@ docker compose run --rm backend pytest tests/test_linkedin_scraper.py -q
 docker compose run --rm backend python manage.py test tests.tests_quality
 docker compose run --rm backend python manage.py test tests.tests_embeddings
 docker compose run --rm backend python manage.py test tests.tests_marchespublics
-docker compose run --rm backend python manage.py test tests.test_nlp_preprocessing
 ```
 
 Full backend validation pass:
@@ -485,7 +524,7 @@ docker compose run --rm backend pytest tests/test_scrapers.py -q
 docker compose run --rm backend pytest tests/test_linkedin_scraper.py -q
 ```
 
-## 13. Data quality spot checks
+## 14. Data quality spot checks
 
 EmploiTunisie source URL completeness:
 
@@ -517,7 +556,7 @@ Pipeline metrics API:
 docker compose exec backend python manage.py shell -c "from opportunities.dataset_metrics import compute_pipeline_metrics; metrics=compute_pipeline_metrics(); print(metrics['pipeline_flow']); print(metrics['data_quality']); print(metrics['source_reliability_score'])"
 ```
 
-## 14. Release sign-off checklist
+## 15. Release sign-off checklist
 
 Sprint 2 is ready for release when:
 
@@ -532,14 +571,17 @@ Sprint 2 is ready for release when:
 - Discord alerting is verified in a safe test channel, if enabled for production
 - dashboard shows KPIs, active alerts, source monitoring, Celery status, lag, and embedding readiness
 - targeted Sprint 2 tests pass
+- NLP/enrichment regression tests pass
 - public API and similar endpoint respond correctly
 - pipeline metrics expose last-run summary, data quality, source reliability, throughput, and freshness delay
 - image consistency regression passes: missing logos use the default placeholder and no similar-offer logo is reused
 
-## 15. Key talking points for presentation
+## 16. Key talking points for presentation
 
 - Sprint 2 delivered an ingestion subsystem, not only scrapers.
-- CLI and Celery share the same source registry and collection core.
+- CLI and Celery share the same scheduler/orchestrator and collection core.
+- `processing.py` owns the raw-to-canonical data pipeline: normalization, enrichment orchestration, scoring, materialization, raw state transitions, and optional inline embeddings.
+- NLP extraction is isolated in `opportunities/nlp/extraction.py` and `opportunities/nlp/skills.py`; enrichment consumes it instead of owning direct extraction logic.
 - Production execution is asynchronous, source-scoped, locked, observable, and retry-aware.
 - Scheduling is intelligent: due, stale, retry-after-failure, running, and running-stale are explicit states.
 - Raw data is retained before canonical materialization, so parsing rules can be replayed without scraping again.

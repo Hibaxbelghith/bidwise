@@ -62,6 +62,7 @@ export interface Opportunity {
   ville?: string | null;
   type_opportunite?: string | null;
   statut?: string | null;
+  quality_score?: number | null;
   date_publication?: string | null;
   date_limite?: string | null;
   source_item_url?: string | null;
@@ -128,7 +129,7 @@ function buildListParams(params: OpportunitiesQueryParams = {}) {
     city = '',
     minSalary,
     source = '',
-    ordering = '-date_publication',
+    ordering = '-quality_score',
   } = params;
 
   const queryParams: Record<string, string | number> = {

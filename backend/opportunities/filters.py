@@ -18,10 +18,16 @@ class OpportuniteFilterSet(django_filters.FilterSet):
         choices=TypeOpportunite.choices,
     )
     type_opportunite = django_filters.ChoiceFilter(choices=TypeOpportunite.choices)
+    location = django_filters.CharFilter(method="filter_location")
     city = django_filters.CharFilter(method="filter_city")
     ville = django_filters.CharFilter(method="filter_ville")
     min_salary = django_filters.NumberFilter(method="filter_min_salary")
-    source = django_filters.NumberFilter(field_name="source_id")
+    source = django_filters.CharFilter(method="filter_source")
+    work_mode = django_filters.CharFilter(method="filter_work_mode")
+    experience_level = django_filters.CharFilter(method="filter_experience_level")
+
+    def filter_location(self, queryset, _name, value):
+        return self.filter_ville(queryset, "ville", value)
 
     def filter_city(self, queryset, _name, value):
         return self.filter_ville(queryset, "ville", value)
@@ -31,6 +37,14 @@ class OpportuniteFilterSet(django_filters.FilterSet):
         if not canonical_city:
             return queryset
         return queryset.filter(ville__iexact=canonical_city)
+
+    def filter_source(self, queryset, _name, value):
+        normalized = str(value or "").strip()
+        if not normalized:
+            return queryset
+        if normalized.isdigit():
+            return queryset.filter(source_id=int(normalized))
+        return queryset.filter(source__nom__iexact=normalized)
 
     def filter_min_salary(self, queryset, _name, value):
         if value in (None, ""):
@@ -60,6 +74,24 @@ class OpportuniteFilterSet(django_filters.FilterSet):
             )
         ).filter(_salary_numeric__gte=min_salary)
 
+    def filter_work_mode(self, queryset, _name, value):
+        normalized = str(value or "").strip().upper()
+        if normalized not in {"REMOTE", "HYBRID", "ON_SITE"}:
+            return queryset
+        return queryset.filter(normalized_work_mode=normalized)
+
+    def filter_experience_level(self, queryset, _name, value):
+        normalized = str(value or "").strip().lower()
+        if normalized == "entry":
+            return queryset.filter(experience_min__lte=1)
+        if normalized == "junior":
+            return queryset.filter(experience_min__lte=2, experience_max__lte=3)
+        if normalized == "mid":
+            return queryset.filter(experience_min__gte=2, experience_min__lte=5)
+        if normalized == "senior":
+            return queryset.filter(experience_min__gte=5)
+        return queryset
+
     class Meta:
         model = Opportunite
         fields = [
@@ -67,8 +99,11 @@ class OpportuniteFilterSet(django_filters.FilterSet):
             "type_opportunite",
             "statut",
             "status",
+            "location",
             "city",
             "ville",
             "min_salary",
             "source",
+            "work_mode",
+            "experience_level",
         ]

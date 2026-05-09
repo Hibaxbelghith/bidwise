@@ -1,6 +1,7 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from 'lucide-react';
 
 import { getTrendMeta } from '../services/schedulerService.js';
+import Sparkline from './Sparkline.jsx';
 
 const toneStyles = {
   green: {
@@ -18,6 +19,11 @@ const toneStyles = {
     bar: 'bg-orange-500',
     muted: 'bg-orange-200',
   },
+  red: {
+    shell: 'border-red-200 bg-red-50 text-red-800',
+    bar: 'bg-red-500',
+    muted: 'bg-red-200',
+  },
 };
 
 const iconMap = {
@@ -30,7 +36,7 @@ const TrendIndicator = ({ decision }) => {
   const trend = getTrendMeta(decision);
   const styles = toneStyles[trend.tone] || toneStyles.blue;
   const Icon = iconMap[trend.direction] || ArrowRight;
-  const bars = Array.from({ length: 5 }, (_, index) => index + 1);
+  const values = decision?.metrics?.trend || [];
 
   return (
     <div className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${styles.shell}`}>
@@ -38,14 +44,8 @@ const TrendIndicator = ({ decision }) => {
         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="truncate text-sm font-semibold">{trend.label}</span>
       </div>
-      <div className="flex h-7 shrink-0 items-end gap-1" aria-hidden="true">
-        {bars.map((bar) => (
-          <span
-            key={bar}
-            className={`w-1.5 rounded-full ${bar <= trend.strength ? styles.bar : styles.muted}`}
-            style={{ height: `${8 + bar * 3}px` }}
-          />
-        ))}
+      <div className="shrink-0">
+        <Sparkline values={values} tone={trend.tone} label="Created trend" />
       </div>
     </div>
   );

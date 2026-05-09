@@ -11,6 +11,11 @@ import StepSalary from './steps/StepSalary.jsx';
 import StepEmploymentType from './steps/StepEmploymentType.jsx';
 import StepTargetRoles from './steps/StepTargetRoles.jsx';
 import StepVisibility from './steps/StepVisibility.jsx';
+import { normalizeProfilePreferenceData } from '../profile/profilePreferences.js';
+import {
+	DEFAULT_COMPENSATION_PERIOD,
+	validateSalaryExpectation,
+} from '../profile/profileValidation.js';
 
 const TOTAL_STEPS = 6;
 const STORAGE_KEY = 'bidwise_onboarding';
@@ -57,24 +62,18 @@ const STEP_META = [
 
 const initialData = {
 	opportunity_types: [],
-	preferred_location: null,
-	remote_preference: null,
+	preferred_locations: [],
+	work_mode_preferences: [],
 	compensation_expectation: null,
-	compensation_period: null,
+	compensation_currency: 'TND',
+	compensation_period: DEFAULT_COMPENSATION_PERIOD,
 	employment_types: [],
 	target_roles: [],
 	profile_visibility: true,
 };
 
 const buildStoredProfileData = (data) => ({
-	opportunity_types: data.opportunity_types,
-	preferred_location: data.preferred_location,
-	remote_preference: data.remote_preference,
-	compensation_expectation: data.compensation_expectation,
-	compensation_period: data.compensation_period,
-	employment_types: data.employment_types,
-	target_roles: data.target_roles,
-	profile_visibility: data.profile_visibility,
+	...normalizeProfilePreferenceData(data),
 });
 
 function loadSavedState() {
@@ -84,7 +83,10 @@ function loadSavedState() {
 			const parsed = JSON.parse(raw);
 			return {
 				step: typeof parsed.step === 'number' ? parsed.step : 0,
-				data: { ...initialData, ...(parsed.data || {}) },
+				data: {
+					...initialData,
+					...normalizeProfilePreferenceData(parsed.data || {}),
+				},
 			};
 		}
 	} catch {
@@ -104,10 +106,10 @@ const Onboarding = () => {
 	const [error, setError] = useState(null);
 	const headingRef = useRef(null);
 
-	// Already onboarded → redirect to dashboard
+	// Already onboarded → redirect to opportunities
 	useEffect(() => {
 		if (!loading && user?.profil?.onboarding_completed) {
-			navigate('/dashboard', { replace: true });
+			navigate('/opportunities', { replace: true });
 		}
 	}, [user, loading, navigate]);
 
@@ -129,6 +131,15 @@ const Onboarding = () => {
 	};
 
 	const handleNext = () => {
+		const salaryValidation = validateSalaryExpectation(
+			data.compensation_expectation,
+			data.compensation_period || DEFAULT_COMPENSATION_PERIOD
+		);
+		if (currentStep === 2 && salaryValidation.error) {
+			setError(salaryValidation.error);
+			return;
+		}
+		setError(null);
 		if (currentStep === TOTAL_STEPS - 1) {
 			handleFinish();
 		} else {
@@ -145,7 +156,7 @@ const Onboarding = () => {
 		setIsSubmitting(true);
 		try {
 			const payload = {
-				...data,
+				...normalizeProfilePreferenceData(data),
 				onboarding_completed: true,
 				last_onboarding_step: currentStep,
 			};
@@ -155,9 +166,8 @@ const Onboarding = () => {
 					USER_PROFILE_STORAGE_KEY,
 					JSON.stringify(buildStoredProfileData(data))
 				);
-				console.log('Onboarding completed', payload);
 				sessionStorage.removeItem(STORAGE_KEY);
-				navigate('/profile', { replace: true });
+				navigate('/opportunities', { replace: true });
 			} else {
 				setError(result.error || 'Failed to save profile');
 			}
@@ -182,7 +192,7 @@ const Onboarding = () => {
 					JSON.stringify({ onboarding_completed: true })
 				);
 				sessionStorage.removeItem(STORAGE_KEY);
-				navigate('/profile', { replace: true });
+				navigate('/opportunities', { replace: true });
 			} else {
 				setError(result.error || 'Failed to save profile');
 			}

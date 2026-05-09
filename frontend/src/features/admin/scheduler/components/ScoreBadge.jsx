@@ -26,6 +26,12 @@ const toneStyles = {
     text: 'text-orange-800',
     bar: 'bg-orange-400',
   },
+  red: {
+    panel: 'border-red-200 bg-red-50/80',
+    badge: 'bg-red-600 text-white',
+    text: 'text-red-800',
+    bar: 'bg-red-500',
+  },
   neutral: {
     panel: 'border-neutral-200 bg-neutral-50',
     badge: 'bg-neutral-600 text-white',
