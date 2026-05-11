@@ -10,9 +10,7 @@ import {
 	canonicalizeInterestLabel,
 	canonicalizeSkillLabel,
 	isGarbageSkillInput,
-	isInterestTermRejected,
-	isKnownSkillTerm,
-	isRoleTermRejected,
+	isGarbageTextInput,
 	normalizeTermKey,
 } from '../profileValidation.js';
 
@@ -38,9 +36,9 @@ const suggestionValue = (suggestion) => suggestion?.value || suggestion?.label |
 
 const ProfileAutocompleteInput = ({
 	id,
-	label,
-	value,
-	onChange,
+	label = '', // Valeur par défaut pour éviter undefined
+	value = [], // Valeur par défaut pour éviter undefined
+	onChange = () => {}, // Fonction par défaut
 	termType,
 	maxItems = 20,
 	placeholder = '',
@@ -55,16 +53,16 @@ const ProfileAutocompleteInput = ({
 	const isRole = termType === 'role';
 	const isSkill = termType === 'skill';
 	const isInterest = termType === 'interest';
-	const requiresSuggestion = isRole || isInterest;
+	
 	const selected = useMemo(
 		() => {
 			const seen = new Set();
 			return normalizeItems(value)
-				.map((item) => {
-					if (isSkill) return canonicalizeSkillLabel(item);
-					if (isInterest) return canonicalizeInterestLabel(item);
-					return item;
-				})
+		.map((item) => {
+			if (isSkill) return canonicalizeSkillLabel(item);
+			if (isInterest) return canonicalizeInterestLabel(item);
+			return item;
+		})
 				.filter((item) => {
 					const key = normalizeTermKey(item);
 					if (!item || seen.has(key)) return false;
@@ -111,12 +109,12 @@ const ProfileAutocompleteInput = ({
 	const addCanonical = (rawValue) => {
 		const canonical = String(rawValue || '').trim().replace(/\s+/g, ' ');
 		if (!canonical || selected.length >= maxItems) return false;
-		if (isRole && isRoleTermRejected(canonical)) {
-			setMessage(isKnownSkillTerm(canonical) ? `${canonical} is a skill, not a role.` : 'Choose a specific role from the suggestions.');
+		if (isRole && isGarbageTextInput(canonical, 2)) {
+			setMessage('Enter a specific job title.');
 			return false;
 		}
-		if (isInterest && isInterestTermRejected(canonical)) {
-			setMessage(isKnownSkillTerm(canonical) ? `${canonical} is a skill, not an industry interest.` : 'Choose an industry from the suggestions.');
+		if (isInterest && isGarbageTextInput(canonical, 2)) {
+			setMessage('Enter a recognizable industry or interest.');
 			return false;
 		}
 		if (isSkill && isGarbageSkillInput(canonical)) {
@@ -194,15 +192,13 @@ const ProfileAutocompleteInput = ({
 			return;
 		}
 
-		if (requiresSuggestion) {
-			await explainRejectedRole();
-			if (isInterest) {
-				setMessage('Choose an industry from the suggestions.');
-			}
-			return;
+		if (isSkill) {
+			addCanonical(canonicalizeSkillLabel(trimmedQuery));
+		} else if (isInterest) {
+			addCanonical(canonicalizeInterestLabel(trimmedQuery));
+		} else {
+			addCanonical(trimmedQuery);
 		}
-
-		addCanonical(canonicalizeSkillLabel(trimmedQuery));
 	};
 
 	const removeItem = (item) => {
@@ -216,10 +212,13 @@ const ProfileAutocompleteInput = ({
 	};
 
 	const canAdd = Boolean(trimmedQuery) && selected.length < maxItems;
+	
+	// Protection pour label - si undefined ou null, utiliser une chaîne vide
+	const safeLabel = label || '';
 
 	return (
 		<div className="space-y-3">
-			<Label htmlFor={id}>{label}</Label>
+			{safeLabel && <Label htmlFor={id}>{safeLabel}</Label>}
 			<div className="flex gap-2">
 				<div className="relative flex-1">
 					<Input
@@ -247,7 +246,7 @@ const ProfileAutocompleteInput = ({
 					variant="outline"
 					onClick={addFromInput}
 					disabled={!canAdd}
-					aria-label={`Add ${label.toLocaleLowerCase()}`}
+					aria-label={safeLabel ? `Add ${safeLabel.toLowerCase()}` : 'Add item'}
 				>
 					<Plus className="h-4 w-4" aria-hidden="true" />
 				</Button>

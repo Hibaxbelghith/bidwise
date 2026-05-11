@@ -13,6 +13,7 @@ from unittest.mock import patch, MagicMock
 
 from django.core.cache import cache
 from django.core import mail
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -21,10 +22,19 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 
-from .models import Utilisateur, Profil, ProfileResume, OTPChallenge, LoginEvent
+from .models import (
+    Utilisateur,
+    Profil,
+    ProfileResume,
+    OrganizationProfile,
+    OTPChallenge,
+    LoginEvent,
+)
 from .serializers import (
     UtilisateurSerializer,
     ProfilSerializer,
+    ProfileResumeSerializer,
+    OrganizationProfileSerializer,
     ProfilUpdateSerializer,
     OTPRequestSerializer,
     OTPVerifySerializer,
@@ -46,6 +56,7 @@ class UtilisateurModelTests(TestCase):
         )
         self.assertEqual(user.username, "testuser")
         self.assertEqual(user.email, "test@example.com")
+        self.assertEqual(user.account_type, Utilisateur.AccountType.CANDIDATE)
         self.assertTrue(user.check_password("securepass123"))
         self.assertTrue(user.is_active)
         self.assertFalse(user.is_admin)
@@ -66,8 +77,19 @@ class UtilisateurModelTests(TestCase):
         admin = Utilisateur.objects.create_superuser(
             username="admin", email="admin@example.com", password="adminpass123"
         )
+        self.assertEqual(admin.account_type, Utilisateur.AccountType.CANDIDATE)
         self.assertTrue(admin.is_staff)
         self.assertTrue(admin.is_superuser)
+
+    def test_create_organization_user(self):
+        user = Utilisateur.objects.create_user(
+            username="orguser",
+            email="org@example.com",
+            password="securepass123",
+            account_type=Utilisateur.AccountType.ORGANIZATION,
+        )
+        self.assertEqual(user.account_type, Utilisateur.AccountType.ORGANIZATION)
+        self.assertFalse(hasattr(user, "profil"))
 
     def test_str_returns_username(self):
         user = Utilisateur.objects.create_user(username="alice", password="pass1234")
@@ -153,6 +175,77 @@ class ProfilModelTests(TestCase):
         self.assertEqual(self.profil.preferred_locations, ["Paris"])
         self.assertEqual(self.profil.work_mode_preferences, ["HYBRID"])
         self.assertEqual(self.profil.last_onboarding_step, 5)
+
+
+class OrganizationProfileModelTests(TestCase):
+    def setUp(self):
+        self.user = Utilisateur.objects.create_user(
+            username="orgmodel",
+            email="orgmodel@example.com",
+            password="pass1234",
+            account_type=Utilisateur.AccountType.ORGANIZATION,
+        )
+
+    def _valid_payload(self):
+        return {
+            "user": self.user,
+            "organization_name": "  Acme   Tunisia  ",
+            "first_name": "  Lina ",
+            "last_name": "  Mansour ",
+            "website": " https://example.com ",
+            "phone": "+216 12345678",
+            "organization_type": OrganizationProfile.OrganizationType.COMPANY,
+        }
+
+    def test_valid_profile_is_normalized_on_save(self):
+        profile = OrganizationProfile.objects.create(**self._valid_payload())
+
+        self.assertEqual(profile.organization_name, "Acme Tunisia")
+        self.assertEqual(profile.first_name, "Lina")
+        self.assertEqual(profile.last_name, "Mansour")
+        self.assertEqual(profile.website, "https://example.com")
+        self.assertEqual(profile.phone, "+21612345678")
+        self.assertEqual(str(profile), "Acme Tunisia")
+
+    def test_required_text_fields_reject_whitespace(self):
+        payload = self._valid_payload()
+        payload["organization_name"] = "   "
+
+        with self.assertRaises(ValidationError):
+            OrganizationProfile.objects.create(**payload)
+
+    def test_phone_must_be_tunisian(self):
+        payload = self._valid_payload()
+        payload["phone"] = "+33123456789"
+
+        with self.assertRaises(ValidationError):
+            OrganizationProfile.objects.create(**payload)
+
+    def test_website_must_be_valid_url_when_present(self):
+        payload = self._valid_payload()
+        payload["website"] = "not-a-url"
+
+        with self.assertRaises(ValidationError):
+            OrganizationProfile.objects.create(**payload)
+
+    def test_organization_type_is_choice_limited(self):
+        payload = self._valid_payload()
+        payload["organization_type"] = "enterprise"
+
+        with self.assertRaises(ValidationError):
+            OrganizationProfile.objects.create(**payload)
+
+    def test_rejects_candidate_user(self):
+        candidate = Utilisateur.objects.create_user(
+            username="candidateowner",
+            email="candidateowner@example.com",
+            password="pass1234",
+        )
+        payload = self._valid_payload()
+        payload["user"] = candidate
+
+        with self.assertRaises(ValidationError):
+            OrganizationProfile.objects.create(**payload)
 
 
 class OTPChallengeModelTests(TestCase):
@@ -295,6 +388,31 @@ class ProfilSerializerTests(TestCase):
         instance = serializer.save()
         self.assertNotEqual(instance.id, 999)
 
+    @override_settings(
+        PROFILE_RESUME_USE_CLOUDINARY=True,
+        CLOUDINARY_CLOUD_NAME="demo",
+        CLOUDINARY_API_KEY="test-key",
+        CLOUDINARY_API_SECRET="test-secret",
+    )
+    @patch("cloudinary.api.resource")
+    def test_profile_resume_serializer_uses_cloudinary_url_when_enabled(self, resource_mock):
+        resource_mock.return_value = {
+            "secure_url": "https://res.cloudinary.com/demo/raw/upload/v123/profile_resumes/1/test-resume.pdf",
+        }
+        resume = ProfileResume.objects.create(
+            profile=self.profil,
+            file="profile_resumes/1/test-resume.pdf",
+            source_type=ProfileResume.SourceType.UPLOAD,
+            is_active=True,
+        )
+
+        data = ProfileResumeSerializer(resume).data
+
+        self.assertEqual(
+            data["file_url"],
+            "https://res.cloudinary.com/demo/raw/upload/v123/profile_resumes/1/test-resume.pdf",
+        )
+
 
 class UtilisateurSerializerTests(TestCase):
     def setUp(self):
@@ -314,9 +432,12 @@ class UtilisateurSerializerTests(TestCase):
         data = serializer.data
         expected = {
             'id', 'username', 'email', 'first_name', 'last_name',
-            'is_active', 'is_admin', 'date_joined', 'profil',
+            'account_type', 'is_active', 'is_admin', 'date_joined',
+            'profil', 'organization_profile',
         }
         self.assertEqual(set(data.keys()), expected)
+        self.assertEqual(data["account_type"], Utilisateur.AccountType.CANDIDATE)
+        self.assertIsNone(data["organization_profile"])
         self.assertFalse(data["is_admin"])
 
     def test_is_admin_is_true_for_staff(self):
@@ -330,6 +451,128 @@ class UtilisateurSerializerTests(TestCase):
         self.user.save(update_fields=["is_admin"])
         serializer = UtilisateurSerializer(self.user)
         self.assertTrue(serializer.data["is_admin"])
+
+    def test_includes_organization_profile_for_organization_user(self):
+        organization_user = Utilisateur.objects.create_user(
+            username="serorg",
+            email="serorg@example.com",
+            password="pass1234",
+            account_type=Utilisateur.AccountType.ORGANIZATION,
+        )
+        OrganizationProfile.objects.create(
+            user=organization_user,
+            organization_name="Acme",
+            first_name="Lina",
+            last_name="Mansour",
+            website="",
+            phone="+21612345678",
+            organization_type="company",
+        )
+
+        serializer = UtilisateurSerializer(organization_user)
+
+        self.assertIsNone(serializer.data["profil"])
+        self.assertEqual(
+            serializer.data["organization_profile"]["organization_name"],
+            "Acme",
+        )
+
+
+class OrganizationProfileSerializerTests(TestCase):
+    def setUp(self):
+        self.user = Utilisateur.objects.create_user(
+            username="orgser",
+            email="orgser@example.com",
+            password="pass1234",
+            account_type=Utilisateur.AccountType.ORGANIZATION,
+        )
+
+    def _valid_data(self):
+        return {
+            "organization_name": "  Smart   Builders ",
+            "first_name": "  Amine ",
+            "last_name": "  Trabelsi ",
+            "website": "https://smart.example.com",
+            "phone": "+216 12345678",
+            "organization_type": "startup",
+        }
+
+    def test_creates_and_normalizes_profile(self):
+        serializer = OrganizationProfileSerializer(
+            data=self._valid_data(),
+            context={"user": self.user},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        profile = serializer.save()
+        self.assertEqual(profile.organization_name, "Smart Builders")
+        self.assertEqual(profile.first_name, "Amine")
+        self.assertEqual(profile.last_name, "Trabelsi")
+        self.assertEqual(profile.phone, "+21612345678")
+
+    def test_rejects_whitespace_only_organization_name(self):
+        data = self._valid_data()
+        data["organization_name"] = "   "
+        serializer = OrganizationProfileSerializer(
+            data=data,
+            context={"user": self.user},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("organization_name", serializer.errors)
+
+    def test_rejects_invalid_phone(self):
+        data = self._valid_data()
+        data["phone"] = "+216 1234567"
+        serializer = OrganizationProfileSerializer(
+            data=data,
+            context={"user": self.user},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("phone", serializer.errors)
+
+    def test_rejects_invalid_website(self):
+        data = self._valid_data()
+        data["website"] = "not-a-url"
+        serializer = OrganizationProfileSerializer(
+            data=data,
+            context={"user": self.user},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("website", serializer.errors)
+
+    def test_rejects_invalid_organization_type(self):
+        data = self._valid_data()
+        data["organization_type"] = "enterprise"
+        serializer = OrganizationProfileSerializer(
+            data=data,
+            context={"user": self.user},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("organization_type", serializer.errors)
+
+    def test_rejects_empty_partial_update(self):
+        profile = OrganizationProfile.objects.create(
+            user=self.user,
+            organization_name="Smart Builders",
+            first_name="Amine",
+            last_name="Trabelsi",
+            website="",
+            phone="+21612345678",
+            organization_type="startup",
+        )
+        serializer = OrganizationProfileSerializer(
+            profile,
+            data={},
+            partial=True,
+            context={"user": self.user},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
 
 
 class ProfilUpdateSerializerTests(TestCase):
@@ -723,6 +966,7 @@ class AdminLoginEndpointTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+@override_settings(PROFILE_RESUME_USE_CLOUDINARY=False)
 class ProfileDetailViewTests(APITestCase):
     """Tests for GET/PUT /api/profile/me/"""
 
@@ -822,6 +1066,102 @@ class ProfileDetailViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("file", response.data)
+
+
+class OrganizationProfileDetailViewTests(APITestCase):
+    def setUp(self):
+        self.user = Utilisateur.objects.create_user(
+            username="orgview",
+            email="orgview@example.com",
+            password="pass1234",
+            account_type=Utilisateur.AccountType.ORGANIZATION,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.url = "/api/profile/organization/"
+
+    def _valid_data(self):
+        return {
+            "organization_name": "  Build Wise ",
+            "first_name": "  Sara ",
+            "last_name": "  Ben Ali ",
+            "website": "https://buildwise.example.com",
+            "phone": "+216 12345678",
+            "organization_type": "company",
+        }
+
+    def test_candidate_accounts_can_intentionally_create_organization_profile(self):
+        candidate = Utilisateur.objects.create_user(
+            username="candidateview",
+            email="candidateview@example.com",
+            password="pass1234",
+        )
+        self.client.force_authenticate(user=candidate)
+
+        response = self.client.put(self.url, self._valid_data(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        candidate.refresh_from_db()
+        self.assertEqual(candidate.account_type, Utilisateur.AccountType.ORGANIZATION)
+        self.assertTrue(OrganizationProfile.objects.filter(user=candidate).exists())
+
+    def test_put_creates_organization_profile(self):
+        response = self.client.put(self.url, self._valid_data(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.user.refresh_from_db()
+        profile = self.user.organization_profile
+        self.assertEqual(profile.organization_name, "Build Wise")
+        self.assertEqual(profile.first_name, "Sara")
+        self.assertEqual(profile.last_name, "Ben Ali")
+        self.assertEqual(profile.phone, "+21612345678")
+        self.assertEqual(response.data["organization_type"], "company")
+
+    def test_put_rejects_invalid_payload(self):
+        data = self._valid_data()
+        data["phone"] = "12345678"
+
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("phone", response.data)
+
+    def test_put_updates_existing_profile_partially(self):
+        OrganizationProfile.objects.create(
+            user=self.user,
+            organization_name="Build Wise",
+            first_name="Sara",
+            last_name="Ben Ali",
+            website="",
+            phone="+21612345678",
+            organization_type="company",
+        )
+
+        response = self.client.put(
+            self.url,
+            {"organization_name": "  Build Wise Group  "},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.organization_profile.refresh_from_db()
+        self.assertEqual(self.user.organization_profile.organization_name, "Build Wise Group")
+
+    def test_get_returns_existing_profile(self):
+        OrganizationProfile.objects.create(
+            user=self.user,
+            organization_name="Build Wise",
+            first_name="Sara",
+            last_name="Ben Ali",
+            website="",
+            phone="+21612345678",
+            organization_type="company",
+        )
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["organization_name"], "Build Wise")
 
 
 @override_settings(

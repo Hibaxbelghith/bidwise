@@ -2,3 +2,23 @@
 @source '../**/*.{js,ts,jsx,tsx}';
 
 @import 'tw-animate-css';
+
+/* Animation personnalisée pour le point d'attention (profile nudge) */
+@keyframes attention-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.7);
+    opacity: 0.7;
+  }
+}
+
+.animate-attention-pulse {
+  animation: attention-pulse 1.2s ease-in-out infinite;
+}

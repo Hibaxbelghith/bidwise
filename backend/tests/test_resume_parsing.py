@@ -66,7 +66,7 @@ def make_docx_bytes(*paragraphs):
     return buffer.getvalue()
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
+@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT, PROFILE_RESUME_USE_CLOUDINARY=False)
 class ResumeParsingServiceTests(TestCase):
     def test_clean_resume_text_preserves_multilingual_unicode(self):
         text = clean_resume_text("\x00  Développeur   backend\nمهندس تعلم الآلة   Python  ")
@@ -128,7 +128,11 @@ class ResumeParsingServiceTests(TestCase):
             parse_resume_file(upload)
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT, CELERY_TASK_ALWAYS_EAGER=True)
+@override_settings(
+    MEDIA_ROOT=TEST_MEDIA_ROOT,
+    CELERY_TASK_ALWAYS_EAGER=True,
+    PROFILE_RESUME_USE_CLOUDINARY=False,
+)
 class ResumeParsingTaskTests(TestCase):
     def setUp(self):
         self.user = Utilisateur.objects.create_user(
@@ -234,7 +238,7 @@ class ResumeParsingTaskTests(TestCase):
         self.assertIn("Python Django", resume.parsed_text)
 
 
-@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
+@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT, PROFILE_RESUME_USE_CLOUDINARY=False)
 class ResumeUploadParsingFlowTests(TestCase):
     def setUp(self):
         self.user = Utilisateur.objects.create_user(

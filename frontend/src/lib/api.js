@@ -56,13 +56,13 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const shouldRedirectOnAuthFailure = !originalRequest?.skipAuthRedirect;
 
     // Only attempt refresh on 401, and not for the refresh endpoint itself,
     // and not if we already retried this request.
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !originalRequest.skipAuthRedirect &&
       !originalRequest.url?.includes('/auth/refresh/') &&
       !originalRequest.url?.includes('/auth/login/') &&
       !originalRequest.url?.includes('/admin/login/')
@@ -87,7 +87,9 @@ api.interceptors.response.use(
         isRefreshing = false;
         processQueue(error, null);
         removeTokens();
-        redirectToLogin();
+        if (shouldRedirectOnAuthFailure) {
+          redirectToLogin();
+        }
         return Promise.reject(error);
       }
 
@@ -109,7 +111,9 @@ api.interceptors.response.use(
         // Refresh failed — clear everything and redirect
         processQueue(refreshError, null);
         removeTokens();
-        redirectToLogin();
+        if (shouldRedirectOnAuthFailure) {
+          redirectToLogin();
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

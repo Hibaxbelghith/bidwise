@@ -220,6 +220,27 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Resume storage
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "").strip()
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "").strip()
+CLOUDINARY_SECURE = _env_flag("CLOUDINARY_SECURE", True)
+_CLOUDINARY_RESUME_CONFIGURED = all(
+    (
+        CLOUDINARY_CLOUD_NAME,
+        CLOUDINARY_API_KEY,
+        CLOUDINARY_API_SECRET,
+    )
+)
+PROFILE_RESUME_USE_CLOUDINARY = _env_flag(
+    "PROFILE_RESUME_USE_CLOUDINARY",
+    _CLOUDINARY_RESUME_CONFIGURED,
+)
+if PROFILE_RESUME_USE_CLOUDINARY and not _CLOUDINARY_RESUME_CONFIGURED:
+    raise ImproperlyConfigured(
+        "PROFILE_RESUME_USE_CLOUDINARY is enabled, but Cloudinary credentials are incomplete."
+    )
+
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -254,8 +275,8 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=14),
     'AUTH_HEADER_TYPES': ('Bearer',),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

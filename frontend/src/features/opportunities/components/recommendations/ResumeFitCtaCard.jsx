@@ -1,0 +1,43 @@
+import { Link } from 'react-router-dom';
+import { ArrowRight, FileText, Sparkles } from 'lucide-react';
+
+import { Button } from '../../../../components/ui/button.jsx';
+
+const ResumeFitCtaCard = ({
+  title = 'Use AI to check your fit',
+  body = 'Use AI to find out how well the skills on your resume fit this opportunity.',
+  ctaLabel = 'Upload your resume',
+  compact = false,
+  className = '',
+}) => (
+  <section
+    className={[
+      'rounded-md border border-blue-200 bg-white p-5 shadow-sm',
+      compact ? 'space-y-3' : 'space-y-4',
+      className,
+    ].join(' ')}
+  >
+    <div className="flex items-start gap-3">
+      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+        <FileText className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase text-blue-700">
+          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          AI resume match
+        </p>
+        <h2 className="mt-1 text-base font-semibold text-neutral-950">{title}</h2>
+        <p className="mt-1 text-sm leading-6 text-neutral-600">{body}</p>
+      </div>
+    </div>
+
+    <Button asChild className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
+      <Link to="/profile">
+        {ctaLabel}
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      </Link>
+    </Button>
+  </section>
+);
+
+export default ResumeFitCtaCard;

@@ -1,6 +1,21 @@
 
 
 services:
+  migrate:
+    image: bidwise-backend:latest
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: bidwise_migrate
+    command: python manage.py migrate --noinput
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+
   backend:
     image: bidwise-backend:latest
     build:
@@ -15,6 +30,8 @@ services:
     env_file:
       - .env
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -32,6 +49,8 @@ services:
     env_file:
       - .env
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -49,6 +68,8 @@ services:
     env_file:
       - .env
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:

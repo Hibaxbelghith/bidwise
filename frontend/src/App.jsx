@@ -16,6 +16,9 @@ import AdminOpportunitiesPage from './features/admin/AdminOpportunitiesPage.jsx'
 import AdminUsersPage from './features/admin/AdminUsersPage.jsx';
 import Profile from './features/profile/ProfilePage.jsx';
 import ProtectedRoute from './features/auth/ProtectedRoute.jsx';
+import OrganizationLandingPage from './features/organization/pages/OrganizationLandingPage.jsx';
+import CreateOrganizationAccountPage from './features/organization/pages/CreateOrganizationAccountPage.jsx';
+import OrganizationDashboardPage from './features/organization/pages/OrganizationDashboardPage.jsx';
 
 import './App.css';
 
@@ -25,11 +28,15 @@ const App = () => (
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Home />} />
+        <Route path="/organizations" element={<OrganizationLandingPage />} />
+        <Route path="/organization/post" element={<Navigate to="/organizations" replace />} />
         <Route path="/opportunities" element={<OpportunitiesBrowse />} />
         <Route path="/opportunities/:id" element={<OpportunityDetail />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/organization/create-account" element={<CreateOrganizationAccountPage />} />
+          <Route path="/organization/dashboard" element={<OrganizationDashboardPage />} />
         </Route>
 
       </Route>

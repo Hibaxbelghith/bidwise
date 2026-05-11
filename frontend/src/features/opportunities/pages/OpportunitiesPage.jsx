@@ -1,10 +1,19 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext.jsx';
+import OpportunitiesExperienceTabs from '../components/browse/OpportunitiesExperienceTabs.jsx';
 import OpportunitiesBrowseFilters from '../components/browse/OpportunitiesBrowseFilters.jsx';
 import OpportunitiesBrowseHeader from '../components/browse/OpportunitiesBrowseHeader.jsx';
 import OpportunitiesBrowseResults from '../components/browse/OpportunitiesBrowseResults.jsx';
+import ForYouFeed from '../components/recommendations/ForYouFeed.jsx';
 import { useOpportunitiesBrowse } from '../hooks/useOpportunitiesBrowse.js';
+import { useOpportunityRecommendations } from '../hooks/useOpportunityRecommendations.js';
+import {
+  canUseForYouFeed,
+  getProfileRecommendationTier,
+  isQualifiedRecommendation,
+  mergeRecommendationIntoOpportunity,
+} from '../utils/recommendationUtils.js';
 
 const VISIBLE_PAGE_BUTTONS = 5;
 
@@ -27,7 +36,8 @@ const getVisiblePageNumbers = (currentPage, totalPages) => {
 
 const OpportunitiesPage = () => {
   const resultsSectionRef = useRef(null);
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const [activeTab, setActiveTab] = useState('explore');
+  const { isAuthenticated, loading: authLoading, user } = useAuth();
   const {
     opportunities,
     cityOptions,
@@ -71,6 +81,26 @@ const OpportunitiesPage = () => {
       workModeFilter ||
       experienceFilter
   );
+  const forYouEnabled = isUserAuthenticated && canUseForYouFeed(user);
+  const profileRecommendationTier = getProfileRecommendationTier(user);
+  const recommendationsState = useOpportunityRecommendations({
+    enabled: forYouEnabled,
+    includeDetails: !hasActiveFilters,
+    limit: 50,
+    detailLimit: 20,
+  });
+  const { refetch: refetchRecommendations } = recommendationsState;
+  const effectiveTab = isUserAuthenticated ? activeTab : 'explore';
+  const opportunitiesWithRecommendations = useMemo(
+    () =>
+      opportunities.map((opportunity) => {
+        const recommendation = recommendationsState.recommendationById.get(String(opportunity?.id));
+        return isQualifiedRecommendation(recommendation)
+          ? mergeRecommendationIntoOpportunity(opportunity, recommendation)
+          : opportunity;
+      }),
+    [opportunities, recommendationsState.recommendationById],
+  );
 
   const countLabel = useMemo(() => {
     if (loading && opportunities.length === 0) return 'Loading opportunities...';
@@ -113,6 +143,18 @@ const OpportunitiesPage = () => {
     scrollToResultsTopAfterFilter();
   }, [resetFilters, scrollToResultsTopAfterFilter]);
 
+  const retryForYouFeed = useCallback(() => {
+    refetchRecommendations();
+    if (hasActiveFilters) {
+      refetch();
+    }
+  }, [hasActiveFilters, refetch, refetchRecommendations]);
+
+  const showForYouFeed = useCallback(() => {
+    setActiveTab('for-you');
+    scrollToResultsTopAfterFilter();
+  }, [scrollToResultsTopAfterFilter]);
+
   const handlePreviousPage = () => {
     setPage((previousPage) => Math.max(1, previousPage - 1));
     scrollToResultsTop();
@@ -154,34 +196,65 @@ const OpportunitiesPage = () => {
 
   return (
     <div className="bidwise-browse-page min-h-screen bg-neutral-50">
-      <OpportunitiesBrowseHeader isUserAuthenticated={isUserAuthenticated} />
+      <OpportunitiesBrowseHeader isUserAuthenticated={isUserAuthenticated} user={user} />
 
-      <OpportunitiesBrowseFilters {...filterProps} />
+      <OpportunitiesExperienceTabs
+        activeTab={activeTab}
+        isUserAuthenticated={isUserAuthenticated}
+        onTabChange={setActiveTab}
+      />
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:px-8">
-        <OpportunitiesBrowseFilters {...filterProps} variant="sidebar" />
+      {effectiveTab === 'explore' ? <OpportunitiesBrowseFilters {...filterProps} /> : null}
 
-        <OpportunitiesBrowseResults
-          resultsSectionRef={resultsSectionRef}
-          countLabel={countLabel}
-          page={page}
-          totalPages={totalPages}
-          showFetchingSpinner={showFetchingSpinner}
-          loading={loading}
-          isFetching={isFetching}
-          error={error}
-          opportunities={opportunities}
-          isUserAuthenticated={isUserAuthenticated}
-          hasPrevious={hasPrevious}
-          hasNext={hasNext}
-          visiblePageNumbers={visiblePageNumbers}
-          onPageChange={handlePageChange}
-          onPreviousPage={handlePreviousPage}
-          onNextPage={handleNextPage}
-          onResetFilters={resetFilters}
-          onRetry={refetch}
-        />
-      </div>
+      {effectiveTab === 'for-you' ? (
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+          <ForYouFeed
+            user={user}
+            isUserAuthenticated={isUserAuthenticated}
+            authLoading={authLoading}
+            profileRecommendationTier={profileRecommendationTier}
+            hasActiveFilters={hasActiveFilters}
+            opportunities={opportunities}
+            recommendationById={recommendationsState.recommendationById}
+            recommendedOpportunities={recommendationsState.recommendedOpportunities}
+            loading={hasActiveFilters ? loading : recommendationsState.loading}
+            showFetchingSpinner={hasActiveFilters ? showFetchingSpinner : false}
+            error={hasActiveFilters ? error || recommendationsState.error : recommendationsState.error}
+            onResetFilters={resetFiltersAndScroll}
+            onExploreMore={() => setActiveTab('explore')}
+            onRetry={retryForYouFeed}
+          />
+        </div>
+      ) : null}
+
+      {effectiveTab === 'explore' ? (
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:px-8">
+          <OpportunitiesBrowseFilters {...filterProps} variant="sidebar" />
+
+          <OpportunitiesBrowseResults
+            resultsSectionRef={resultsSectionRef}
+            countLabel={countLabel}
+            page={page}
+            totalPages={totalPages}
+            showFetchingSpinner={showFetchingSpinner}
+            loading={loading}
+            isFetching={isFetching}
+            error={error}
+            opportunities={opportunitiesWithRecommendations}
+            isUserAuthenticated={isUserAuthenticated}
+            user={user}
+            hasPrevious={hasPrevious}
+            hasNext={hasNext}
+            visiblePageNumbers={visiblePageNumbers}
+            onPageChange={handlePageChange}
+            onPreviousPage={handlePreviousPage}
+            onNextPage={handleNextPage}
+            onResetFilters={resetFiltersAndScroll}
+            onRetry={refetch}
+            onShowMatches={showForYouFeed}
+          />
+        </div>
+      ) : null}
     </div>
   );
 };

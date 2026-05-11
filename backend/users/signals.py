@@ -8,7 +8,7 @@ def create_profil_for_user(sender, instance, created, **kwargs):
     """
     Crée automatiquement un profil quand un utilisateur est créé.
     """
-    if created:
+    if created and instance.account_type == Utilisateur.AccountType.CANDIDATE:
         Profil.objects.create(utilisateur=instance)
 
 
@@ -17,5 +17,10 @@ def save_profil_for_user(sender, instance, **kwargs):
     """
     Enregistre le profil si l'utilisateur est sauvegardé.
     """
+    if instance.account_type != Utilisateur.AccountType.CANDIDATE:
+        return
+
     if hasattr(instance, 'profil'):
         instance.profil.save()
+    else:
+        Profil.objects.create(utilisateur=instance)

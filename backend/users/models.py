@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 from pathlib import Path
 
@@ -6,7 +7,10 @@ import requests
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.hashers import make_password, check_password
+from django.core.exceptions import ValidationError
 from django.utils import timezone
+
+from .storage import ProfileResumeStorage
 
 
 class Utilisateur(AbstractUser):
@@ -15,6 +19,17 @@ class Utilisateur(AbstractUser):
     Hérite du système d'authentification Django.
     """
 
+    class AccountType(models.TextChoices):
+        CANDIDATE = "candidate", "Candidate"
+        ORGANIZATION = "organization", "Organization"
+
+    account_type = models.CharField(
+        max_length=20,
+        choices=AccountType.choices,
+        default=AccountType.CANDIDATE,
+        db_index=True,
+        help_text="BidWise account type. Existing auth flows default to candidate.",
+    )
     is_admin = models.BooleanField(
         default=False,
         help_text="Can access BidWise admin backoffice APIs.",
@@ -177,9 +192,77 @@ class Profil(models.Model):
         return f"{self.prenom} {self.nom}" if self.prenom and self.nom else f"Profil #{self.id}"
 
 
+def _normalize_required_text(value):
+    return re.sub(r"\s+", " ", (value or "").strip())
+
+
+class OrganizationProfile(models.Model):
+    class OrganizationType(models.TextChoices):
+        COMPANY = "company", "Company"
+        STARTUP = "startup", "Startup"
+        PUBLIC = "public", "Public"
+        NGO = "ngo", "NGO"
+        OTHER = "other", "Other"
+
+    user = models.OneToOneField(
+        Utilisateur,
+        on_delete=models.CASCADE,
+        related_name="organization_profile",
+    )
+    organization_name = models.CharField(max_length=180)
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    website = models.URLField(max_length=255, blank=True, default="")
+    phone = models.CharField(max_length=16)
+    organization_type = models.CharField(
+        max_length=20,
+        choices=OrganizationType.choices,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["organization_type"], name="org_profile_type_idx"),
+            models.Index(fields=["created_at"], name="org_profile_created_idx"),
+        ]
+
+    def __str__(self):
+        return self.organization_name or f"OrganizationProfile #{self.id}"
+
+    def _normalize_fields(self):
+        self.organization_name = _normalize_required_text(self.organization_name)
+        self.first_name = _normalize_required_text(self.first_name)
+        self.last_name = _normalize_required_text(self.last_name)
+        self.website = (self.website or "").strip()
+        self.phone = re.sub(r"\s+", "", (self.phone or "").strip())
+        self.organization_type = (self.organization_type or "").strip()
+
+    def clean_fields(self, exclude=None):
+        self._normalize_fields()
+        super().clean_fields(exclude=exclude)
+
+    def clean(self):
+        self._normalize_fields()
+        errors = {}
+
+        if self.user_id and self.user.account_type != Utilisateur.AccountType.ORGANIZATION:
+            errors["user"] = "Organization profiles can only belong to organization accounts."
+
+        if not re.fullmatch(r"\+216\d{8}", self.phone or ""):
+            errors["phone"] = "Enter a Tunisia phone number in the format +21612345678."
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
 def profile_resume_upload_to(instance, filename):
     extension = Path(filename or "").suffix.lower()
-    if extension not in {".pdf", ".docx"}:
+    if extension not in {".pdf", ".docx", ".doc", ".rtf", ".txt"}:
         extension = ".bin"
     return f"profile_resumes/{instance.profile_id}/{secrets.token_hex(16)}{extension}"
 
@@ -202,7 +285,12 @@ class ProfileResume(models.Model):
         on_delete=models.CASCADE,
         related_name="resumes",
     )
-    file = models.FileField(upload_to=profile_resume_upload_to, null=True, blank=True)
+    file = models.FileField(
+        upload_to=profile_resume_upload_to,
+        storage=ProfileResumeStorage(),
+        null=True,
+        blank=True,
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True, db_index=True)
     parsed_text = models.TextField(blank=True, default="")
     parsing_status = models.CharField(

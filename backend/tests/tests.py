@@ -276,6 +276,38 @@ class RawNormalizationTests(TestCase):
         normalized = normalize_raw_opportunity(raw_obj)
         self.assertEqual(normalized["skills"], ["Laboratoire", "Commercialisation", "Santé"])
 
+    def test_normalization_handles_missing_extra_data(self):
+        linkedin_source = SourceOpportunite.objects.create(
+            nom="LinkedIn",
+            url="https://www.linkedin.com",
+            type_source="SITE_EMPLOI",
+        )
+
+        raw_obj = RawOpportunite.objects.create(
+            source=linkedin_source,
+            raw_payload={
+                "title": "Backend Engineer",
+                "description": "Description suffisamment longue pour la normalisation backend.",
+                "type_opportunite": "emploi",
+                "statut": "active",
+                "publication_date": "2026-04-10",
+                "location": "Tunis",
+                "company_sector": "Software",
+                "extra_data": None,
+                "url": "https://www.linkedin.com/jobs/view/123",
+            },
+            raw_titre="Backend Engineer",
+            raw_description="Description suffisamment longue pour la normalisation backend.",
+            raw_type="emploi",
+            raw_status="active",
+            raw_date_publication="2026-04-10",
+            payload_hash="hash-linkedin-missing-extra-data",
+        )
+
+        normalized = normalize_raw_opportunity(raw_obj)
+        self.assertEqual(normalized["titre"], "Backend Engineer")
+        self.assertIsNone(normalized["extra_data"])
+
     def test_status_becomes_expired_when_deadline_is_in_past(self):
         generic_source = SourceOpportunite.objects.create(
             nom="Indeed",

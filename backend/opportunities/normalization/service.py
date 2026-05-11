@@ -806,7 +806,7 @@ def normalize_raw_opportunity(raw_obj: RawOpportunite) -> dict[str, Any]:
     experience_text = _as_optional_text(payload.get("experience"))
     experience_min, experience_max = parse_experience_bounds(experience_text)
 
-    extra_data = _as_optional_dict(payload.get("extra_data"))
+    extra_data = _as_optional_dict(payload.get("extra_data")) or {}
     company_sector = _as_optional_text(payload.get("company_sector"))
 
     structured_data = {
@@ -829,7 +829,7 @@ def normalize_raw_opportunity(raw_obj: RawOpportunite) -> dict[str, Any]:
         "languages": _as_optional_languages(payload.get("languages")),
         "company_sector": company_sector,
         "company_size": _as_optional_text(payload.get("company_size")),
-        "extra_data": extra_data,
+        "extra_data": extra_data or None,
         "normalized_industries": normalize_industries(
             [company_sector, extra_data.get("company_sector")]
         ),

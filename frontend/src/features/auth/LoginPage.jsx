@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/ui/button.jsx';
 import { Input } from '../../components/ui/input.jsx';
 import { Label } from '../../components/ui/label.jsx';
@@ -8,6 +8,10 @@ import { Briefcase, ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
 import { Spinner } from '../../components/ui/spinner.jsx';
 import { useAuth } from './AuthContext.jsx';
 import { useGoogleIdentity } from './useGoogleIdentity.js';
+import {
+  ORGANIZATION_AUTH_INTENT,
+  getPostAuthRedirectPath,
+} from '../organization/organizationFlow.js';
 
 const COOLDOWN_SECONDS = 60;
 const VITE_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -63,6 +67,8 @@ const OTPLogin = () => {
     loading,
   } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const organizationIntent = searchParams.get('intent') === ORGANIZATION_AUTH_INTENT;
   const headingRef = useRef(null);
 
   const [googleError, setGoogleError] = useState('');
@@ -79,7 +85,11 @@ const OTPLogin = () => {
       // Navigate immediately — the form stays mounted and
       // visually locked until React Router unmounts this page.
       navigate(
-        result.is_new_user || !result.onboarding_completed ? '/onboarding' : '/opportunities',
+        getPostAuthRedirectPath({
+          user: result.user,
+          isNewUser: result.is_new_user,
+          organizationIntent,
+        }),
         { replace: true },
       );
     } else {
@@ -112,10 +122,12 @@ const OTPLogin = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      const onboarded = user?.profil?.onboarding_completed;
-      navigate(onboarded ? '/opportunities' : '/onboarding', { replace: true });
+      navigate(
+        getPostAuthRedirectPath({ user, organizationIntent }),
+        { replace: true },
+      );
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, user, navigate, organizationIntent]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -167,7 +179,11 @@ const OTPLogin = () => {
     setIsLoading(false);
     if (result.success) {
       navigate(
-        result.is_new_user || !result.onboarding_completed ? '/onboarding' : '/opportunities',
+        getPostAuthRedirectPath({
+          user: result.user,
+          isNewUser: result.is_new_user,
+          organizationIntent,
+        }),
         { replace: true },
       );
     } else {
@@ -199,10 +215,12 @@ const OTPLogin = () => {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-8 text-center">
-          <Link to="/" className="mb-4 inline-flex items-center gap-2" aria-label="BidWise home">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600">
-              <Briefcase className="h-7 w-7 text-white" aria-hidden="true" />
-            </div>
+          <Link
+            to={organizationIntent ? '/organizations' : '/'}
+            className="mb-4 inline-flex items-center gap-2"
+            aria-label="BidWise home"
+          >
+            <img src="/icon.png" alt="BidWise Logo" className="h-12 w-auto object-contain" />
           </Link>
           {step === 1 ? (
             <>
@@ -214,7 +232,11 @@ const OTPLogin = () => {
               >
                 Sign in to BidWise
               </h1>
-              <p className="text-neutral-600">Enter your email to receive a login code</p>
+              <p className="text-neutral-600">
+                {organizationIntent
+                  ? 'Continue with the same secure sign-in before creating your organization account'
+                  : 'Enter your email to receive a login code'}
+              </p>
             </>
           ) : (
             <>

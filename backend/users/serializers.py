@@ -1,11 +1,14 @@
 import re
 import unicodedata
 from pathlib import Path
+from urllib.parse import urlparse
 
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 from ai.embeddings import enqueue_profile_embedding_refresh
-from .models import Utilisateur, Profil, ProfileResume
+from .models import Utilisateur, Profil, ProfileResume, OrganizationProfile
 from opportunities.autocomplete.service import normalize_profile_terms
 from opportunities.normalization.employment import (
     CANONICAL_CONTRACT_TYPES,
@@ -22,19 +25,26 @@ LOCATION_ITEM_MAX_LENGTH = 100
 MAX_PREFERRED_LOCATIONS = 10
 CANONICAL_PROFILE_WORK_MODES = ("REMOTE", "HYBRID", "ON_SITE")
 DEFAULT_COMPENSATION_CURRENCY = "TND"
-CANONICAL_COMPENSATION_PERIODS = ("MONTHLY", "YEARLY", "DAILY", "HOURLY")
+CANONICAL_COMPENSATION_PERIODS = ("MONTHLY",)
+CANONICAL_OPPORTUNITY_TYPES = ("JOB", "INTERNSHIP", "RESEARCH", "FUNDING")
+PROFILE_NAME_LENGTH_ERROR = "Input must contain between 2 and 100 characters."
+MIN_MONTHLY_SALARY_TND_ERROR = (
+    "The minimum desired salary is too low for the selected currency and pay period."
+)
 SALARY_LIMITS_BY_PERIOD = {
-    "MONTHLY": (200, 30000),
-    "YEARLY": (2400, 360000),
-    "DAILY": (10, 1500),
-    "HOURLY": (2, 150),
+    "MONTHLY": (500, 30000),
 }
 MAX_RESUME_FILE_SIZE_BYTES = 5 * 1024 * 1024
-ALLOWED_RESUME_EXTENSIONS = {".pdf", ".docx"}
+ALLOWED_RESUME_EXTENSIONS = {".pdf", ".docx", ".doc", ".rtf", ".txt"}
 ALLOWED_RESUME_CONTENT_TYPES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/rtf",
+    "text/rtf",
+    "text/plain",
 }
+TUNISIA_PHONE_PATTERN = re.compile(r"^\+216\d{8}$")
 
 TUNISIAN_LOCATIONS = (
     "Tunis",
@@ -187,6 +197,35 @@ TUNISIAN_LOCATION_BY_KEY = {
     _location_lookup_key(location): location
     for location in TUNISIAN_LOCATIONS
 }
+
+
+def _normalize_required_profile_text(value):
+    text = re.sub(r"\s+", " ", (value or "").strip())
+    if not text:
+        raise serializers.ValidationError("This field may not be blank.")
+    return text
+
+
+def _normalize_candidate_name(value):
+    text = re.sub(r"\s+", " ", (value or "").strip())
+    if len(text) < 2 or len(text) > 100:
+        raise serializers.ValidationError(PROFILE_NAME_LENGTH_ERROR)
+    return text
+
+
+def _normalize_optional_url(value):
+    if value in (None, ""):
+        return ""
+    return str(value).strip()
+
+
+def _normalize_tunisian_phone(value):
+    phone = re.sub(r"\s+", "", (value or "").strip())
+    if not TUNISIA_PHONE_PATTERN.fullmatch(phone):
+        raise serializers.ValidationError(
+            "Enter a Tunisia phone number in the format +21612345678."
+        )
+    return phone
 
 
 def _normalize_custom_location(value):
@@ -459,7 +498,9 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get("request")
         url = obj.file.url
-        return request.build_absolute_uri(url) if request else url
+        if request and not urlparse(url).scheme:
+            return request.build_absolute_uri(url)
+        return url
 
     def get_parsed_text_available(self, obj):
         return bool(getattr(obj, "parsed_text", ""))
@@ -470,7 +511,7 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
 
         extension = Path(value.name or "").suffix.lower()
         if extension not in ALLOWED_RESUME_EXTENSIONS:
-            raise serializers.ValidationError("Upload a PDF or DOCX resume.")
+            raise serializers.ValidationError("Use a PDF, DOCX, DOC, RTF, or TXT resume.")
 
         if getattr(value, "size", 0) > MAX_RESUME_FILE_SIZE_BYTES:
             raise serializers.ValidationError("Resume file must be 5 MB or smaller.")
@@ -484,7 +525,7 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         profile = self.context["profile"]
         uploaded_file = validated_data.get("file")
-        return ProfileResume.objects.create(
+        resume = ProfileResume.objects.create(
             profile=profile,
             file=uploaded_file,
             source_type=ProfileResume.SourceType.UPLOAD,
@@ -500,6 +541,13 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             },
             is_active=True,
         )
+        resume.metadata = {
+            **(resume.metadata or {}),
+            "stored_name": resume.file.name or "",
+            "storage_provider": "cloudinary" if getattr(settings, "PROFILE_RESUME_USE_CLOUDINARY", False) else "local",
+        }
+        resume.save(update_fields=["metadata"])
+        return resume
 
 
 class ProfilSerializer(serializers.ModelSerializer):
@@ -560,20 +608,115 @@ class ProfilSerializer(serializers.ModelSerializer):
         return calculate_profile_completion(obj)
 
 
+class OrganizationProfileSerializer(serializers.ModelSerializer):
+    organization_name = serializers.CharField(
+        max_length=180,
+        trim_whitespace=True,
+        allow_blank=False,
+    )
+    first_name = serializers.CharField(
+        max_length=100,
+        trim_whitespace=True,
+        allow_blank=False,
+    )
+    last_name = serializers.CharField(
+        max_length=100,
+        trim_whitespace=True,
+        allow_blank=False,
+    )
+    website = serializers.URLField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+    )
+    phone = serializers.CharField(
+        max_length=16,
+        trim_whitespace=True,
+        allow_blank=False,
+    )
+    organization_type = serializers.ChoiceField(
+        choices=OrganizationProfile.OrganizationType.choices,
+    )
+
+    class Meta:
+        model = OrganizationProfile
+        fields = [
+            "id",
+            "organization_name",
+            "first_name",
+            "last_name",
+            "website",
+            "phone",
+            "organization_type",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_organization_name(self, value):
+        return _normalize_required_profile_text(value)
+
+    def validate_first_name(self, value):
+        return _normalize_required_profile_text(value)
+
+    def validate_last_name(self, value):
+        return _normalize_required_profile_text(value)
+
+    def validate_website(self, value):
+        return _normalize_optional_url(value)
+
+    def validate_phone(self, value):
+        return _normalize_tunisian_phone(value)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("Submit at least one organization profile field.")
+        return attrs
+
+    def _clean_or_raise(self, instance):
+        try:
+            instance.full_clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict) from exc
+
+    def create(self, validated_data):
+        user = self.context["user"]
+        instance = OrganizationProfile(user=user, **validated_data)
+        self._clean_or_raise(instance)
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        self._clean_or_raise(instance)
+        instance.save()
+        return instance
+
+
 class UtilisateurSerializer(serializers.ModelSerializer):
     profil = ProfilSerializer(read_only=True)
+    organization_profile = serializers.SerializerMethodField()
     is_admin = serializers.SerializerMethodField()
 
     class Meta:
         model = Utilisateur
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'is_active', 'is_admin', 'date_joined', 'profil',
+            'account_type', 'is_active', 'is_admin', 'date_joined',
+            'profil', 'organization_profile',
         ]
         read_only_fields = ['id', 'date_joined']
 
     def get_is_admin(self, obj):
         return bool(obj.is_admin or obj.is_staff or obj.is_superuser)
+
+    def get_organization_profile(self, obj):
+        try:
+            profile = obj.organization_profile
+        except OrganizationProfile.DoesNotExist:
+            return None
+        return OrganizationProfileSerializer(profile, context=self.context).data
 
 
 class ProfilUpdateSerializer(serializers.ModelSerializer):
@@ -622,9 +765,22 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             'onboarding_completed', 'last_onboarding_step',
         ]
 
+    def validate_nom(self, value):
+        return _normalize_candidate_name(value)
+
+    def validate_prenom(self, value):
+        return _normalize_candidate_name(value)
+
     def validate_niveau_experience(self, value):
         """Convert null to empty string for the CharField."""
         return value if value is not None else ''
+
+    def validate_annees_experience(self, value):
+        if value is None:
+            return None
+        if value < 0 or value > 60:
+            raise serializers.ValidationError("Enter a realistic number of years of experience.")
+        return value
 
     def validate_competences(self, value):
         return normalize_profile_terms(ProfileSuggestionType.SKILL, value)
@@ -633,17 +789,31 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         return normalize_profile_terms(
             ProfileSuggestionType.INTEREST,
             _coerce_text_list(value),
-            preserve_unknown=False,
+            preserve_unknown=True,
         )
 
     def validate_opportunity_types(self, value):
-        return _coerce_text_list(value)
+        cleaned = []
+        seen = set()
+        for item in _coerce_text_list(value):
+            canonical = str(item).strip().upper()
+            if canonical not in CANONICAL_OPPORTUNITY_TYPES:
+                raise serializers.ValidationError("Select a valid opportunity type.")
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            cleaned.append(canonical)
+        return cleaned
 
     def validate_employment_types(self, value):
         return value
 
     def validate_target_roles(self, value):
-        return normalize_profile_terms(ProfileSuggestionType.ROLE, _coerce_text_list(value))
+        return normalize_profile_terms(
+            ProfileSuggestionType.ROLE,
+            _coerce_text_list(value),
+            preserve_unknown_roles=True,
+        )
 
     def validate_compensation_currency(self, value):
         if value in (None, ""):
@@ -655,10 +825,10 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
 
     def validate_compensation_period(self, value):
         if value in (None, ""):
-            return None
+            return "MONTHLY"
         period = str(value).strip().upper()
         if period not in CANONICAL_COMPENSATION_PERIODS:
-            raise serializers.ValidationError("Unsupported compensation period.")
+            raise serializers.ValidationError("Only monthly salary expectations are supported.")
         return period
 
     def _validate_compensation(self, attrs):
@@ -683,7 +853,7 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         minimum, maximum = limits
         if amount < minimum:
             raise serializers.ValidationError({
-                "compensation_expectation": f"Expected salary is too low for {period.lower()} TND."
+                "compensation_expectation": MIN_MONTHLY_SALARY_TND_ERROR
             })
         if amount > maximum:
             raise serializers.ValidationError({

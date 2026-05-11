@@ -91,7 +91,12 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
 
       const onboarding_completed = userData?.profil?.onboarding_completed ?? false;
-      return { success: true, is_new_user: response.is_new_user, onboarding_completed };
+      return {
+        success: true,
+        is_new_user: response.is_new_user,
+        onboarding_completed,
+        user: userData,
+      };
     } catch (err) {
       setError(err.message);
       setUser(null);
@@ -119,7 +124,12 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
 
       const onboarding_completed = userData?.profil?.onboarding_completed ?? false;
-      return { success: true, is_new_user: response.is_new_user, onboarding_completed };
+      return {
+        success: true,
+        is_new_user: response.is_new_user,
+        onboarding_completed,
+        user: userData,
+      };
     } catch (err) {
       setError(err.message);
       setUser(null);

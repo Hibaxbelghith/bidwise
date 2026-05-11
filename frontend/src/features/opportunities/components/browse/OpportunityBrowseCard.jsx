@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { memo } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Bookmark,
   BriefcaseBusiness,
@@ -10,10 +11,33 @@ import {
 import { Badge } from '../../../../components/ui/badge.jsx';
 import { Button } from '../../../../components/ui/button.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
+import RecommendationInsightPanel from '../recommendations/RecommendationInsightPanel.jsx';
+import RecommendationMatchBadge from '../recommendations/RecommendationMatchBadge.jsx';
 import { buildOpportunityBrowseCardViewModel } from '../../viewModels/opportunityList.vm.js';
 
-const OpportunityBrowseCard = ({ opportunity, isUserAuthenticated }) => {
+const getRecommendationPayload = (opportunity) => {
+  const payload = opportunity?.recommendation || opportunity;
+  if (!payload) return null;
+  const rawScore = payload.score ?? payload.match_score;
+
+  const hasRecommendationSignal = Boolean(
+    payload.score_label ||
+      payload.recommendation_confidence ||
+      payload.recommendation_mode ||
+      (rawScore !== null && rawScore !== undefined && rawScore !== '' && Number.isFinite(Number(rawScore))),
+  );
+
+  return hasRecommendationSignal ? payload : null;
+};
+
+const OpportunityBrowseCard = memo(({
+  opportunity,
+  isUserAuthenticated,
+  showRecommendationInsights = false,
+}) => {
+  const location = useLocation();
   const viewModel = buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated);
+  const recommendation = getRecommendationPayload(opportunity);
   const hasRoleDetails = Boolean(
     viewModel.salaryLabel ||
       viewModel.contractTypeLabel ||
@@ -24,7 +48,12 @@ const OpportunityBrowseCard = ({ opportunity, isUserAuthenticated }) => {
   const hasSkillPreview = viewModel.skillsPreview.length > 0;
 
   return (
-    <article className="rounded-md border border-neutral-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+    <article
+      className={[
+        'rounded-md border bg-white p-5 shadow-sm transition-shadow hover:shadow-md',
+        recommendation ? 'border-blue-200' : 'border-neutral-200',
+      ].join(' ')}
+    >
       <div className="flex items-start gap-4">
         <OpportunityCompanyAvatar
           companyLogo={viewModel.companyLogo}
@@ -44,19 +73,29 @@ const OpportunityBrowseCard = ({ opportunity, isUserAuthenticated }) => {
                     Source: {viewModel.sourceLabel}
                   </Badge>
                 ) : null}
+                <RecommendationMatchBadge
+                  recommendation={recommendation}
+                  className="sm:hidden"
+                />
               </div>
 
               <Link
                 to={`/opportunities/${opportunity.id}`}
+                state={{ from: location }}
                 className="line-clamp-2 text-lg font-semibold leading-tight text-neutral-950 hover:text-blue-700"
               >
                 {viewModel.title}
               </Link>
             </div>
 
-            <Button asChild size="sm" className="hidden bg-neutral-950 text-white hover:bg-neutral-800 sm:inline-flex">
-              <Link to={`/opportunities/${opportunity.id}`}>View details</Link>
-            </Button>
+            <div className="hidden shrink-0 flex-col items-end gap-2 sm:flex">
+              <RecommendationMatchBadge recommendation={recommendation} />
+              <Button asChild size="sm" className="bg-neutral-950 text-white hover:bg-neutral-800">
+                <Link to={`/opportunities/${opportunity.id}`} state={{ from: location }}>
+                  View details
+                </Link>
+              </Button>
+            </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-neutral-700">
@@ -115,6 +154,14 @@ const OpportunityBrowseCard = ({ opportunity, isUserAuthenticated }) => {
               ))}
             </div>
           ) : null}
+
+          {showRecommendationInsights && recommendation ? (
+            <RecommendationInsightPanel
+              recommendation={recommendation}
+              compact
+              className="mt-4"
+            />
+          ) : null}
         </div>
       </div>
 
@@ -135,12 +182,16 @@ const OpportunityBrowseCard = ({ opportunity, isUserAuthenticated }) => {
             </Button>
           ) : null}
           <Button asChild size="sm" className="bg-neutral-950 text-white hover:bg-neutral-800 sm:hidden">
-            <Link to={`/opportunities/${opportunity.id}`}>View details</Link>
+            <Link to={`/opportunities/${opportunity.id}`} state={{ from: location }}>
+              View details
+            </Link>
           </Button>
         </div>
       </div>
     </article>
   );
-};
+});
+
+OpportunityBrowseCard.displayName = 'OpportunityBrowseCard';
 
 export default OpportunityBrowseCard;

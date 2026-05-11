@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 
 import { useAuth } from '../../auth/AuthContext.jsx';
@@ -9,18 +9,33 @@ import OpportunityDetailSkeleton from '../components/detail/OpportunityDetailSke
 import OpportunityDocuments from '../components/detail/OpportunityDocuments.jsx';
 import OpportunityExtraData from '../components/detail/OpportunityExtraData.jsx';
 import OpportunityHeader from '../components/detail/OpportunityHeader.jsx';
-import OpportunityInsightsSection from '../components/detail/OpportunityInsightsSection.jsx';
 import OpportunityMeta from '../components/detail/OpportunityMeta.jsx';
 import OpportunitySimilarSection from '../components/detail/OpportunitySimilarSection.jsx';
 import OpportunitySkillsSection from '../components/detail/OpportunitySkillsSection.jsx';
+import RecommendationInsightPanel, {
+  RecommendationInsightSkeleton,
+} from '../components/recommendations/RecommendationInsightPanel.jsx';
+import ResumeFitCtaCard from '../components/recommendations/ResumeFitCtaCard.jsx';
 import { useOpportunityDetailPage } from '../hooks/useOpportunityDetailPage.js';
+import { hasActiveResume } from '../utils/recommendationUtils.js';
 
 const VISIBLE_ADDITIONAL_INFO_LABELS = new Set(['Sector', 'Company size', 'Reference']);
 
 const OpportunityDetailPage = () => {
   const { id } = useParams();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated, loading: authLoading, user } = useAuth();
   const isUserAuthenticated = !authLoading && isAuthenticated;
+  const userHasResume = hasActiveResume(user);
+  const handleBackToOpportunities = () => {
+    if (location.state?.from) {
+      navigate(-1);
+      return;
+    }
+
+    navigate('/opportunities');
+  };
   const detailPage = useOpportunityDetailPage({
     opportunityId: id,
     isUserAuthenticated,
@@ -33,10 +48,14 @@ const OpportunityDetailPage = () => {
   if (detailPage.error || !detailPage.viewModel) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
-        <Link to="/opportunities" className="inline-flex items-center gap-2 text-neutral-600">
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 text-neutral-600"
+          onClick={handleBackToOpportunities}
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to opportunities
-        </Link>
+        </button>
         <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
           {detailPage.error || 'Opportunity not found'}
         </div>
@@ -61,8 +80,8 @@ const OpportunityDetailPage = () => {
         publishedDateLabel={viewModel.publishedDateLabel}
         deadlineDateLabel={viewModel.deadlineDateLabel}
         companyLogo={viewModel.companyLogo}
-        isUserAuthenticated={isUserAuthenticated}
-        semanticMatchScore={viewModel.semanticMatchScore}
+        recommendation={viewModel.recommendation}
+        onBack={handleBackToOpportunities}
       />
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
@@ -82,6 +101,14 @@ const OpportunityDetailPage = () => {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">
+            {viewModel.recommendation ? (
+              <RecommendationInsightPanel recommendation={viewModel.recommendation} />
+            ) : detailPage.recommendationLoading && isUserAuthenticated ? (
+              <RecommendationInsightSkeleton />
+            ) : !detailPage.recommendationLoading && isUserAuthenticated && !userHasResume ? (
+              <ResumeFitCtaCard />
+            ) : null}
+
             <OpportunityDescriptionSection
               descriptionMarkup={viewModel.descriptionMarkup}
               isLongDescription={viewModel.isLongDescription}

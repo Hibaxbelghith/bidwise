@@ -2,6 +2,7 @@ import api from '../../../lib/api';
 
 const OPPORTUNITIES_ENDPOINT = '/opportunities/';
 const LEGACY_OPPORTUNITIES_ENDPOINT = '/opportunites/';
+const RECOMMENDATIONS_ENDPOINT = '/recommendations/';
 
 const normalizeString = (value) => String(value || '').trim();
 const normalizeArray = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
@@ -12,6 +13,34 @@ const normalizeNumberOrNull = (value) => {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeRecommendation = (recommendation) => {
+  const raw = normalizeObject(recommendation);
+  const reasons = normalizeArray(raw.reasons || raw.reason);
+
+  return {
+    ...raw,
+    id: raw.id ?? null,
+    title: normalizeString(raw.title),
+    score: normalizeNumberOrNull(raw.score),
+    match_score: normalizeNumberOrNull(raw.match_score ?? raw.score),
+    semantic_score: normalizeNumberOrNull(raw.semantic_score),
+    business_score: normalizeNumberOrNull(raw.business_score),
+    feedback_score: normalizeNumberOrNull(raw.feedback_score),
+    score_label: normalizeString(raw.score_label),
+    score_level: normalizeString(raw.score_level),
+    reason: reasons,
+    reasons,
+    gaps: normalizeArray(raw.gaps),
+    recommendation_confidence: normalizeString(raw.recommendation_confidence),
+    profile_strength: normalizeString(raw.profile_strength),
+    recommendation_mode: normalizeString(raw.recommendation_mode),
+    evidence_summary: normalizeObject(raw.evidence_summary),
+    location: normalizeString(raw.location),
+    company: normalizeString(raw.company),
+    type: normalizeString(raw.type),
+  };
 };
 
 const isPublicFilterSource = (source) => {
@@ -57,6 +86,21 @@ const normalizeOpportunity = (opportunity) => {
     experience: normalizeObject(raw.experience),
     extra_data: normalizeObject(raw.extra_data),
     similarity_score: normalizeNumberOrNull(raw.similarity_score),
+    score: normalizeNumberOrNull(raw.score),
+    match_score: normalizeNumberOrNull(raw.match_score ?? raw.score),
+    semantic_score: normalizeNumberOrNull(raw.semantic_score),
+    business_score: normalizeNumberOrNull(raw.business_score),
+    feedback_score: normalizeNumberOrNull(raw.feedback_score),
+    score_label: normalizeString(raw.score_label),
+    score_level: normalizeString(raw.score_level),
+    reason: normalizeArray(raw.reason || raw.reasons),
+    reasons: normalizeArray(raw.reasons || raw.reason),
+    gaps: normalizeArray(raw.gaps),
+    recommendation_confidence: normalizeString(raw.recommendation_confidence),
+    profile_strength: normalizeString(raw.profile_strength),
+    recommendation_mode: normalizeString(raw.recommendation_mode),
+    evidence_summary: normalizeObject(raw.evidence_summary),
+    recommendation: raw.recommendation ? normalizeRecommendation(raw.recommendation) : null,
   };
 };
 
@@ -138,6 +182,14 @@ export const listOpportunitySources = async () => {
       type_source: normalizeString(source?.type_source),
     }))
     .filter((source) => source.id !== null && isPublicFilterSource(source));
+};
+
+export const listOpportunityRecommendations = async ({ limit = 20 } = {}) => {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 50));
+  const response = await api.get(RECOMMENDATIONS_ENDPOINT, {
+    params: { limit: safeLimit },
+  });
+  return normalizeArray(response.data).map(normalizeRecommendation);
 };
 
 export const listTrendingOpportunities = async ({ limit = 8 } = {}) =>

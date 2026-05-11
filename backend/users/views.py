@@ -13,10 +13,18 @@ from ai.embeddings import enqueue_profile_embedding_refresh
 from opportunities.autocomplete.service import coerce_limit, suggest_profile_terms
 from opportunities.models import ProfileSuggestionType
 
-from .models import Utilisateur, Profil, ProfileResume, OTPChallenge, LoginEvent
+from .models import (
+    Utilisateur,
+    Profil,
+    ProfileResume,
+    OrganizationProfile,
+    OTPChallenge,
+    LoginEvent,
+)
 from .otp_service import deliver_otp, otp_response_message, resolve_client_type
 from .serializers import (
     UtilisateurSerializer,
+    OrganizationProfileSerializer,
     ProfileResumeSerializer,
     ProfilUpdateSerializer,
     OTPRequestSerializer,
@@ -35,7 +43,12 @@ logger = logging.getLogger(__name__)
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     """Admin-only user list. Restricted to Django staff users."""
-    queryset = Utilisateur.objects.select_related("profil").prefetch_related("profil__resumes").all()
+    queryset = (
+        Utilisateur.objects
+        .select_related("profil", "organization_profile")
+        .prefetch_related("profil__resumes")
+        .all()
+    )
     serializer_class = UtilisateurSerializer
     permission_classes = [IsAdminUser]
 
@@ -66,6 +79,61 @@ def profile_detail(request):
             user_serializer = UtilisateurSerializer(request.user)
             return Response(user_serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def organization_profile_detail(request):
+    if (
+        request.method == 'GET'
+        and request.user.account_type != Utilisateur.AccountType.ORGANIZATION
+    ):
+        return Response(
+            {"error": "Organization account required."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        profile = request.user.organization_profile
+    except OrganizationProfile.DoesNotExist:
+        profile = None
+
+    if request.method == 'GET':
+        if profile is None:
+            return Response(
+                {"error": "Organization profile not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = OrganizationProfileSerializer(profile, context={"request": request})
+        return Response(serializer.data)
+
+    if profile is not None and request.user.account_type != Utilisateur.AccountType.ORGANIZATION:
+        return Response(
+            {"error": "Organization account required."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = OrganizationProfileSerializer(
+        profile,
+        data=request.data,
+        partial=profile is not None,
+        context={"request": request, "user": request.user},
+    )
+    if serializer.is_valid():
+        with transaction.atomic():
+            if request.user.account_type != Utilisateur.AccountType.ORGANIZATION:
+                request.user.account_type = Utilisateur.AccountType.ORGANIZATION
+                request.user.save(update_fields=["account_type"])
+            saved_profile = serializer.save()
+        output = OrganizationProfileSerializer(
+            saved_profile,
+            context={"request": request},
+        )
+        return Response(
+            output.data,
+            status=status.HTTP_200_OK if profile else status.HTTP_201_CREATED,
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 def _profile_suggestion_response(request, term_type):

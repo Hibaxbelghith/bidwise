@@ -38,6 +38,20 @@ const getProjectCautionLabel = (extraData, projectLots) =>
       '',
   ).trim();
 
+const getRecommendationPayload = (opportunity) => {
+  const payload = opportunity?.recommendation || opportunity;
+  if (!payload) return null;
+  const rawScore = payload.score ?? payload.match_score;
+  const hasRecommendationSignal = Boolean(
+    payload.score_label ||
+      payload.recommendation_confidence ||
+      payload.recommendation_mode ||
+      (rawScore !== null && rawScore !== undefined && rawScore !== '' && Number.isFinite(Number(rawScore))),
+  );
+
+  return hasRecommendationSignal ? payload : null;
+};
+
 export const buildOpportunityDetailViewModel = (opportunity) => {
   if (!opportunity) return null;
 
@@ -131,5 +145,6 @@ export const buildOpportunityDetailPageViewModel = ({
     semanticMatchScore,
     matchBullets: buildMatchBullets(opportunity, semanticMatchScore),
     aiDraft: buildAIDraft(opportunity),
+    recommendation: getRecommendationPayload(opportunity),
   };
 };

@@ -16,6 +16,12 @@ import {
 	DEFAULT_COMPENSATION_PERIOD,
 	validateSalaryExpectation,
 } from '../profile/profileValidation.js';
+import {
+	ORGANIZATION_CREATE_ACCOUNT_PATH,
+	ORGANIZATION_DASHBOARD_PATH,
+	isOrganizationAccount,
+	isOrganizationProfileComplete,
+} from '../organization/organizationFlow.js';
 
 const TOTAL_STEPS = 6;
 const STORAGE_KEY = 'bidwise_onboarding';
@@ -108,7 +114,17 @@ const Onboarding = () => {
 
 	// Already onboarded → redirect to opportunities
 	useEffect(() => {
-		if (!loading && user?.profil?.onboarding_completed) {
+		if (loading) return;
+		if (isOrganizationAccount(user)) {
+			navigate(
+				isOrganizationProfileComplete(user?.organization_profile)
+					? ORGANIZATION_DASHBOARD_PATH
+					: ORGANIZATION_CREATE_ACCOUNT_PATH,
+				{ replace: true },
+			);
+			return;
+		}
+		if (user?.profil?.onboarding_completed) {
 			navigate('/opportunities', { replace: true });
 		}
 	}, [user, loading, navigate]);

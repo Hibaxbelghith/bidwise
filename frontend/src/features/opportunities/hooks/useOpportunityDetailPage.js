@@ -6,8 +6,10 @@ import {
 import { DETAIL_SIMILAR_OPPORTUNITIES_LIMIT } from '../constants/opportunityDetail.js';
 import {
   getOpportunityById,
+  listOpportunityRecommendations,
   getSimilarOpportunities,
 } from '../services/opportunitiesService.js';
+import { mergeRecommendationIntoOpportunity } from '../utils/recommendationUtils.js';
 import { buildOpportunityDetailPageViewModel } from '../viewModels/opportunityDetail.vm.js';
 
 const SAVED_OPPORTUNITY_IDS_KEY = 'bidwise:saved-opportunity-ids:v1';
@@ -39,6 +41,9 @@ export const useOpportunityDetailPage = ({ opportunityId, isUserAuthenticated })
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [similarOpportunities, setSimilarOpportunities] = useState([]);
+  const [recommendation, setRecommendation] = useState(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [recommendationError, setRecommendationError] = useState(null);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarError, setSimilarError] = useState(null);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
@@ -172,15 +177,58 @@ export const useOpportunityDetailPage = ({ opportunityId, isUserAuthenticated })
     };
   }, [isUserAuthenticated, opportunity?.id]);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!isUserAuthenticated || !opportunity?.id) {
+      setRecommendation(null);
+      setRecommendationLoading(false);
+      setRecommendationError(null);
+      return undefined;
+    }
+
+    const fetchRecommendation = async () => {
+      try {
+        setRecommendationLoading(true);
+        setRecommendationError(null);
+
+        const data = await listOpportunityRecommendations({ limit: 50 });
+        if (isCancelled) return;
+
+        const matchedRecommendation = data.find(
+          (item) => String(item?.id) === String(opportunity.id),
+        );
+        setRecommendation(matchedRecommendation || null);
+      } catch (err) {
+        if (isCancelled) return;
+        console.log('Failed to load recommendation insight', err);
+        setRecommendationError(err);
+        setRecommendation(null);
+      } finally {
+        if (!isCancelled) {
+          setRecommendationLoading(false);
+        }
+      }
+    };
+
+    fetchRecommendation();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isUserAuthenticated, opportunity?.id]);
+
   const viewModel = useMemo(
     () =>
       buildOpportunityDetailPageViewModel({
-        opportunity,
+        opportunity: recommendation
+          ? mergeRecommendationIntoOpportunity(opportunity, recommendation)
+          : opportunity,
         isUserAuthenticated,
         similarOpportunities,
         showAllSkills,
       }),
-    [isUserAuthenticated, opportunity, showAllSkills, similarOpportunities],
+    [isUserAuthenticated, opportunity, recommendation, showAllSkills, similarOpportunities],
   );
 
   const handleApply = () => {
@@ -210,6 +258,8 @@ export const useOpportunityDetailPage = ({ opportunityId, isUserAuthenticated })
     loading,
     error,
     viewModel,
+    recommendationLoading,
+    recommendationError,
     similarLoading,
     similarError,
     isDescriptionExpanded,

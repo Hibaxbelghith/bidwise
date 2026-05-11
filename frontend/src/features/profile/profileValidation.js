@@ -1,19 +1,22 @@
 export const DEFAULT_COMPENSATION_PERIOD = 'MONTHLY';
 export const PROFILE_AUTOCOMPLETE_DEBOUNCE_MS = 250;
+export const PROFILE_NAME_ERROR = 'Input must contain between 2 and 100 characters.';
+export const YEARS_OF_EXPERIENCE_ERROR = 'Enter a realistic number of years of experience.';
+export const MIN_MONTHLY_SALARY_TND_ERROR =
+	'The minimum desired salary is too low for the selected currency and pay period.';
+export const MAX_RESUME_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 export const COMPENSATION_PERIOD_OPTIONS = [
 	{ value: 'MONTHLY', label: 'Monthly', helper: 'Most common in Tunisia' },
-	{ value: 'YEARLY', label: 'Yearly' },
-	{ value: 'DAILY', label: 'Daily' },
-	{ value: 'HOURLY', label: 'Hourly' },
 ];
 
 export const SALARY_LIMITS_BY_PERIOD = {
-	MONTHLY: { min: 200, max: 30000 },
-	YEARLY: { min: 2400, max: 360000 },
-	DAILY: { min: 10, max: 1500 },
-	HOURLY: { min: 2, max: 150 },
+	MONTHLY: { min: 500, max: 30000 },
 };
+
+export const ALLOWED_RESUME_EXTENSIONS = ['pdf', 'docx', 'doc', 'rtf', 'txt'];
+export const ALLOWED_RESUME_ACCEPT =
+	'.pdf,.docx,.doc,.rtf,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/rtf,text/rtf,text/plain';
 
 const SKILL_ALIASES = new Map([
 	['css', 'CSS'],
@@ -129,14 +132,18 @@ export const isInterestTermRejected = (value) => {
 	return !isKnownInterestTerm(key) && !/^[A-Z][A-Z_]+$/.test(String(value || '').trim());
 };
 
-export const isGarbageSkillInput = (value) => {
+export const isGarbageTextInput = (value, minLength = 2) => {
 	const text = String(value || '').trim();
 	const key = normalizeTermKey(text);
 	if (!key) return true;
 	if (/^\d+$/.test(key)) return true;
-	if (key.length < 2) return true;
+	if (key.length < minLength) return true;
 	if (/^(.)\1{2,}$/.test(key.replace(/\s+/g, ''))) return true;
 	return false;
+};
+
+export const isGarbageSkillInput = (value) => {
+	return isGarbageTextInput(value, 2);
 };
 
 export const normalizeLocationLabel = (value) =>
@@ -156,14 +163,14 @@ export const validateSalaryExpectation = (value, period = DEFAULT_COMPENSATION_P
 		return { value: null, error: '' };
 	}
 
-	const limits = SALARY_LIMITS_BY_PERIOD[period] || SALARY_LIMITS_BY_PERIOD.MONTHLY;
+	const limits = SALARY_LIMITS_BY_PERIOD.MONTHLY;
 	if (amount < 0) {
 		return { value: amount, error: 'Salary cannot be negative.' };
 	}
 	if (amount < limits.min) {
 		return {
 			value: amount,
-			error: `Enter at least ${limits.min} TND for a ${period.toLocaleLowerCase()} expectation.`,
+			error: MIN_MONTHLY_SALARY_TND_ERROR,
 		};
 	}
 	if (amount > limits.max) {
@@ -176,9 +183,44 @@ export const validateSalaryExpectation = (value, period = DEFAULT_COMPENSATION_P
 };
 
 export const buildSalaryHelperText = (period = DEFAULT_COMPENSATION_PERIOD) => {
-	const limits = SALARY_LIMITS_BY_PERIOD[period] || SALARY_LIMITS_BY_PERIOD.MONTHLY;
-	if (period === 'MONTHLY') {
-		return `Use TND/month. Typical Tunisian expectations often range from internship stipends to senior monthly salaries; accepted range ${limits.min}-${limits.max} TND.`;
+	const limits = SALARY_LIMITS_BY_PERIOD.MONTHLY;
+	return `Use TND/month. Accepted range ${limits.min}-${limits.max} TND.`;
+};
+
+export const validateProfileName = (value) => {
+	const text = String(value || '').trim().replace(/\s+/g, ' ');
+	if (text.length < 2 || text.length > 100) {
+		return { value: text, error: PROFILE_NAME_ERROR };
 	}
-	return `Use TND for the selected period. Accepted range ${limits.min}-${limits.max} TND.`;
+	return { value: text, error: '' };
+};
+
+export const validateYearsOfExperience = (value) => {
+	if (value === '' || value === null || value === undefined) {
+		return { value: null, error: '' };
+	}
+
+	const parsed = Number(value);
+	if (!Number.isInteger(parsed) || parsed < 0 || parsed > 60) {
+		return { value: parsed, error: YEARS_OF_EXPERIENCE_ERROR };
+	}
+	return { value: parsed, error: '' };
+};
+
+export const validateOpportunityTypes = (value, options = []) => {
+	const allowed = new Set(options.map((option) => option.value));
+	const invalid = (Array.isArray(value) ? value : []).filter((item) => !allowed.has(item));
+	return invalid.length ? 'Select a valid opportunity type.' : '';
+};
+
+export const validateResumeFile = (file) => {
+	if (!file) return 'Choose a resume file first.';
+	const extension = String(file.name || '').split('.').pop()?.toLowerCase();
+	if (!ALLOWED_RESUME_EXTENSIONS.includes(extension)) {
+		return 'Use a PDF, DOCX, DOC, RTF, or TXT resume.';
+	}
+	if (file.size > MAX_RESUME_FILE_SIZE_BYTES) {
+		return 'Resume file must be 5 MB or smaller.';
+	}
+	return '';
 };

@@ -1,13 +1,12 @@
-import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Calendar,
-  Lock,
   MapPin,
 } from 'lucide-react';
 
 import { Badge } from '../../../../components/ui/badge.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
+import RecommendationMatchBadge from '../recommendations/RecommendationMatchBadge.jsx';
 import { hasDisplayValue } from '../../utils/opportunityHelpers.js';
 
 const OpportunityHeader = ({
@@ -20,18 +19,19 @@ const OpportunityHeader = ({
   publishedDateLabel,
   deadlineDateLabel,
   companyLogo,
-  isUserAuthenticated,
-  semanticMatchScore,
+  recommendation,
+  onBack,
 }) => (
   <header className="border-b border-neutral-200 bg-white">
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-      <Link
-        to="/opportunities"
+      <button
+        type="button"
         className="inline-flex items-center gap-2 text-sm font-medium text-neutral-600 hover:text-neutral-900"
+        onClick={onBack}
       >
         <ArrowLeft className="h-4 w-4" />
         Back to opportunities
-      </Link>
+      </button>
 
       <div className="mt-5 flex items-start gap-4">
         <OpportunityCompanyAvatar
@@ -47,6 +47,7 @@ const OpportunityHeader = ({
             <h1 className="text-2xl font-bold leading-tight text-neutral-900 sm:text-3xl">{title}</h1>
             <Badge>{typeLabel}</Badge>
             <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+            <RecommendationMatchBadge recommendation={recommendation} />
           </div>
 
           {organizationLabel ? <p className="text-base text-neutral-600 sm:text-lg">{organizationLabel}</p> : null}
