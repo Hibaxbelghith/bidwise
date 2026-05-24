@@ -114,7 +114,7 @@ const ProfileAutocompleteInput = ({
 			return false;
 		}
 		if (isInterest && isGarbageTextInput(canonical, 2)) {
-			setMessage('Enter a recognizable industry or interest.');
+			setMessage('Enter a recognizable sector.');
 			return false;
 		}
 		if (isSkill && isGarbageSkillInput(canonical)) {
@@ -137,16 +137,15 @@ const ProfileAutocompleteInput = ({
 		return true;
 	};
 
-	const findPreferredSuggestion = (items) => {
+	const findExactSuggestion = (items) => {
 		const queryKey = normalizeTermKey(trimmedQuery);
-		const exact = items.find((suggestion) => {
+		return items.find((suggestion) => {
 			const valueKey = normalizeTermKey(suggestionValue(suggestion));
 			const aliasKeys = Array.isArray(suggestion.aliases)
 				? suggestion.aliases.map(normalizeTermKey)
 				: [];
 			return valueKey === queryKey || aliasKeys.includes(queryKey);
 		});
-		return exact || items[0] || null;
 	};
 
 	const fetchCurrentSuggestions = async (url) => {
@@ -162,7 +161,7 @@ const ProfileAutocompleteInput = ({
 	};
 
 	const explainRejectedRole = async () => {
-		const skill = findPreferredSuggestion(await fetchCurrentSuggestions(ENDPOINTS.skill));
+		const skill = findExactSuggestion(await fetchCurrentSuggestions(ENDPOINTS.skill));
 		const skillLabel = suggestionValue(skill);
 		if (skillLabel) {
 			setMessage(`${skillLabel} is a skill, not a role.`);
@@ -174,20 +173,20 @@ const ProfileAutocompleteInput = ({
 	const addFromInput = async () => {
 		if (!trimmedQuery || selected.length >= maxItems) return;
 
-		let preferred = findPreferredSuggestion(suggestions);
-		if (!preferred) {
+		let exactSuggestion = findExactSuggestion(suggestions);
+		if (!exactSuggestion) {
 			const freshSuggestions = await fetchCurrentSuggestions(endpoint);
-			preferred = findPreferredSuggestion(freshSuggestions);
+			exactSuggestion = findExactSuggestion(freshSuggestions);
 			setSuggestions(freshSuggestions);
 		}
 
-		if (preferred) {
+		if (exactSuggestion) {
 			if (isSkill) {
-				addCanonical(canonicalizeSkillLabel(suggestionValue(preferred)));
+				addCanonical(canonicalizeSkillLabel(suggestionValue(exactSuggestion)));
 			} else if (isInterest) {
-				addCanonical(canonicalizeInterestLabel(suggestionValue(preferred)));
+				addCanonical(canonicalizeInterestLabel(suggestionValue(exactSuggestion)));
 			} else {
-				addCanonical(suggestionValue(preferred));
+				addCanonical(suggestionValue(exactSuggestion));
 			}
 			return;
 		}

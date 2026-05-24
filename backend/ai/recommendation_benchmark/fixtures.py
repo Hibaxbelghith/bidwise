@@ -70,6 +70,18 @@ PROFILE_FIELD_DEFAULTS = {
 }
 
 
+def _benchmark_extra_data(existing: dict[str, Any] | None, item: Any) -> dict[str, Any]:
+    extra_data = dict(existing or {}) if isinstance(existing, dict) else {}
+    extra_data.update(
+        {
+            "benchmark": True,
+            "benchmark_opportunity_id": item.opportunity_id,
+            "confusing": item.confusing,
+        }
+    )
+    return extra_data
+
+
 def _benchmark_username(profile_id: str) -> str:
     safe = profile_id.replace("-", "_").replace(".", "_")
     return f"benchmark_{safe}"
@@ -224,6 +236,9 @@ class DjangoBenchmarkFixtureBuilder:
                 for item in ranked
             ]
 
+        if not getattr(settings, "RECOMMENDATION_SHOW_RECENT_FALLBACK", False):
+            return []
+
         fallback_limit = fallback_limit_for_profile(int(limit), profile_strength)
         fallback_items = queryset.order_by("-application_count", "-date_publication", "-id")[:fallback_limit]
         return [
@@ -267,6 +282,16 @@ class DjangoBenchmarkFixtureBuilder:
         for index, item in enumerate(dataset.opportunities):
             source_item_url = f"{BENCHMARK_SOURCE_URL}/{item.opportunity_id}"
             source_urls.append(source_item_url)
+            existing_extra_data = {}
+            existing_pk = (
+                Opportunite.objects
+                .filter(source=source, source_item_url=source_item_url)
+                .values_list("extra_data", flat=True)
+                .first()
+            )
+            if isinstance(existing_pk, dict):
+                existing_extra_data = existing_pk
+
             defaults = {
                 "titre": item.title,
                 "description": item.description,
@@ -285,11 +310,7 @@ class DjangoBenchmarkFixtureBuilder:
                 "statut": StatutOpportunite.ACTIVE,
                 "date_publication": _fixture_date(index),
                 "external_id": f"benchmark:{item.opportunity_id}",
-                "extra_data": {
-                    "benchmark": True,
-                    "benchmark_opportunity_id": item.opportunity_id,
-                    "confusing": item.confusing,
-                },
+                "extra_data": _benchmark_extra_data(existing_extra_data, item),
             }
             opportunity, _ = Opportunite.objects.update_or_create(
                 source=source,

@@ -1,5 +1,7 @@
 import logging
 
+from django.middleware.csrf import get_token
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes, throttle_classes
@@ -13,6 +15,7 @@ from ai.embeddings import enqueue_profile_embedding_refresh
 from opportunities.autocomplete.service import coerce_limit, suggest_profile_terms
 from opportunities.models import ProfileSuggestionType
 
+from .permissions import IsSuspensionNotBlocked
 from .models import (
     Utilisateur,
     Profil,
@@ -41,6 +44,13 @@ from .throttles import (
 logger = logging.getLogger(__name__)
 
 
+@ensure_csrf_cookie
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def csrf_token(request):
+    return Response({"csrfToken": get_token(request)})
+
+
 class UtilisateurViewSet(viewsets.ModelViewSet):
     """Admin-only user list. Restricted to Django staff users."""
     queryset = (
@@ -54,7 +64,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
 def profile_detail(request):
     """
     GET : récupérer son profil
@@ -75,14 +85,16 @@ def profile_detail(request):
     elif request.method == 'PUT':
         serializer = ProfilUpdateSerializer(profil, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            saved_profile = serializer.save()
+            saved_profile.refresh_from_db()
+            request.user.profil = saved_profile
             user_serializer = UtilisateurSerializer(request.user)
             return Response(user_serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
 def organization_profile_detail(request):
     if (
         request.method == 'GET'
@@ -143,28 +155,28 @@ def _profile_suggestion_response(request, term_type):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
 @throttle_classes([ProfileSuggestionThrottle])
 def skill_suggestions(request):
     return _profile_suggestion_response(request, ProfileSuggestionType.SKILL)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
 @throttle_classes([ProfileSuggestionThrottle])
 def role_suggestions(request):
     return _profile_suggestion_response(request, ProfileSuggestionType.ROLE)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
 @throttle_classes([ProfileSuggestionThrottle])
 def interest_suggestions(request):
     return _profile_suggestion_response(request, ProfileSuggestionType.INTEREST)
 
 
 @api_view(['GET', 'POST', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
 @parser_classes([MultiPartParser, FormParser])
 def profile_resume(request):
     try:
@@ -353,6 +365,12 @@ def verify_otp(request):
         return Response(
             {"error": "Code invalide ou expiré."},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if user.is_suspended:
+        return Response(
+            {"error": "Votre compte a été suspendu. Veuillez contacter le support pour plus d'informations."},
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     # Record login event and detect suspicious activity

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import {
 	Download,
 	Eye,
@@ -10,6 +10,7 @@ import {
 	Wand2,
 	X,
 } from 'lucide-react';
+
 
 import api from '../../../lib/api.js';
 import { Alert, AlertDescription } from '../../../components/ui/alert.jsx';
@@ -29,6 +30,63 @@ const isPreviewableInline = (resume) => {
 	const fileName = getResumeFileName(resume).toLowerCase();
 	const contentType = resume?.metadata?.content_type || resume?.file?.type || '';
 	return fileName.endsWith('.pdf') || fileName.endsWith('.txt') || contentType === 'application/pdf' || contentType === 'text/plain';
+};
+
+// Skeleton moderne pour le chargement
+const ResumeUploadSkeleton = () => {
+	const [progress, setProgress] = useState(0);
+	const [status, setStatus] = useState('uploading');
+
+	useEffect(() => {
+		// Simulation de progression
+		const interval = setInterval(() => {
+			setProgress((prev) => {
+				if (prev >= 90) {
+					clearInterval(interval);
+					setStatus('processing');
+					return 90;
+				}
+				return prev + 10;
+			});
+		}, 300);
+
+		return () => clearInterval(interval);
+	}, []);
+
+	return (
+		<div className="flex flex-col items-center justify-center py-12 text-center">
+			{/* Animation de chargement */}
+			<div className="relative mb-6">
+				<div className="h-20 w-20 rounded-full border-4 border-neutral-100 bg-white flex items-center justify-center">
+					<FileText className="h-8 w-8 text-neutral-400 animate-pulse" />
+				</div>
+				<div className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5">
+					<Spinner size={20} className="text-blue-600" />
+				</div>
+			</div>
+
+			<h3 className="text-lg font-semibold text-neutral-900">
+				{status === 'uploading' ? 'Uploading resume' : 'Processing your file'}
+			</h3>
+			
+			<p className="mt-1 text-sm text-neutral-500">
+				{status === 'uploading' 
+					? 'This may take a few seconds' 
+					: 'Analyzing and extracting information...'}
+			</p>
+
+			{/* Barre de progression */}
+			<div className="mt-6 w-64">
+				<div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+					<div
+						className="h-full rounded-full bg-blue-600 transition-all duration-300 ease-out"
+						style={{ width: `${progress}%` }}
+					/>
+				</div>
+				<p className="mt-2 text-xs text-neutral-400">{progress}%</p>
+			</div>
+		</div>
+	);
 };
 
 const ResumePreviewFrame = ({ resume }) => {
@@ -113,7 +171,7 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 			{ label: 'Identity', value: name || 'Add your name in Basic Information.' },
 			{ label: 'Target roles', value: (profile?.target_roles || []).join(', ') || 'Add target roles.' },
 			{ label: 'Skills', value: (profile?.competences || []).join(', ') || 'Add skills.' },
-			{ label: 'Interests', value: (profile?.domaines_interet || []).join(', ') || 'Add industries.' },
+			{ label: 'Sectors', value: (profile?.domaines_interet || []).join(', ') || 'Add sectors.' },
 		];
 	}, [profile]);
 
@@ -185,12 +243,10 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 				className="hidden"
 			/>
 
+			{/* Modal de chargement moderne */}
 			{isUploading ? (
-				<ModalShell title="Uploading resume...">
-					<div className="flex flex-col items-center justify-center py-8 text-center">
-						<Spinner size={34} />
-						<p className="mt-4 text-sm text-neutral-600">Please keep this page open while BidWise uploads your file.</p>
-					</div>
+				<ModalShell title="Resume & experience" onClose={() => {}}>
+					<ResumeUploadSkeleton />
 				</ModalShell>
 			) : null}
 
@@ -226,7 +282,7 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 			) : null}
 
 			<div className="grid gap-3 sm:grid-cols-2">
-				<div className="rounded-md border border-neutral-200 bg-white p-4">
+				<div className="rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm">
 					<div className="flex items-start gap-3">
 						<Upload className="mt-0.5 h-5 w-5 text-neutral-500" aria-hidden="true" />
 						<div className="min-w-0 flex-1 space-y-3">
@@ -242,7 +298,7 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 					</div>
 				</div>
 
-				<div className="rounded-md border border-neutral-200 bg-white p-4">
+				<div className="rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm">
 					<div className="flex items-start gap-3">
 						<Wand2 className="mt-0.5 h-5 w-5 text-neutral-500" aria-hidden="true" />
 						<div className="min-w-0 flex-1 space-y-3">
@@ -259,7 +315,7 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 			</div>
 
 			{displayedResume ? (
-				<div className="relative flex flex-col gap-3 rounded-md border border-neutral-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+				<div className="relative flex flex-col gap-3 rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm sm:flex-row sm:items-center sm:justify-between">
 					<div className="flex min-w-0 items-center gap-3">
 						<span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-neutral-700">
 							<FileText className="h-5 w-5" aria-hidden="true" />

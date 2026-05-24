@@ -34,6 +34,7 @@ const OpportunityBrowseCard = memo(({
   opportunity,
   isUserAuthenticated,
   showRecommendationInsights = false,
+  returnTab = 'explore',
 }) => {
   const location = useLocation();
   const viewModel = buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated);
@@ -46,9 +47,16 @@ const OpportunityBrowseCard = memo(({
       viewModel.languagePreview.length > 0
   );
   const hasSkillPreview = viewModel.skillsPreview.length > 0;
+  const detailState = {
+    from: location,
+    returnTab,
+    scrollY: typeof window !== 'undefined' ? window.scrollY : 0,
+    opportunityId: opportunity?.id ?? null,
+  };
 
   return (
     <article
+      id={opportunity?.id ? `opportunity-card-${opportunity.id}` : undefined}
       className={[
         'rounded-md border bg-white p-5 shadow-sm transition-shadow hover:shadow-md',
         recommendation ? 'border-blue-200' : 'border-neutral-200',
@@ -81,7 +89,7 @@ const OpportunityBrowseCard = memo(({
 
               <Link
                 to={`/opportunities/${opportunity.id}`}
-                state={{ from: location }}
+                state={detailState}
                 className="line-clamp-2 text-lg font-semibold leading-tight text-neutral-950 hover:text-blue-700"
               >
                 {viewModel.title}
@@ -91,7 +99,7 @@ const OpportunityBrowseCard = memo(({
             <div className="hidden shrink-0 flex-col items-end gap-2 sm:flex">
               <RecommendationMatchBadge recommendation={recommendation} />
               <Button asChild size="sm" className="bg-neutral-950 text-white hover:bg-neutral-800">
-                <Link to={`/opportunities/${opportunity.id}`} state={{ from: location }}>
+                <Link to={`/opportunities/${opportunity.id}`} state={detailState}>
                   View details
                 </Link>
               </Button>
@@ -182,7 +190,7 @@ const OpportunityBrowseCard = memo(({
             </Button>
           ) : null}
           <Button asChild size="sm" className="bg-neutral-950 text-white hover:bg-neutral-800 sm:hidden">
-            <Link to={`/opportunities/${opportunity.id}`} state={{ from: location }}>
+            <Link to={`/opportunities/${opportunity.id}`} state={detailState}>
               View details
             </Link>
           </Button>

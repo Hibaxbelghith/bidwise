@@ -207,6 +207,28 @@ class ProfileAutocompleteIndexTests(TestCase):
         self.assertEqual(skill_payload["results"][0]["value"], "React")
         self.assertEqual(role_payload["results"][0]["value"], "Frontend Developer")
 
+    def test_role_token_keys_do_not_include_title_context_noise(self):
+        self._create_opportunity(
+            titre="Monteur Video / Video Editor - Agence Marketing (Teletravail)",
+            description="Montage video pour une agence.",
+            skills=[],
+        )
+        self._create_opportunity(
+            titre="Monteur Video / Video Editor - Studio de production (Teletravail)",
+            description="Montage video pour un studio.",
+            skills=[],
+        )
+        build_profile_suggestion_index()
+
+        role = ProfileSuggestion.objects.get(
+            term_type=ProfileSuggestionType.ROLE,
+            canonical="Monteur Video Video Editor",
+        )
+        self.assertNotIn("marketing", role.metadata.get("token_keys", []))
+
+        payload = suggest_profile_terms(ProfileSuggestionType.ROLE, "marketing", limit=5)
+        self.assertEqual(payload["results"], [])
+
     def test_role_autocomplete_supports_tokenized_accent_insensitive_queries(self):
         for canonical, aliases in (
             ("Frontend Developer", ["Développeur Frontend", "Front-End Developer"]),

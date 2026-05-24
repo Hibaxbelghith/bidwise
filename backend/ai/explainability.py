@@ -1,5 +1,10 @@
 from django.conf import settings
 
+from ai.business_families import (
+    families_are_compatible,
+    opportunity_llm_business_families,
+    profile_business_families,
+)
 from .recommendation_service import (
     EMPLOYMENT_KEYWORDS,
     EXPERIENCE_LEVEL_RANGES,
@@ -96,9 +101,14 @@ def _role_reason(features, opportunity):
     title = _normalize_text(_get_value(opportunity, "titre", ""))
     if not title:
         return ""
+    title_tokens = {token for token in title.split() if len(token) >= 3}
     for role in _clean_list(features.get("target_roles")) or _clean_list(features.get("roles")):
         normalized_role = _normalize_text(role)
-        if normalized_role and normalized_role in title:
+        role_tokens = {token for token in normalized_role.split() if len(token) >= 3}
+        if normalized_role and (
+            normalized_role in title
+            or (role_tokens and role_tokens.issubset(title_tokens))
+        ):
             return f"{role} role aligned"
     return ""
 
@@ -112,6 +122,14 @@ def _industry_reason(features, opportunity):
     for key, label in opportunity_industries.items():
         if key in user_interests:
             return f"{label.replace('_', ' ').title()} industry aligned"
+    return ""
+
+
+def _llm_family_reason(features, opportunity):
+    profile_families = profile_business_families(features)
+    opportunity_families = opportunity_llm_business_families(opportunity)
+    if families_are_compatible(profile_families, opportunity_families):
+        return "Related job family signal detected"
     return ""
 
 
@@ -219,6 +237,7 @@ def build_recommendation_explanation(features, opportunity):
     for reason in (
         _role_reason(features, opportunity),
         _industry_reason(features, opportunity),
+        _llm_family_reason(features, opportunity),
     ):
         _append_unique(reasons, reason, limit=MAX_REASONS)
 

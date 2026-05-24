@@ -1,5 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
+import { Button } from '../../../components/ui/button.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import OpportunitiesExperienceTabs from '../components/browse/OpportunitiesExperienceTabs.jsx';
 import OpportunitiesBrowseFilters from '../components/browse/OpportunitiesBrowseFilters.jsx';
@@ -16,6 +18,48 @@ import {
 } from '../utils/recommendationUtils.js';
 
 const VISIBLE_PAGE_BUTTONS = 5;
+const OPPORTUNITY_TAB_STORAGE_KEY = 'bidwise:opportunities-active-tab:v1';
+const RECOMMENDATION_ENGINE_VERSION = 'jobbert-hybrid-v2';
+const VALID_TABS = new Set(['for-you', 'explore']);
+
+const getInitialOpportunityTab = (location) => {
+  const searchTab = new URLSearchParams(location.search).get('tab');
+  if (VALID_TABS.has(searchTab)) return searchTab;
+
+  if (typeof window !== 'undefined') {
+    const storedTab = window.localStorage.getItem(OPPORTUNITY_TAB_STORAGE_KEY);
+    if (VALID_TABS.has(storedTab)) return storedTab;
+  }
+
+  return 'explore';
+};
+
+const buildRecommendationCacheKey = (user) => {
+  const profile = user?.profil || {};
+  const activeResume = profile.active_resume || {};
+  const profileSignals = {
+    engine: RECOMMENDATION_ENGINE_VERSION,
+    user: user?.id || user?.email || 'candidate',
+    roles: profile.target_roles || [],
+    skills: profile.competences || [],
+    rawSkills: profile.raw_skills || [],
+    normalizedSkills: profile.normalized_skills || [],
+    sectors: profile.domaines_interet || profile.industries || profile.interests || [],
+    locations: profile.preferred_locations || [],
+    workModes: profile.work_mode_preferences || [],
+    employmentTypes: profile.employment_types || [],
+    experienceLevel: profile.niveau_experience || '',
+    years: profile.annees_experience ?? '',
+    resume: activeResume.id || activeResume.date_modification || '',
+    resumeParsingStatus: activeResume.parsing_status || '',
+    resumeSemanticStatus: activeResume.semantic_resume_status || '',
+    resumeSemanticUpdated: activeResume.semantic_resume_updated_at || '',
+    resumeSemanticVersion: activeResume.semantic_resume_version || '',
+    updated: profile.date_modification || profile.updated_at || '',
+  };
+
+  return JSON.stringify(profileSignals);
+};
 
 const getVisiblePageNumbers = (currentPage, totalPages) => {
   if (totalPages <= VISIBLE_PAGE_BUTTONS) {
@@ -36,7 +80,10 @@ const getVisiblePageNumbers = (currentPage, totalPages) => {
 
 const OpportunitiesPage = () => {
   const resultsSectionRef = useRef(null);
-  const [activeTab, setActiveTab] = useState('explore');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState(() => getInitialOpportunityTab(location));
+  const [pendingReturnPosition, setPendingReturnPosition] = useState(null);
   const { isAuthenticated, loading: authLoading, user } = useAuth();
   const {
     opportunities,
@@ -72,6 +119,8 @@ const OpportunitiesPage = () => {
   } = useOpportunitiesBrowse();
 
   const isUserAuthenticated = !authLoading && isAuthenticated;
+  const showProfileCompletionPrompt =
+    isUserAuthenticated && user?.profil?.onboarding_completed === false;
   const hasActiveFilters = Boolean(
     searchInput ||
       typeFilter ||
@@ -83,14 +132,16 @@ const OpportunitiesPage = () => {
   );
   const forYouEnabled = isUserAuthenticated && canUseForYouFeed(user);
   const profileRecommendationTier = getProfileRecommendationTier(user);
+  const recommendationCacheKey = useMemo(() => buildRecommendationCacheKey(user), [user]);
   const recommendationsState = useOpportunityRecommendations({
     enabled: forYouEnabled,
-    includeDetails: !hasActiveFilters,
+    includeDetails: true,
     limit: 50,
-    detailLimit: 20,
+    detailLimit: 15,
+    cacheKey: recommendationCacheKey,
   });
   const { refetch: refetchRecommendations } = recommendationsState;
-  const effectiveTab = isUserAuthenticated ? activeTab : 'explore';
+  const effectiveTab = authLoading ? activeTab : isUserAuthenticated ? activeTab : 'explore';
   const opportunitiesWithRecommendations = useMemo(
     () =>
       opportunities.map((opportunity) => {
@@ -101,6 +152,9 @@ const OpportunitiesPage = () => {
       }),
     [opportunities, recommendationsState.recommendationById],
   );
+  const forYouLoading = recommendationsState.loading;
+  const forYouError = recommendationsState.error;
+  const forYouShowFetchingSpinner = recommendationsState.isFetching || recommendationsState.isHydratingDetails;
 
   const countLabel = useMemo(() => {
     if (loading && opportunities.length === 0) return 'Loading opportunities...';
@@ -121,6 +175,63 @@ const OpportunitiesPage = () => {
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+
+  const setOpportunityTab = useCallback(
+    (nextTab) => {
+      const normalizedTab = VALID_TABS.has(nextTab) ? nextTab : 'explore';
+      setActiveTab(normalizedTab);
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(OPPORTUNITY_TAB_STORAGE_KEY, normalizedTab);
+      }
+
+      const params = new URLSearchParams(location.search);
+      params.set('tab', normalizedTab);
+      navigate(
+        {
+          pathname: location.pathname,
+          search: `?${params.toString()}`,
+        },
+        { replace: true, state: location.state },
+      );
+    },
+    [location.pathname, location.search, location.state, navigate],
+  );
+
+  useEffect(() => {
+    const returnTab = location.state?.returnTab;
+    if (returnTab === 'for-you' || returnTab === 'explore') {
+      setOpportunityTab(returnTab);
+    }
+
+    if (returnTab === 'for-you' || returnTab === 'explore') {
+      setPendingReturnPosition({
+        tab: returnTab,
+        opportunityId: location.state?.opportunityId ?? null,
+        scrollY: Number(location.state?.scrollY),
+      });
+    }
+  }, [location.state, setOpportunityTab]);
+
+  useEffect(() => {
+    if (!pendingReturnPosition || typeof window === 'undefined') return;
+    if (pendingReturnPosition.tab !== effectiveTab) return;
+    if (effectiveTab === 'for-you' && forYouLoading) return;
+    if (effectiveTab === 'explore' && loading) return;
+
+    window.requestAnimationFrame(() => {
+      const opportunityId = pendingReturnPosition.opportunityId;
+      const target = opportunityId
+        ? document.getElementById(`opportunity-card-${opportunityId}`)
+        : null;
+      if (target) {
+        target.scrollIntoView({ behavior: 'auto', block: 'center' });
+      } else if (Number.isFinite(pendingReturnPosition.scrollY) && pendingReturnPosition.scrollY >= 0) {
+        window.scrollTo({ top: pendingReturnPosition.scrollY, behavior: 'auto' });
+      }
+      setPendingReturnPosition(null);
+    });
+  }, [effectiveTab, forYouLoading, loading, pendingReturnPosition]);
 
   const scrollToResultsTopAfterFilter = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -145,15 +256,12 @@ const OpportunitiesPage = () => {
 
   const retryForYouFeed = useCallback(() => {
     refetchRecommendations();
-    if (hasActiveFilters) {
-      refetch();
-    }
-  }, [hasActiveFilters, refetch, refetchRecommendations]);
+  }, [refetchRecommendations]);
 
   const showForYouFeed = useCallback(() => {
-    setActiveTab('for-you');
+    setOpportunityTab('for-you');
     scrollToResultsTopAfterFilter();
-  }, [scrollToResultsTopAfterFilter]);
+  }, [scrollToResultsTopAfterFilter, setOpportunityTab]);
 
   const handlePreviousPage = () => {
     setPage((previousPage) => Math.max(1, previousPage - 1));
@@ -196,32 +304,37 @@ const OpportunitiesPage = () => {
 
   return (
     <div className="bidwise-browse-page min-h-screen bg-neutral-50">
-      <OpportunitiesBrowseHeader isUserAuthenticated={isUserAuthenticated} user={user} />
+      <OpportunitiesBrowseHeader
+        isUserAuthenticated={isUserAuthenticated}
+        authLoading={authLoading}
+        user={user}
+      />
 
       <OpportunitiesExperienceTabs
         activeTab={activeTab}
         isUserAuthenticated={isUserAuthenticated}
-        onTabChange={setActiveTab}
+        onTabChange={setOpportunityTab}
       />
 
       {effectiveTab === 'explore' ? <OpportunitiesBrowseFilters {...filterProps} /> : null}
 
       {effectiveTab === 'for-you' ? (
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          
+
           <ForYouFeed
             user={user}
             isUserAuthenticated={isUserAuthenticated}
             authLoading={authLoading}
             profileRecommendationTier={profileRecommendationTier}
             hasActiveFilters={hasActiveFilters}
-            opportunities={opportunities}
-            recommendationById={recommendationsState.recommendationById}
+            recommendations={recommendationsState.recommendations}
             recommendedOpportunities={recommendationsState.recommendedOpportunities}
-            loading={hasActiveFilters ? loading : recommendationsState.loading}
-            showFetchingSpinner={hasActiveFilters ? showFetchingSpinner : false}
-            error={hasActiveFilters ? error || recommendationsState.error : recommendationsState.error}
+            loading={forYouLoading}
+            showFetchingSpinner={forYouShowFetchingSpinner}
+            error={forYouError}
             onResetFilters={resetFiltersAndScroll}
-            onExploreMore={() => setActiveTab('explore')}
+            onExploreMore={() => setOpportunityTab('explore')}
             onRetry={retryForYouFeed}
           />
         </div>

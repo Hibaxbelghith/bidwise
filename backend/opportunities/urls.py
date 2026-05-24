@@ -8,6 +8,7 @@ from .views import (
 from .views_admin import (
     AdminDashboardView,
     AdminLoginView,
+    AdminAuditLogViewSet,
     AdminOpportunityViewSet,
     AdminSchedulerStateView,
     AdminTestView,
@@ -20,6 +21,7 @@ router.register(r'opportunites', OpportuniteViewSet, basename='opportunite-legac
 router.register(r'sources', SourceOpportuniteViewSet, basename='source')
 router.register(r'admin/opportunities', AdminOpportunityViewSet, basename='admin-opportunity')
 router.register(r'admin/users', AdminUserViewSet, basename='admin-user')
+router.register(r'admin/audit-logs', AdminAuditLogViewSet, basename='admin-audit-log')
 
 
 urlpatterns = [

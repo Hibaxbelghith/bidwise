@@ -1,9 +1,11 @@
 import django_filters
-from django.db.models import F, Func, IntegerField, Value
+from django.db.models import F, Func, IntegerField, Q, Value
 from django.db.models.functions import Cast, NullIf
 
 from .models import Opportunite, StatutOpportunite, TypeOpportunite
 from .normalization import normalize_city_name
+from .normalization.industries import industry_alias_keys_for, normalize_industries
+from .normalization.text import normalize_lookup_key
 
 
 class OpportuniteFilterSet(django_filters.FilterSet):
@@ -25,6 +27,8 @@ class OpportuniteFilterSet(django_filters.FilterSet):
     source = django_filters.CharFilter(method="filter_source")
     work_mode = django_filters.CharFilter(method="filter_work_mode")
     experience_level = django_filters.CharFilter(method="filter_experience_level")
+    sector = django_filters.CharFilter(method="filter_sector")
+    industry = django_filters.CharFilter(method="filter_sector")
 
     def filter_location(self, queryset, _name, value):
         return self.filter_ville(queryset, "ville", value)
@@ -92,6 +96,29 @@ class OpportuniteFilterSet(django_filters.FilterSet):
             return queryset.filter(experience_min__gte=5)
         return queryset
 
+    def filter_sector(self, queryset, _name, value):
+        raw_value = str(value or "").strip()
+        lookup_key = normalize_lookup_key(raw_value)
+        if not lookup_key:
+            return queryset
+
+        canonical_values = normalize_industries(raw_value)
+        query = Q(extra_data__company_sector__icontains=raw_value)
+        compact_lookup = lookup_key.replace(" ", "")
+        for part in lookup_key.split():
+            if len(part) >= 3:
+                query |= Q(extra_data__company_sector__icontains=part)
+        for canonical in canonical_values:
+            query |= Q(normalized_industries__contains=[canonical])
+            for alias in industry_alias_keys_for(canonical):
+                compact_alias = alias.replace(" ", "")
+                if compact_alias != compact_lookup:
+                    continue
+                query |= Q(extra_data__company_sector__icontains=alias)
+                query |= Q(extra_data__company_sector__icontains=alias.replace(" ", "-"))
+
+        return queryset.filter(query).distinct()
+
     class Meta:
         model = Opportunite
         fields = [
@@ -106,4 +133,6 @@ class OpportuniteFilterSet(django_filters.FilterSet):
             "source",
             "work_mode",
             "experience_level",
+            "sector",
+            "industry",
         ]

@@ -1,6 +1,7 @@
 import logging
 
-from django.db.models import Count
+from django.conf import settings
+from django.db.models import Count, Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -10,19 +11,32 @@ from applications.models import Candidature, StatutSuiviCandidature
 from opportunities.models import Opportunite, StatutOpportunite, TypeOpportunite
 from users.models import Profil
 from .crossencoder import rerank_ranked_opportunities
-from .embeddings import get_cached_profile_embedding_or_enqueue
+from .embeddings import build_user_embedding_text, get_cached_profile_embedding_or_enqueue
 from .explainability import build_recommendation_explanation
+from .jobbert import (
+    build_precomputed_jobbert_scores,
+    get_or_build_profile_jobbert_embedding,
+    jobbert_enabled,
+    jobbert_model_name,
+)
 from .profile_strength import compute_profile_strength, recommendation_mode_for_profile
 from .quality_gates import (
+    annotate_recommendation_quality,
     build_recommendation_evidence,
     evidence_summary,
     fallback_limit_for_profile,
     filter_ranked_recommendations,
+    passes_recommendation_quality_gate,
     sanitize_recommendation_gaps,
     sanitize_recommendation_reasons,
 )
 from .recommendation_service import get_score_label, rank_opportunities
-from .retrieval import MAX_SEMANTIC_CANDIDATES, retrieve_recommendation_candidates
+from .recommendation_llm import apply_llm_hierarchy_validation_to_ranked
+from .retrieval import (
+    MAX_SEMANTIC_CANDIDATES,
+    RECOMMENDATION_CANDIDATE_FIELDS,
+    retrieve_recommendation_candidates,
+)
 from .user_features import build_user_features
 
 
@@ -31,11 +45,80 @@ logger = logging.getLogger(__name__)
 MAX_RECOMMENDATIONS = 50
 DEFAULT_RECOMMENDATIONS = 10
 MIN_MATCH_SCORE = 0.1
+SHOW_RECENT_FALLBACK_SETTING = "RECOMMENDATION_SHOW_RECENT_FALLBACK"
 BUSINESS_RERANK_CANDIDATES = 50
+JOBBERT_RETRIEVAL_CANDIDATES = 2500
+JOBBERT_RETRIEVAL_RERANK_CANDIDATES = 80
+INTERNSHIP_FALLBACK_MIN_RESULTS = 3
+CONTRACT_ALTERNATIVE_SCORE_LABEL = "Alternative match"
+CONTRACT_ALTERNATIVE_REASON = "Outside preferred contract type"
+CONTRACT_ALTERNATIVE_MODE = "CONTRACT_ALTERNATIVE"
 POSITIVE_APPLICATION_STATUSES = (
     StatutSuiviCandidature.INTERESSEE,
     StatutSuiviCandidature.POSTULEE_EXTERNEMENT,
 )
+
+FAMILY_RETRIEVAL_TERMS = {
+    "administration": (
+        "assistante administrative",
+        "assistant administratif",
+        "administrative",
+        "administratif",
+        "secretaire",
+        "secrétaire",
+        "bureau",
+        "archivage",
+        "classement",
+    ),
+    "hr_administration": (
+        "ressources humaines",
+        "rh",
+        "recrutement",
+        "talent acquisition",
+        "assistante administrative",
+    ),
+    "it_network_support": (
+        "support informatique",
+        "helpdesk",
+        "technicien support",
+        "systemes et reseaux",
+        "systèmes et réseaux",
+        "reseau",
+        "réseau",
+    ),
+    "it_support_network": (
+        "support informatique",
+        "helpdesk",
+        "technicien support",
+        "systemes et reseaux",
+        "systèmes et réseaux",
+        "reseau",
+        "réseau",
+    ),
+    "accounting_finance_audit": (
+        "comptable",
+        "comptabilité",
+        "comptabilite",
+        "audit",
+        "finance",
+        "facturation",
+    ),
+    "accounting_finance": (
+        "comptable",
+        "comptabilité",
+        "comptabilite",
+        "audit",
+        "finance",
+        "facturation",
+    ),
+    "customer_support": (
+        "service client",
+        "customer support",
+        "call center",
+        "centre d'appel",
+        "chargé clientèle",
+    ),
+}
 
 OPPORTUNITY_TYPE_MAP = {
     "JOB": TypeOpportunite.EMPLOI,
@@ -49,6 +132,12 @@ OPPORTUNITY_TYPE_MAP = {
     "PROJECT": TypeOpportunite.PROJET,
     "PROJET": TypeOpportunite.PROJET,
 }
+
+
+def _exclude_internal_benchmark_opportunities(queryset):
+    return queryset.exclude(source_item_url__icontains="benchmark.bidwise.local").exclude(
+        source__nom__icontains="BidWise Recommendation Benchmark"
+    )
 
 
 def _parse_limit(value):
@@ -75,14 +164,21 @@ def _serialize_recommendation(opportunity, *, features=None, profile_strength=No
     business_score = getattr(opportunity, "business_score", None)
     feedback_score = getattr(opportunity, "feedback_score", None)
     base_reasons = getattr(opportunity, "reason", []) or []
+    contract_alternative_reason = getattr(opportunity, "contract_alternative_reason", "")
     explanation = build_recommendation_explanation(features or {}, opportunity)
     evidence = getattr(opportunity, "recommendation_evidence", None) or build_recommendation_evidence(
         features or {},
         opportunity,
         profile_strength,
     )
+    recommendation_debug = getattr(opportunity, "recommendation_debug", {}) or {}
+    jobbert_score = float(recommendation_debug.get("jobbert_score") or 0.0)
+    jobbert_adjustment = float(recommendation_debug.get("jobbert_adjustment") or 0.0)
+    reason_sources = list(explanation["reasons"]) + list(base_reasons)
+    if contract_alternative_reason:
+        reason_sources = [contract_alternative_reason, *reason_sources]
     reasons = []
-    for reason in list(explanation["reasons"]) + list(base_reasons):
+    for reason in reason_sources:
         if reason and reason not in reasons:
             reasons.append(reason)
     reasons = sanitize_recommendation_reasons(reasons, evidence)
@@ -108,7 +204,15 @@ def _serialize_recommendation(opportunity, *, features=None, profile_strength=No
             "recommendation_mode",
             recommendation_mode_for_profile(profile_strength),
         ),
+        "recommendation_bucket": getattr(opportunity, "recommendation_bucket", "RELATED_REVIEW"),
+        "recommendation_bucket_reason": getattr(opportunity, "recommendation_bucket_reason", ""),
+        "llm_hierarchy_validation": recommendation_debug.get("llm_hierarchy_validation", {}),
+        "llm_hierarchy_policy": recommendation_debug.get("llm_hierarchy_policy", {}),
+        "llm_hierarchy_cache_hit": bool(recommendation_debug.get("llm_hierarchy_cache_hit")),
         "evidence_summary": evidence_summary(evidence),
+        "ai_semantic_score": round(jobbert_score, 4),
+        "ai_semantic_adjustment": round(jobbert_adjustment, 6),
+        "ai_semantic_model": "JobBERT" if jobbert_score else "",
         "location": opportunity.ville or "",
         "company": opportunity.organisation_nom or "",
         "type": opportunity.type_opportunite,
@@ -187,6 +291,12 @@ def _fallback_recommendations(
     profile_strength=None,
     recommendation_mode="FALLBACK",
 ):
+    if not getattr(settings, SHOW_RECENT_FALLBACK_SETTING, False):
+        logger.info(
+            "Recommendation recent fallback suppressed; no personalized metier evidence passed quality gates."
+        )
+        return []
+
     def fetch(exclusions=None):
         queryset = (
             Opportunite.objects
@@ -194,6 +304,7 @@ def _fallback_recommendations(
             .annotate(application_count=Count("candidatures"))
             .order_by("-application_count", "-date_publication", "-id")
         )
+        queryset = _exclude_internal_benchmark_opportunities(queryset)
         if opportunity_types:
             queryset = queryset.filter(type_opportunite__in=opportunity_types)
         if exclusions:
@@ -290,6 +401,262 @@ def _safe_fallback_recommendations(
         return []
 
 
+def _normalized_feature_set(features, key):
+    return {
+        str(item or "").strip().upper()
+        for item in (features or {}).get(key, []) or []
+        if str(item or "").strip()
+    }
+
+
+def _is_strict_internship_context(features, opportunity_types):
+    employment_types = _normalized_feature_set(features, "employment_types")
+    selected_types = set(opportunity_types or [])
+    stage_only_or_unspecified = not selected_types or selected_types == {TypeOpportunite.STAGE}
+    return employment_types == {"INTERNSHIP"} and stage_only_or_unspecified
+
+
+def _features_without_contract_preference(features):
+    expanded = dict(features or {})
+    expanded["employment_types"] = []
+    return expanded
+
+
+def _has_direct_metier_evidence(evidence):
+    evidence = evidence if isinstance(evidence, dict) else {}
+    return bool(
+        evidence.get("skill_overlap")
+        or evidence.get("role_match")
+        or evidence.get("title_overlap")
+    )
+
+
+def _compact_terms(values, *, max_terms=16):
+    terms = []
+    seen = set()
+    for value in values or []:
+        term = str(value or "").strip()
+        if len(term) < 3:
+            continue
+        key = term.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        terms.append(term)
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
+def _lexical_retrieval_terms(features):
+    terms = []
+    for key in ("target_roles", "roles"):
+        terms.extend(features.get(key) or [])
+    for family in features.get("profile_business_families") or []:
+        terms.extend(FAMILY_RETRIEVAL_TERMS.get(str(family or "").strip(), ()))
+    return _compact_terms(terms)
+
+
+def _lexical_metier_candidates(queryset, features, limit):
+    terms = _lexical_retrieval_terms(features or {})
+    if not terms:
+        return []
+
+    query = Q()
+    for term in terms:
+        query |= Q(titre__icontains=term)
+        if len(term.split()) >= 2:
+            query |= Q(description__icontains=term)
+
+    if not query:
+        return []
+
+    return list(
+        queryset
+        .filter(query)
+        .only(*RECOMMENDATION_CANDIDATE_FIELDS)
+        .order_by("-date_publication", "-id")[: max(1, int(limit or 1))]
+    )
+
+
+def _merge_candidates(*candidate_groups):
+    merged = []
+    seen = set()
+    for group in candidate_groups:
+        for item in group or []:
+            item_id = getattr(item, "id", None)
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            merged.append(item)
+    return merged
+
+
+def _rank_recommendation_queryset(
+    *,
+    user,
+    profile,
+    user_embedding,
+    queryset,
+    features,
+    profile_state,
+    limit,
+):
+    candidate_limit = MAX_SEMANTIC_CANDIDATES
+    ranking_features = dict(features or {})
+    ranking_features["_profile"] = profile
+    candidates = retrieve_recommendation_candidates(
+        user_embedding,
+        queryset,
+        candidate_limit,
+        embedding_model=getattr(profile, "embedding_model", ""),
+    )
+    lexical_candidates = _lexical_metier_candidates(
+        queryset,
+        ranking_features,
+        max(BUSINESS_RERANK_CANDIDATES * 2, limit * 2),
+    )
+    candidates = _merge_candidates(candidates, lexical_candidates)
+    ranked = rank_opportunities(
+        user_embedding,
+        candidates,
+        features=ranking_features,
+        feedback=_feedback_context(user),
+        mode=profile_state,
+        top_k=min(candidate_limit, max(limit, BUSINESS_RERANK_CANDIDATES)),
+        min_score=MIN_MATCH_SCORE,
+    )
+    return rerank_ranked_opportunities(ranked, features=features)
+
+
+def _rank_jobbert_recommendation_queryset(
+    *,
+    profile,
+    queryset,
+    features,
+    feedback,
+    profile_state,
+    limit,
+):
+    if not jobbert_enabled():
+        return []
+
+    profile_vector = get_or_build_profile_jobbert_embedding(profile, features or {})
+    if not profile_vector:
+        return []
+
+    model_name = jobbert_model_name()
+    candidates = list(
+        queryset
+        .filter(jobbert_embedding_model=model_name)
+        .exclude(jobbert_embedding_vector__isnull=True)
+        .only(*RECOMMENDATION_CANDIDATE_FIELDS)
+        .order_by("-date_publication", "-id")[:JOBBERT_RETRIEVAL_CANDIDATES]
+    )
+    if not candidates:
+        return []
+
+    jobbert_scores = build_precomputed_jobbert_scores(profile_vector, candidates)
+    if not jobbert_scores:
+        return []
+
+    selected = sorted(
+        candidates,
+        key=lambda item: jobbert_scores.get(int(getattr(item, "id", 0) or 0), 0.0),
+        reverse=True,
+    )[: max(limit, JOBBERT_RETRIEVAL_RERANK_CANDIDATES)]
+
+    ranking_features = dict(features or {})
+    ranking_features["_jobbert_profile_vector"] = profile_vector
+    ranked = rank_opportunities(
+        [],
+        selected,
+        features=ranking_features,
+        feedback=feedback,
+        mode="partial" if profile_state != "complete" else "partial",
+        top_k=max(limit, BUSINESS_RERANK_CANDIDATES),
+        min_score=MIN_MATCH_SCORE,
+    )
+    return rerank_ranked_opportunities(ranked, features=features)
+
+
+def _filter_contract_alternatives(ranked, *, features, profile_strength, limit):
+    accepted = []
+    for opportunity in ranked:
+        evidence = build_recommendation_evidence(features, opportunity, profile_strength)
+        if not passes_recommendation_quality_gate(
+            features=features,
+            opportunity=opportunity,
+            profile_strength=profile_strength,
+            evidence=evidence,
+        ):
+            continue
+        if not _has_direct_metier_evidence(evidence):
+            continue
+        annotate_recommendation_quality(
+            opportunity,
+            features=features,
+            profile_strength=profile_strength,
+        )
+        setattr(opportunity, "score_label", CONTRACT_ALTERNATIVE_SCORE_LABEL)
+        setattr(opportunity, "recommendation_mode", CONTRACT_ALTERNATIVE_MODE)
+        setattr(opportunity, "contract_alternative_reason", CONTRACT_ALTERNATIVE_REASON)
+        accepted.append(opportunity)
+        if len(accepted) >= limit:
+            break
+    return accepted
+
+
+def _contract_alternative_queryset(base_queryset, exclude_ids):
+    queryset = base_queryset.filter(type_opportunite__in=[TypeOpportunite.EMPLOI, TypeOpportunite.STAGE])
+    if exclude_ids:
+        queryset = queryset.exclude(id__in=exclude_ids)
+    return queryset
+
+
+def _maybe_expand_internship_recommendations(
+    *,
+    ranked,
+    base_queryset,
+    user,
+    profile,
+    user_embedding,
+    features,
+    profile_state,
+    profile_strength,
+    opportunity_types,
+    limit,
+):
+    if len(ranked) >= min(limit, INTERNSHIP_FALLBACK_MIN_RESULTS):
+        return ranked
+    if not _is_strict_internship_context(features, opportunity_types):
+        return ranked
+
+    remaining = max(0, limit - len(ranked))
+    if remaining <= 0:
+        return ranked
+
+    fallback_features = _features_without_contract_preference(features)
+    exclude_ids = {getattr(item, "id", None) for item in ranked}
+    queryset = _contract_alternative_queryset(base_queryset, exclude_ids)
+    ranked_alternatives = _rank_recommendation_queryset(
+        user=user,
+        profile=profile,
+        user_embedding=user_embedding,
+        queryset=queryset,
+        features=fallback_features,
+        profile_state=profile_state,
+        limit=max(remaining, BUSINESS_RERANK_CANDIDATES),
+    )
+    alternatives = _filter_contract_alternatives(
+        ranked_alternatives,
+        features=fallback_features,
+        profile_strength=profile_strength,
+        limit=remaining,
+    )
+    return [*ranked, *alternatives]
+
+
 def _build_recommendations(request, limit):
     try:
         profile = request.user.profil
@@ -315,39 +682,68 @@ def _build_recommendations(request, limit):
         )
 
     followed_ids = _safe_followed_opportunity_ids(request.user)
-    queryset = (
+    base_queryset = (
         Opportunite.objects
         .filter(statut=StatutOpportunite.ACTIVE)
         .annotate(application_count=Count("candidatures"))
         .order_by("-date_publication", "-id")
     )
+    base_queryset = _exclude_internal_benchmark_opportunities(base_queryset)
     if followed_ids:
-        queryset = queryset.exclude(id__in=followed_ids)
+        base_queryset = base_queryset.exclude(id__in=followed_ids)
 
+    queryset = base_queryset
     if opportunity_types:
         queryset = queryset.filter(type_opportunite__in=opportunity_types)
 
-    candidate_limit = MAX_SEMANTIC_CANDIDATES
-    candidates = retrieve_recommendation_candidates(
-        user_embedding,
-        queryset,
-        candidate_limit,
-        embedding_model=getattr(profile, "embedding_model", ""),
-    )
-    ranked = rank_opportunities(
-        user_embedding,
-        candidates,
+    ranked = _rank_recommendation_queryset(
+        user=request.user,
+        profile=profile,
+        user_embedding=user_embedding,
+        queryset=queryset,
         features=features,
-        feedback=_feedback_context(request.user),
-        mode=profile_state,
-        top_k=min(candidate_limit, max(limit, BUSINESS_RERANK_CANDIDATES)),
-        min_score=MIN_MATCH_SCORE,
+        profile_state=profile_state,
+        limit=limit,
     )
-    ranked = rerank_ranked_opportunities(ranked, features=features)
     ranked = filter_ranked_recommendations(
         ranked,
         features=features,
         profile_strength=profile_strength,
+        limit=limit,
+    )
+    if len(ranked) < min(limit, 3):
+        jobbert_features = dict(features or {})
+        jobbert_features["_profile"] = profile
+        jobbert_ranked = _rank_jobbert_recommendation_queryset(
+            profile=profile,
+            queryset=queryset,
+            features=jobbert_features,
+            feedback=_feedback_context(request.user),
+            profile_state=profile_state,
+            limit=limit,
+        )
+        jobbert_ranked = filter_ranked_recommendations(
+            jobbert_ranked,
+            features=features,
+            profile_strength=profile_strength,
+            limit=limit,
+        )
+        if jobbert_ranked:
+            existing_ids = {getattr(item, "id", None) for item in ranked}
+            ranked = [
+                *ranked,
+                *[item for item in jobbert_ranked if getattr(item, "id", None) not in existing_ids],
+            ][:limit]
+    ranked = _maybe_expand_internship_recommendations(
+        ranked=ranked,
+        base_queryset=base_queryset,
+        user=request.user,
+        profile=profile,
+        user_embedding=user_embedding,
+        features=features,
+        profile_state=profile_state,
+        profile_strength=profile_strength,
+        opportunity_types=opportunity_types,
         limit=limit,
     )
     if not ranked:
@@ -357,6 +753,20 @@ def _build_recommendations(request, limit):
             opportunity_types=opportunity_types,
             profile_strength=profile_strength,
             recommendation_mode=recommendation_mode,
+        )
+
+    try:
+        apply_llm_hierarchy_validation_to_ranked(
+            ranked,
+            features=features,
+            profile_text=build_user_embedding_text(features) or "",
+            profile_strength=profile_strength,
+            top_n=limit,
+        )
+    except Exception:
+        logger.exception(
+            "Recommendation LLM hierarchy validation failed softly for user_id=%s",
+            getattr(request.user, "pk", None),
         )
 
     recommendations = [

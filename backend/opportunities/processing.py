@@ -204,6 +204,14 @@ def process_raw_opportunity(raw_obj: RawOpportunite) -> Opportunite | None:
 
             locked_raw.save(update_fields=update_fields)
 
+            from ai.tasks import enqueue_opportunity_skill_normalization
+
+            transaction.on_commit(
+                lambda opportunity_id=opportunity.pk: enqueue_opportunity_skill_normalization(
+                    opportunity_id
+                )
+            )
+
             # If date/type correction moved this raw snapshot to a different
             # canonical row, archive the previous orphan active row to avoid
             # user-facing duplicates caused by fallback values.

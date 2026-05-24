@@ -8,6 +8,7 @@ import {
 } from '../../features/opportunities/utils/recommendationUtils.js';
 
 const PROFILE_VISITED_KEY = 'bidwise:profile-visited:v1';
+const LOGOUT_REDIRECT_DELAY_MS = 160;
 
 const animationStyles = `
   @keyframes attention-pulse-keyframe {
@@ -32,9 +33,10 @@ const animationStyles = `
 const AppLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, loading: authLoading, user, logout } = useAuth();
   const [showProfileTooltip, setShowProfileTooltip] = useState(false);
   const [hasUserVisitedProfile, setHasUserVisitedProfile] = useState(false);
+  const [isLogoutPending, setIsLogoutPending] = useState(false);
   const tooltipRef = useRef(null);
   const hoverTimeoutRef = useRef(null);
   
@@ -138,9 +140,14 @@ const AppLayout = () => {
     navigate('/profile');
   };
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/');
+  const handleLogout = () => {
+    if (isLogoutPending) return;
+
+    setIsLogoutPending(true);
+    window.setTimeout(async () => {
+      await logout();
+      navigate('/', { replace: true });
+    }, LOGOUT_REDIRECT_DELAY_MS);
   };
 
   // Ne pas afficher la tooltip sur certaines pages
@@ -177,7 +184,7 @@ const AppLayout = () => {
                       <Search className="h-4 w-4" />
                       Browse Opportunities
                     </Link>
-                    {isAuthenticated && (
+                    {!authLoading && isAuthenticated && (
                       <>
                         {!isAdminRoute ? (
                           <Link
@@ -220,7 +227,12 @@ const AppLayout = () => {
                     </Button>
                   ) : (
                     <>
-                      {isAuthenticated ? (
+                      {authLoading ? (
+                        <div
+                          className="h-9 w-24 rounded-md border border-neutral-200 bg-neutral-50"
+                          aria-hidden="true"
+                        />
+                      ) : isAuthenticated ? (
                         <>
                           <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
                             <Bell className="h-5 w-5" aria-hidden="true" />
@@ -289,7 +301,12 @@ const AppLayout = () => {
                               )}
                             </div>
                           )}
-                          <Button className='cursor-pointer' variant="outline" onClick={handleLogout}>
+                          <Button
+                            className="cursor-pointer"
+                            variant="outline"
+                            onClick={handleLogout}
+                            disabled={isLogoutPending}
+                          >
                             <LogOut className="mr-2 h-4 w-4" />
                             Logout
                           </Button>

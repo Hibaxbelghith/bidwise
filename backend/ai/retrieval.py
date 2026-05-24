@@ -28,12 +28,17 @@ RECOMMENDATION_CANDIDATE_FIELDS = (
     "type_opportunite",
     "date_publication",
     "embedding_vector",
+    "jobbert_embedding_vector",
+    "jobbert_embedding_model",
     "skills",
+    "normalized_skills",
     "normalized_industries",
+    "extra_data",
     "normalized_contract_types",
     "normalized_work_mode",
     "contract_type",
     "availability",
+    "salary",
     "experience_min",
     "experience_max",
     "experience_years",
@@ -149,6 +154,10 @@ def retrieve_pgvector_candidates(user_embedding, queryset, limit, *, embedding_m
 
 def retrieve_recommendation_candidates(user_embedding, queryset, limit, *, embedding_model=""):
     if not user_embedding:
+        return _recent_candidates(queryset, limit)
+
+    if not getattr(settings, "OPPORTUNITY_PGVECTOR_ENABLED", True):
+        logger.info("profile recommendation pgvector retrieval disabled; using bounded recent fallback")
         return _recent_candidates(queryset, limit)
 
     try:

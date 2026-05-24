@@ -97,6 +97,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.postgres',
+    'ai.apps.AIConfig',
 
     # Third-party
     'rest_framework',
@@ -312,9 +313,10 @@ OPPORTUNITY_INLINE_EMBEDDINGS_ENABLED = os.getenv(
     "false",
 ).strip().lower() in ("1", "true", "yes", "on")
 
-# Optional pgvector acceleration for similarity search. Keep disabled by default
-# to preserve current Python cosine behavior until rollout is explicitly enabled.
-OPPORTUNITY_PGVECTOR_ENABLED = os.getenv("OPPORTUNITY_PGVECTOR_ENABLED", "false").strip().lower() in (
+# Optional pgvector acceleration for opportunity similarity and AI recommendation
+# retrieval. Enabled by default because production opportunity embeddings are
+# materialized; disable only to force bounded fallback behavior during incidents.
+OPPORTUNITY_PGVECTOR_ENABLED = os.getenv("OPPORTUNITY_PGVECTOR_ENABLED", "true").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -322,8 +324,9 @@ OPPORTUNITY_PGVECTOR_ENABLED = os.getenv("OPPORTUNITY_PGVECTOR_ENABLED", "false"
 )
 OPPORTUNITY_PGVECTOR_DIMENSIONS = int(os.getenv("OPPORTUNITY_PGVECTOR_DIMENSIONS", "384"))
 
-# CrossEncoder reranking
-CROSS_ENCODER_ENABLED = _env_flag("CROSS_ENCODER_ENABLED", True)
+# CrossEncoder reranking. Disabled by default for deadline stability unless the
+# model is explicitly shipped in the local HuggingFace cache.
+CROSS_ENCODER_ENABLED = _env_flag("CROSS_ENCODER_ENABLED", False)
 CROSS_ENCODER_MODEL = os.getenv(
     "CROSS_ENCODER_MODEL",
     "cross-encoder/ms-marco-MiniLM-L-6-v2",
@@ -336,6 +339,51 @@ CROSS_ENCODER_MAX_TEXT_CHARS = int(os.getenv("CROSS_ENCODER_MAX_TEXT_CHARS", "24
 CROSS_ENCODER_REASON_THRESHOLD = float(os.getenv("CROSS_ENCODER_REASON_THRESHOLD", "0.82"))
 CROSS_ENCODER_LOCAL_FILES_ONLY = _env_flag("CROSS_ENCODER_LOCAL_FILES_ONLY", True)
 CROSS_ENCODER_UNAVAILABLE_TTL_SECONDS = int(os.getenv("CROSS_ENCODER_UNAVAILABLE_TTL_SECONDS", "300"))
+
+# Local job-domain semantic reranking. Disabled by default so the product stays
+# fast unless the model has been downloaded and the feature is explicitly tested.
+JOBBERT_RERANK_ENABLED = _env_flag("JOBBERT_RERANK_ENABLED", False)
+JOBBERT_ALLOW_LIVE_FALLBACK = _env_flag("JOBBERT_ALLOW_LIVE_FALLBACK", False)
+JOBBERT_MODEL = os.getenv("JOBBERT_MODEL", "TechWolf/JobBERT-v3")
+JOBBERT_MAX_CANDIDATES = int(os.getenv("JOBBERT_MAX_CANDIDATES", "20"))
+JOBBERT_BATCH_SIZE = int(os.getenv("JOBBERT_BATCH_SIZE", "16"))
+JOBBERT_MAX_TEXT_CHARS = int(os.getenv("JOBBERT_MAX_TEXT_CHARS", "2200"))
+JOBBERT_TIMEOUT_SECONDS = float(os.getenv("JOBBERT_TIMEOUT_SECONDS", "12.0"))
+JOBBERT_HIGH_THRESHOLD = float(os.getenv("JOBBERT_HIGH_THRESHOLD", "0.65"))
+JOBBERT_MEDIUM_THRESHOLD = float(os.getenv("JOBBERT_MEDIUM_THRESHOLD", "0.55"))
+JOBBERT_WEAK_THRESHOLD = float(os.getenv("JOBBERT_WEAK_THRESHOLD", "0.45"))
+JOBBERT_HIGH_BONUS = float(os.getenv("JOBBERT_HIGH_BONUS", "0.08"))
+JOBBERT_MEDIUM_BONUS = float(os.getenv("JOBBERT_MEDIUM_BONUS", "0.04"))
+JOBBERT_WEAK_PENALTY = float(os.getenv("JOBBERT_WEAK_PENALTY", "0.04"))
+
+# Optional request-time LLM hierarchy validation. Disabled by default and limited
+# to top recommendations already selected by JobBERT and deterministic rules.
+RECOMMENDATION_LLM_HIERARCHY_ENABLED = _env_flag("RECOMMENDATION_LLM_HIERARCHY_ENABLED", False)
+RECOMMENDATION_LLM_HIERARCHY_TOP_N = int(os.getenv("RECOMMENDATION_LLM_HIERARCHY_TOP_N", "10"))
+RECOMMENDATION_LLM_HIERARCHY_MIN_SCORE = float(os.getenv("RECOMMENDATION_LLM_HIERARCHY_MIN_SCORE", "0.60"))
+
+# Optional LLM enrichment and validation providers.
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+LLM_ENRICHMENT_ENABLED = _env_flag("LLM_ENRICHMENT_ENABLED", False)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "")
+GEMINI_API_BASE_URL = os.getenv(
+    "GEMINI_API_BASE_URL",
+    "https://generativelanguage.googleapis.com/v1beta",
+).rstrip("/")
+GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20.0"))
+GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.1"))
+GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "4000"))
+LLM_PROVIDER_MAX_RETRIES = int(os.getenv("LLM_PROVIDER_MAX_RETRIES", "1"))
+LLM_PROVIDER_RETRY_DELAY_SECONDS = float(os.getenv("LLM_PROVIDER_RETRY_DELAY_SECONDS", "5.0"))
+LLM_PROVIDER_RETRY_BACKOFF_FACTOR = float(os.getenv("LLM_PROVIDER_RETRY_BACKOFF_FACTOR", "2.0"))
+OLLAMA_FALLBACK_ENABLED = _env_flag("OLLAMA_FALLBACK_ENABLED", False)
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "45.0"))
+OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.0"))
+OLLAMA_MAX_OUTPUT_TOKENS = int(os.getenv("OLLAMA_MAX_OUTPUT_TOKENS", "1200"))
 
 # Celery / scheduled opportunity pipeline
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")

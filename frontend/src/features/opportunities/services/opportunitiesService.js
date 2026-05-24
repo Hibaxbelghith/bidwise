@@ -36,6 +36,8 @@ const normalizeRecommendation = (recommendation) => {
     recommendation_confidence: normalizeString(raw.recommendation_confidence),
     profile_strength: normalizeString(raw.profile_strength),
     recommendation_mode: normalizeString(raw.recommendation_mode),
+    recommendation_bucket: normalizeString(raw.recommendation_bucket),
+    recommendation_bucket_reason: normalizeString(raw.recommendation_bucket_reason),
     evidence_summary: normalizeObject(raw.evidence_summary),
     location: normalizeString(raw.location),
     company: normalizeString(raw.company),
@@ -99,6 +101,8 @@ const normalizeOpportunity = (opportunity) => {
     recommendation_confidence: normalizeString(raw.recommendation_confidence),
     profile_strength: normalizeString(raw.profile_strength),
     recommendation_mode: normalizeString(raw.recommendation_mode),
+    recommendation_bucket: normalizeString(raw.recommendation_bucket),
+    recommendation_bucket_reason: normalizeString(raw.recommendation_bucket_reason),
     evidence_summary: normalizeObject(raw.evidence_summary),
     recommendation: raw.recommendation ? normalizeRecommendation(raw.recommendation) : null,
   };

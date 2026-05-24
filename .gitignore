@@ -21,6 +21,14 @@ dist/
 # IDE
 .vscode/
 .idea/
+.cache/
 
 # Celery beat local state
 backend/celerybeat-schedule
+
+# BidWise AI local/generated artifacts
+backend/backend/
+backend/**/benchmark_reports/
+backend/**/recommendation_benchmark_*.json
+backend/**/recommendation_benchmark_*.md
+backend/**/esco_unmatched_*.csv

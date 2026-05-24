@@ -41,6 +41,8 @@ export type BidWiseProfile = {
   remote_preference?: string | null;
   work_mode_preferences?: string[];
   compensation_expectation?: number | null;
+  compensation_min_expectation?: number | null;
+  compensation_max_expectation?: number | null;
   compensation_currency?: string | null;
   compensation_period?: string | null;
   employment_types?: string[];

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import {
   getOpportunityById,
@@ -7,83 +8,98 @@ import {
 import { mergeRecommendationIntoOpportunity } from '../utils/recommendationUtils.js';
 
 const DEFAULT_RECOMMENDATION_LIMIT = 20;
+const RECOMMENDATION_STALE_TIME_MS = 2 * 60 * 1000;
+const RECOMMENDATION_GC_TIME_MS = 10 * 60 * 1000;
+
+const emptyRecommendations = [];
+const emptyOpportunities = [];
+
+const loadRecommendationDetails = async ({ recommendations, detailLimit }) => {
+  const detailRecommendations = recommendations.slice(
+    0,
+    Math.max(1, Number(detailLimit) || recommendations.length),
+  );
+  const settled = await Promise.allSettled(
+    detailRecommendations.map((recommendation) => getOpportunityById(recommendation.id)),
+  );
+
+  return settled
+    .map((result, index) => {
+      if (result.status !== 'fulfilled' || !result.value) return null;
+      return mergeRecommendationIntoOpportunity(result.value, detailRecommendations[index]);
+    })
+    .filter(Boolean);
+};
+
+const recommendationToPreviewOpportunity = (recommendation) => {
+  if (!recommendation?.id) return null;
+  return {
+    id: recommendation.id,
+    titre: recommendation.title || recommendation.titre || '',
+    organisation_nom: recommendation.company || '',
+    ville: recommendation.location || '',
+    type_opportunite: recommendation.type || '',
+    skills: [],
+    source: {},
+    recommendation,
+  };
+};
 
 export const useOpportunityRecommendations = ({
   enabled = true,
   includeDetails = false,
   limit = DEFAULT_RECOMMENDATION_LIMIT,
   detailLimit = limit,
+  cacheKey = 'default',
 } = {}) => {
-  const [recommendations, setRecommendations] = useState([]);
-  const [recommendedOpportunities, setRecommendedOpportunities] = useState([]);
-  const [loading, setLoading] = useState(Boolean(enabled));
-  const [isHydratingDetails, setIsHydratingDetails] = useState(false);
-  const [error, setError] = useState('');
-  const [reloadToken, setReloadToken] = useState(0);
+  const recommendationsQueryKey = useMemo(
+    () => ['opportunity-recommendations', cacheKey, limit],
+    [cacheKey, limit],
+  );
 
-  useEffect(() => {
-    let isCancelled = false;
+  const recommendationsQuery = useQuery({
+    queryKey: recommendationsQueryKey,
+    queryFn: () => listOpportunityRecommendations({ limit }),
+    enabled,
+    staleTime: RECOMMENDATION_STALE_TIME_MS,
+    gcTime: RECOMMENDATION_GC_TIME_MS,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
-    if (!enabled) {
-      setRecommendations([]);
-      setRecommendedOpportunities([]);
-      setLoading(false);
-      setIsHydratingDetails(false);
-      setError('');
-      return undefined;
-    }
+  const recommendations = recommendationsQuery.data || emptyRecommendations;
+  const detailsQuery = useQuery({
+    queryKey: ['opportunity-recommendation-details', cacheKey, detailLimit, recommendations.map((item) => item.id).join(',')],
+    queryFn: () => loadRecommendationDetails({ recommendations, detailLimit }),
+    enabled: enabled && includeDetails && recommendations.length > 0,
+    staleTime: RECOMMENDATION_STALE_TIME_MS,
+    gcTime: RECOMMENDATION_GC_TIME_MS,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
-    const fetchRecommendations = async () => {
-      try {
-        setLoading(true);
-        setError('');
-
-        const data = await listOpportunityRecommendations({ limit });
-        if (isCancelled) return;
-
-        setRecommendations(data);
-
-        if (!includeDetails || data.length === 0) {
-          setRecommendedOpportunities([]);
-          return;
-        }
-
-        setIsHydratingDetails(true);
-        const detailRecommendations = data.slice(0, Math.max(1, Number(detailLimit) || limit));
-        const settled = await Promise.allSettled(
-          detailRecommendations.map((recommendation) => getOpportunityById(recommendation.id)),
-        );
-        if (isCancelled) return;
-
-        const nextOpportunities = settled
-          .map((result, index) => {
-            if (result.status !== 'fulfilled' || !result.value) return null;
-            return mergeRecommendationIntoOpportunity(result.value, detailRecommendations[index]);
-          })
-          .filter(Boolean);
-
-        setRecommendedOpportunities(nextOpportunities);
-      } catch (err) {
-        if (isCancelled) return;
-        const message =
-          err?.response?.data?.detail ||
-          'Unable to load AI recommendations right now.';
-        setError(message);
-        setRecommendations([]);
-        setRecommendedOpportunities([]);
-      } finally {
-        if (!isCancelled) {
-          setLoading(false);
-          setIsHydratingDetails(false);
-        }
+  const hydratedOpportunities = detailsQuery.data || emptyOpportunities;
+  const hydratedById = useMemo(() => {
+    const map = new Map();
+    hydratedOpportunities.forEach((opportunity) => {
+      if (opportunity?.id != null) {
+        map.set(String(opportunity.id), opportunity);
       }
-    };
-
-    fetchRecommendations();
-    return () => {
-      isCancelled = true;
-    };
-  }, [detailLimit, enabled, includeDetails, limit, reloadToken]);
+    });
+    return map;
+  }, [hydratedOpportunities]);
+  const recommendedOpportunities = useMemo(
+    () =>
+      recommendations
+        .map((recommendation) => (
+          hydratedById.get(String(recommendation?.id)) ||
+          recommendationToPreviewOpportunity(recommendation)
+        ))
+        .filter(Boolean),
+    [hydratedById, recommendations],
+  );
 
   const recommendationById = useMemo(() => {
     const map = new Map();
@@ -95,15 +111,26 @@ export const useOpportunityRecommendations = ({
     return map;
   }, [recommendations]);
 
-  const refetch = useCallback(() => setReloadToken((value) => value + 1), []);
+  const refetch = useCallback(() => {
+    recommendationsQuery.refetch();
+    if (includeDetails) {
+      detailsQuery.refetch();
+    }
+  }, [detailsQuery, includeDetails, recommendationsQuery]);
 
   return {
     recommendations,
     recommendationById,
     recommendedOpportunities,
-    loading,
-    isHydratingDetails,
-    error,
+    loading: enabled && recommendationsQuery.isLoading,
+    isFetching: enabled && (recommendationsQuery.isFetching || detailsQuery.isFetching),
+    isHydratingDetails: enabled && includeDetails && detailsQuery.isFetching && recommendations.length > 0,
+    error:
+      recommendationsQuery.error?.response?.data?.detail ||
+      recommendationsQuery.error?.message ||
+      detailsQuery.error?.response?.data?.detail ||
+      detailsQuery.error?.message ||
+      '',
     refetch,
   };
 };

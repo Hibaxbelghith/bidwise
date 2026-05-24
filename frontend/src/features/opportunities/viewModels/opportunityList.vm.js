@@ -18,8 +18,18 @@ const WORK_MODE_LABELS = {
   ON_SITE: 'On site',
 };
 
+const isBenchmarkSource = (opportunity) => {
+  const sourceName = String(opportunity?.source?.nom || '').trim().toLowerCase();
+  const sourceUrl = String(opportunity?.source_item_url || '').trim().toLowerCase();
+  return (
+    sourceName.includes('bidwise recommendation benchmark') ||
+    sourceUrl.includes('benchmark.bidwise.local')
+  );
+};
+
 export const buildOpportunityBrowseCardViewModel = (opportunity, isUserAuthenticated) => {
   const organizationLabel = formatOrganizationLabel(opportunity);
+  const hideSource = isBenchmarkSource(opportunity);
 
   return {
     title: opportunity?.titre || 'Untitled opportunity',
@@ -39,7 +49,7 @@ export const buildOpportunityBrowseCardViewModel = (opportunity, isUserAuthentic
     experienceLabel: formatExperienceLabel(opportunity),
     languagePreview: getLanguagePreview(opportunity, 2),
     skillsPreview: (opportunity?.skills || []).filter(Boolean).slice(0, 6),
-    sourceLabel: String(opportunity?.source?.nom || '').trim(),
+    sourceLabel: hideSource ? '' : String(opportunity?.source?.nom || '').trim(),
     companyLogo: getCompanyLogoAsset(opportunity),
     descriptionPreview: buildDescriptionPreview(opportunity),
     aiHint: getCardAiHint(opportunity, isUserAuthenticated),

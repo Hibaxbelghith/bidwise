@@ -42,10 +42,50 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+const isAdminAuthEndpoint = (url = '') =>
+  url.includes('/auth/refresh/') || url.includes('/admin/login/');
+
+const refreshAdminAccessToken = async () => {
+  const refreshToken = getAdminRefreshToken();
+
+  if (!refreshToken) {
+    throw new Error('No admin refresh token available');
+  }
+
+  const { data } = await axios.post(`${API_BASE_URL}/auth/refresh/`, {
+    refresh: refreshToken,
+  });
+  const newAccessToken = data.access;
+  saveAdminTokens(newAccessToken, data.refresh || refreshToken);
+  return newAccessToken;
+};
+
 adminApi.interceptors.request.use(
-  (config) => {
-    const token = getAdminAccessToken();
-    if (token) {
+  async (config) => {
+    let token = getAdminAccessToken();
+    const shouldAttachAuth = !isAdminAuthEndpoint(config.url || '');
+
+    if (shouldAttachAuth && !token && getAdminRefreshToken()) {
+      if (isRefreshing) {
+        token = await new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        });
+      } else {
+        isRefreshing = true;
+        try {
+          token = await refreshAdminAccessToken();
+          processQueue(null, token);
+        } catch (refreshError) {
+          processQueue(refreshError, null);
+          removeAdminTokens();
+          throw refreshError;
+        } finally {
+          isRefreshing = false;
+        }
+      }
+    }
+
+    if (shouldAttachAuth && token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -62,8 +102,7 @@ adminApi.interceptors.response.use(
       error.response?.status === 401 &&
       originalRequest &&
       !originalRequest._retry &&
-      !originalRequest.url?.includes('/auth/refresh/') &&
-      !originalRequest.url?.includes('/admin/login/')
+      !isAdminAuthEndpoint(originalRequest.url || '')
     ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -87,11 +126,7 @@ adminApi.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh/`, {
-          refresh: refreshToken,
-        });
-        const newAccessToken = data.access;
-        saveAdminTokens(newAccessToken, data.refresh || refreshToken);
+        const newAccessToken = await refreshAdminAccessToken();
         processQueue(null, newAccessToken);
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return adminApi(originalRequest);

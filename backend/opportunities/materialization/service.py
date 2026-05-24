@@ -6,6 +6,7 @@ from typing import Any
 
 from django.db import transaction
 
+from ai.esco_skill_storage import clean_skill_storage_list
 from opportunities.models import Opportunite, StatutOpportunite, TypeOpportunite
 from opportunities.normalization.employment import (
     SCHEDULE_UNSPECIFIED,
@@ -99,6 +100,21 @@ def _merge_unique_list(existing: Any, incoming: Any) -> list[str]:
         seen.add(key)
         merged.append(item)
     return merged
+
+
+def _clear_skill_normalization_state(opportunity: Opportunite, update_fields: list[str]) -> None:
+    if getattr(opportunity, "normalized_skills", []) != []:
+        opportunity.normalized_skills = []
+        update_fields.append("normalized_skills")
+    if getattr(opportunity, "skills_normalization_hash", "") != "":
+        opportunity.skills_normalization_hash = ""
+        update_fields.append("skills_normalization_hash")
+    if getattr(opportunity, "skills_normalization_updated_at", None) is not None:
+        opportunity.skills_normalization_updated_at = None
+        update_fields.append("skills_normalization_updated_at")
+    if getattr(opportunity, "skills_normalization_error", "") != "":
+        opportunity.skills_normalization_error = ""
+        update_fields.append("skills_normalization_error")
 
 
 def _build_normalized_employment_fields(
@@ -444,6 +460,14 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
         opportunity.skills = merged_skills
         update_fields.append("skills")
 
+    merged_raw_skills = clean_skill_storage_list(
+        [*list(getattr(opportunity, "raw_skills", []) or []), *list(defaults.get("raw_skills", []) or [])]
+    )
+    if merged_raw_skills != clean_skill_storage_list(getattr(opportunity, "raw_skills", [])):
+        opportunity.raw_skills = merged_raw_skills
+        update_fields.append("raw_skills")
+        _clear_skill_normalization_state(opportunity, update_fields)
+
     merged_languages = _merge_unique_list(getattr(opportunity, "languages", []), defaults.get("languages", []))
     if merged_languages != _clean_optional_list(getattr(opportunity, "languages", [])):
         opportunity.languages = merged_languages
@@ -775,6 +799,11 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         "salary": salary,
         "experience_years": legacy_experience_years,
         "skills": skills,
+        "raw_skills": clean_skill_storage_list(skills),
+        "normalized_skills": [],
+        "skills_normalization_hash": "",
+        "skills_normalization_updated_at": None,
+        "skills_normalization_error": "",
         "normalized_industries": normalized_industries,
         "languages": languages,
         "languages_fallback": languages_fallback,

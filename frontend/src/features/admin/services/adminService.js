@@ -1,6 +1,11 @@
 import adminApi from '../../../lib/adminApi.js';
 
-export const getDashboard = () => adminApi.get('/admin/dashboard/');
+export const getDashboard = ({ view } = {}) => {
+  const params = {};
+  if (view) params.view = view;
+
+  return adminApi.get('/admin/dashboard/', { params });
+};
 
 export const getOpportunities = ({ page, search, source, signal } = {}) => {
   const params = { page };

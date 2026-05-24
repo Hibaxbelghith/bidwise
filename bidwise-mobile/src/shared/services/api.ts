@@ -113,7 +113,7 @@ api.interceptors.response.use(
       if (!refresh) throw new Error('No refresh token');
 
       const { data } = await axios.post(`${API_BASE_URL}/auth/refresh/`, { refresh });
-      await setTokens(data.access, refresh);
+      await setTokens(data.access, data.refresh || refresh);
       processQueue(null, data.access);
 
       originalRequest.headers.Authorization = `Bearer ${data.access}`;

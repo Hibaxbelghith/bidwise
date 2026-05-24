@@ -96,6 +96,71 @@ class RecommendationExplainabilityTests(SimpleTestCase):
 
         self.assertEqual(len(payload["reasons"]), len(set(payload["reasons"])))
 
+    def test_preference_reasons_are_suppressed_without_metier_evidence(self):
+        opportunity = SimpleNamespace(
+            id=1,
+            titre="Digital Marketing Intern",
+            skills=["Social Media"],
+            availability="Remote",
+            contract_type="Stage",
+            ville="Tunis",
+            semantic_score=0.35,
+            business_score=0.2,
+            feedback_score=0.0,
+            match_score=0.30,
+            reason=["Remote match", "Location match: Tunis"],
+            organisation_nom="Acme",
+            type_opportunite="STAGE",
+        )
+
+        payload = _serialize_recommendation(
+            opportunity,
+            features={
+                "skills": ["React", "JavaScript"],
+                "target_roles": ["Frontend Developer"],
+                "work_modes": ["REMOTE"],
+                "employment_types": ["INTERNSHIP"],
+                "locations": ["Tunis"],
+            },
+        )
+
+        self.assertNotIn("Remote work preference aligned", payload["reasons"])
+        self.assertNotIn("Remote match", payload["reasons"])
+        self.assertNotIn("Internship contract aligned", payload["reasons"])
+        self.assertFalse(any(reason.startswith("Location aligned") for reason in payload["reasons"]))
+        self.assertFalse(any(reason.startswith("Location match") for reason in payload["reasons"]))
+
+    def test_strong_metier_explanations_are_preserved(self):
+        opportunity = SimpleNamespace(
+            id=1,
+            titre="Remote Frontend Developer",
+            skills=["React"],
+            availability="Remote",
+            contract_type="Stage",
+            ville="Tunis",
+            semantic_score=0.70,
+            business_score=0.2,
+            feedback_score=0.0,
+            match_score=0.72,
+            reason=[],
+            organisation_nom="Acme",
+            type_opportunite="STAGE",
+        )
+
+        payload = _serialize_recommendation(
+            opportunity,
+            features={
+                "skills": ["React", "JavaScript"],
+                "target_roles": ["Frontend Developer"],
+                "work_modes": ["REMOTE"],
+                "employment_types": ["INTERNSHIP"],
+                "locations": ["Tunis"],
+            },
+        )
+
+        self.assertIn("Strong React alignment", payload["reasons"])
+        self.assertIn("Remote work preference aligned", payload["reasons"])
+
     def test_deterministic_ordering(self):
         opportunity = SimpleNamespace(
             titre="Remote Backend Developer",

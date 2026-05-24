@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.core.management import call_command
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from ai.recommendation_benchmark.dataset import (
     BenchmarkDataset,
@@ -20,6 +20,7 @@ from ai.recommendation_benchmark.dataset import (
     load_benchmark_dataset,
 )
 from ai.recommendation_benchmark.fixtures import FixtureState
+from ai.recommendation_benchmark.fixtures import DjangoBenchmarkFixtureBuilder
 from ai.recommendation_benchmark.fixtures import _has_valid_vector_payload
 from ai.recommendation_benchmark.metrics import (
     compute_cv_uplift,
@@ -33,6 +34,7 @@ from ai.recommendation_benchmark.runner import (
     RecommendationBenchmarkRunner,
     format_console_report,
 )
+from opportunities.models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
 
 
 def recommendation(title, *, confidence="MEDIUM", score=0.7, semantic_score=0.7):
@@ -80,6 +82,77 @@ class RecommendationBenchmarkDatasetTests(SimpleTestCase):
             self.assertIn(expected_category, categories)
 
         self.assertTrue(any(opportunity.confusing for opportunity in dataset.opportunities))
+
+
+@override_settings(OPPORTUNITY_PGVECTOR_DIMENSIONS=384)
+class RecommendationBenchmarkFixtureTests(TestCase):
+    def test_fixture_update_preserves_existing_llm_enrichment(self):
+        source = SourceOpportunite.objects.create(
+            nom="BidWise Recommendation Benchmark",
+            url="https://benchmark.bidwise.local/recommendations",
+            type_source="SITE_EMPLOI",
+        )
+        source_item_url = "https://benchmark.bidwise.local/recommendations/hybrid-accounting"
+        Opportunite.objects.create(
+            source=source,
+            source_item_url=source_item_url,
+            titre="Old title",
+            description="Old description",
+            organisation_nom="OldCo",
+            ville="Tunis",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.ACTIVE,
+            date_publication=datetime.now(dt_timezone.utc).date(),
+            extra_data={
+                "llm_enrichment": {
+                    "confidence": 0.9,
+                    "family_confidence": 0.95,
+                    "business_families": ["accounting_finance_audit"],
+                },
+                "custom_key": "keep-me",
+            },
+        )
+        dataset = BenchmarkDataset(
+            profiles=(),
+            resumes={},
+            opportunities=(
+                BenchmarkOpportunity(
+                    opportunity_id="hybrid-accounting",
+                    title="Python Accountant Tool Specialist",
+                    company="Finance Automation",
+                    location="Sfax",
+                    description="Python accounting automation role.",
+                    skills=("Python", "Accounting", "Excel"),
+                    industries=("accounting",),
+                    language="EN",
+                    type_opportunite=TypeOpportunite.EMPLOI,
+                    contract_type="CDI",
+                    availability="Full time",
+                    experience_min=1,
+                    experience_max=3,
+                    confusing=True,
+                ),
+            ),
+            expected={},
+            report_dir=Path("benchmark_reports"),
+            default_top_k=10,
+            precision_good_threshold=0.8,
+            precision_medium_threshold=0.5,
+        )
+
+        builder = DjangoBenchmarkFixtureBuilder()
+        builder._ensure_opportunities(dataset, rebuild_embeddings=False, batch_size=1)
+
+        opportunity = Opportunite.objects.get(source=source, source_item_url=source_item_url)
+        self.assertEqual(opportunity.titre, "Python Accountant Tool Specialist")
+        self.assertEqual(
+            opportunity.extra_data["llm_enrichment"]["business_families"],
+            ["accounting_finance_audit"],
+        )
+        self.assertEqual(opportunity.extra_data["custom_key"], "keep-me")
+        self.assertTrue(opportunity.extra_data["benchmark"])
+        self.assertEqual(opportunity.extra_data["benchmark_opportunity_id"], "hybrid-accounting")
+        self.assertTrue(opportunity.extra_data["confusing"])
 
 
 class RecommendationBenchmarkMetricTests(SimpleTestCase):

@@ -1,0 +1,5 @@
+alias,target_esco_uri,language,source,status,notes
+AUTOCAD,http://data.europa.eu/esco/skill/a2b5dcf3-5b6a-453d-876c-cff540c0faf1,en,manual_review_seed_v2,ACTIVE,Reviewed alias for CAD software in opportunity skills.
+Hôtellerie,http://data.europa.eu/esco/skill/c76067d8-084b-4ca1-bc21-223a5caf7eea,fr,manual_review_seed_v2,ACTIVE,Reviewed hospitality-domain alias mapped to hotel operations.
+Maintenance Industrielle,http://data.europa.eu/esco/skill/3e4cdaee-740c-4754-9135-466362bbd22e,fr,manual_review_seed_v2,ACTIVE,Reviewed industrial maintenance alias mapped to maintain industrial equipment.
+controle qualite,http://data.europa.eu/esco/skill/41a3240f-58ba-44e2-a688-edeb21ea5c16,fr,manual_review_seed_v2,ACTIVE,Reviewed quality-control phrase mapped to conduct quality control analysis.

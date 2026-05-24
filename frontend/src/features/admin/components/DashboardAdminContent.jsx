@@ -7,6 +7,7 @@ import {
   AlertsView,
   AnalyticsView,
   ExecutiveDashboardView,
+  GlobalPlatformView,
   PipelineHealthView,
   SchedulerIntelligenceView,
   SourcesMonitoringView,
@@ -14,7 +15,8 @@ import {
 import { emptyDashboard } from '../hooks/useDashboard.js';
 
 const viewTitles = {
-  dashboard: 'Dashboard',
+  dashboard: 'Vue globale',
+  operations: 'Operations Monitoring',
   sources: 'Sources Monitoring',
   scheduler: 'Scheduler Intelligence',
   pipeline: 'Pipeline Health',
@@ -73,8 +75,7 @@ const DashboardAdminContent = ({ dashboard, isLoading, error }) => {
         return <AlertsView alerts={monitoringAlerts} />;
       case 'analytics':
         return <AnalyticsView dashboard={dashboard} />;
-      case 'dashboard':
-      default:
+      case 'operations':
         return (
           <ExecutiveDashboardView
             dashboard={dashboard}
@@ -84,6 +85,9 @@ const DashboardAdminContent = ({ dashboard, isLoading, error }) => {
             alerts={monitoringAlerts}
           />
         );
+      case 'dashboard':
+      default:
+        return <GlobalPlatformView dashboard={dashboard} />;
     }
   };
 
@@ -95,15 +99,7 @@ const DashboardAdminContent = ({ dashboard, isLoading, error }) => {
             <h1 id="admin-dashboard-heading" className="text-3xl font-bold text-neutral-900">
               {viewTitles[activeView]}
             </h1>
-            <Badge variant="secondary" className="gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-              Monitoring
-            </Badge>
-            {dashboard?.celery?.status === 'degraded' ? (
-              <Badge variant="outline" className="border-yellow-200 bg-yellow-50 text-yellow-700">
-                Worker unavailable
-              </Badge>
-            ) : null}
+
           </div>
         </div>
 

@@ -13,10 +13,14 @@ const INITIAL_LOADING_MIN_MS = 900;
 const REFRESH_LOADING_MIN_MS = 500;
 
 const normalizeSources = (data) => {
-  if (!Array.isArray(data)) return [];
+  const sourceItems = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.results)
+      ? data.results
+      : [];
 
   const seenIds = new Set();
-  return data.filter((item) => {
+  return sourceItems.filter((item) => {
     const id = item?.id;
     const name = item?.nom;
     if (id == null || !name || seenIds.has(id)) return false;
@@ -68,7 +72,6 @@ export const useOpportunities = () => {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const latestOpportunitiesRequest = useRef(0);
   const sectionRef = useRef(null);
-  const didMountRef = useRef(false);
   const debouncedSearch = useDebouncedValue(searchDraft.trim(), SEARCH_DEBOUNCE_MS);
   const { totalPages, pageRangeLabel, visiblePageNumbers } = usePagination({
     page,
@@ -184,18 +187,6 @@ export const useOpportunities = () => {
       controller.abort();
     };
   }, []);
-
-  useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
-
-    sectionRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
-  }, [page]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();

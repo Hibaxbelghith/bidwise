@@ -1,4 +1,4 @@
-import { Check, Sparkles } from 'lucide-react';
+import { Check, Sparkles, ThumbsUp } from 'lucide-react';
 
 import { buildRecommendationViewModel } from '../../utils/recommendationUtils.js';
 import RecommendationMatchBadge from './RecommendationMatchBadge.jsx';
@@ -33,14 +33,23 @@ export const RecommendationInsightSkeleton = ({ className = '' }) => (
 const RecommendationInsightPanel = ({
   recommendation,
   compact = false,
+  context = 'feed',
   className = '',
 }) => {
   const viewModel = buildRecommendationViewModel(recommendation, {
-    reasonLimit: compact ? 3 : 4,
-    gapLimit: compact ? 3 : 4,
+    context,
+    reasonLimit: compact ? 3 : context === 'detail' ? 5 : 4,
+    gapLimit: compact ? 3 : context === 'detail' ? 5 : 4,
   });
 
   if (!viewModel) return null;
+
+  const chipTone = {
+    strong: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    support: 'border-blue-200 bg-blue-50 text-blue-800',
+    gap: 'border-amber-200 bg-amber-50 text-amber-800',
+    neutral: 'border-neutral-200 bg-neutral-50 text-neutral-700',
+  };
 
   return (
     <section
@@ -63,14 +72,40 @@ const RecommendationInsightPanel = ({
             <Sparkles className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-neutral-950">Recommendation match</p>
-            <p className="mt-0.5 text-sm text-neutral-600">
-              {viewModel.fitLabel} based on your profile and resume signals.
-            </p>
+            <p className="text-sm font-semibold text-neutral-950">{viewModel.panelTitle}</p>
+            <p className="mt-0.5 text-sm text-neutral-600">{viewModel.matchSummary}</p>
           </div>
         </div>
         <RecommendationMatchBadge recommendation={recommendation} showConfidence />
       </div>
+
+      {viewModel.signalChips.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {viewModel.signalChips.map((chip) => (
+            <span
+              key={chip.key}
+              className={[
+                'inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold',
+                chipTone[chip.tone] || chipTone.neutral,
+              ].join(' ')}
+            >
+              {chip.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {context === 'detail' ? (
+        <div className="flex items-start gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-neutral-700">
+            <ThumbsUp className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-neutral-950">{viewModel.verdictLabel}</p>
+            <p className="mt-0.5 text-sm leading-5 text-neutral-600">{viewModel.verdictDescription}</p>
+          </div>
+        </div>
+      ) : null}
 
       {viewModel.visibleReasons.length > 0 ? (
         <div className={['rounded-md p-3', viewModel.tone.surface].join(' ')}>
@@ -88,7 +123,7 @@ const RecommendationInsightPanel = ({
 
       {viewModel.hasGaps ? (
         <div className="flex flex-col gap-2 border-t border-neutral-100 pt-3 sm:flex-row sm:items-center">
-          <p className="text-xs font-semibold uppercase text-neutral-600">Missing</p>
+          <p className="text-xs font-semibold uppercase text-neutral-600">Review before applying</p>
           <div className="flex flex-wrap gap-2">
             {viewModel.gaps.map((gap) => (
               <span

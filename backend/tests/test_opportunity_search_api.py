@@ -97,6 +97,31 @@ class OpportunitySearchApiTests(APITestCase):
         self.assertEqual(by_id.status_code, status.HTTP_200_OK)
         self.assertEqual({item["titre"] for item in by_id.data["results"]}, {"LinkedIn role"})
 
+    def test_sector_filter_matches_normalized_industry_and_company_sector_metadata(self):
+        finance = self.create_opp(
+            titre="Finance Backend",
+            normalized_industries=["FINTECH"],
+            extra_data={"company_sector": "Banque, assurance"},
+        )
+        agro = self.create_opp(
+            titre="Data Analyst Marketing",
+            normalized_industries=[],
+            extra_data={"company_sector": "agriculture / agro-alimentaire / environnement"},
+        )
+        self.create_opp(
+            titre="Generic Frontend",
+            normalized_industries=[],
+            extra_data={"company_sector": "Informatique"},
+        )
+
+        finance_response = self.client.get("/api/opportunities/", {"sector": "finance", "page_size": 10})
+        agro_response = self.client.get("/api/opportunities/", {"industry": "agroalimentaire", "page_size": 10})
+
+        self.assertEqual(finance_response.status_code, status.HTTP_200_OK)
+        self.assertEqual({item["id"] for item in finance_response.data["results"]}, {finance.id})
+        self.assertEqual(agro_response.status_code, status.HTTP_200_OK)
+        self.assertEqual({item["id"] for item in agro_response.data["results"]}, {agro.id})
+
     def test_trigram_search_handles_partial_and_typo_queries(self):
         self.create_opp(titre="Django Backend Engineer", description="Python APIs")
         self.create_opp(titre="Finance Analyst", description="Spreadsheets and reporting")

@@ -22,6 +22,7 @@ Le périmètre final du sprint couvre :
 - la création automatique de compte
 - la gestion de session JWT
 - l'onboarding candidat en plusieurs étapes
+- les routes protégées candidat, organisation et admin
 - la déconnexion sécurisée
 - la détection de connexion suspecte
 
@@ -78,6 +79,7 @@ Le frontend web repose sur :
 - Axios
 - `AuthContext`
 - `ProtectedRoute`
+- `OrganizationRoute`
 
 ### Mobile
 
@@ -96,8 +98,8 @@ L'application mobile repose sur :
 ### Backend JWT
 
 Le backend délivre :
-- un **access token** valable 15 minutes
-- un **refresh token** valable 1 jour
+- un **access token** valable 30 minutes
+- un **refresh token** valable 14 jours
 
 Configuration active :
 - rotation des refresh tokens activée
@@ -111,6 +113,8 @@ L'implémentation web actuelle est la suivante :
 - rafraîchissement automatique via **intercepteur Axios sur 401**
 - plus de `setInterval` de refresh
 - suppression des tokens au logout ou si le refresh échoue
+- bootstrap d'authentification avec état `loading`, afin d'éviter l'affichage temporaire d'une UI invitée pendant la restauration de session
+- routes organisation protégées par `OrganizationRoute`
 
 ### Mobile
 
@@ -119,6 +123,7 @@ L'implémentation mobile actuelle est la suivante :
 - **refresh token stocké dans SecureStore**
 - rafraîchissement automatique via intercepteur Axios
 - prise en charge correcte de la rotation du refresh token
+- persistance du nouveau refresh token retourné par le backend après rotation
 
 ---
 
@@ -144,6 +149,8 @@ Le système JWT applique :
 - refresh token rotatif
 - blacklist côté serveur au logout
 - routes protégées via `IsAuthenticated`
+- routes organisation limitées aux comptes `organization`
+- routes admin limitées aux comptes administrateurs
 - authentification DRF explicite via `JWTAuthentication`
 
 ### Création de compte
@@ -193,14 +200,16 @@ Autrement dit :
 
 - backend lancé en Docker
 - téléphone Android sur le même réseau local que la machine de développement, ou émulateur Android
-- IP backend correcte dans `bidwise-mobile/src/services/api.ts`
+- URL backend correcte via `EXPO_PUBLIC_API_BASE_URL` ou résolution automatique de l'hôte Expo
 
 ### Point important sur l'URL backend
 
-L'application mobile utilise actuellement une URL backend codée en dur :
-- `http://10.12.0.3:8000/api`
+L'application mobile résout l'URL API depuis :
+- `EXPO_PUBLIC_API_BASE_URL` si la variable est définie
+- l'hôte Expo détecté en développement
+- `10.0.2.2` pour l'émulateur Android
 
-Avant de tester sur un autre réseau ou une autre machine, il faut mettre cette IP à jour.
+Avant un déploiement multi-environnements, il faut conserver cette configuration externalisée et alignée avec `DJANGO_ALLOWED_HOSTS`.
 
 ### Test OTP mobile via Expo Go
 
@@ -276,7 +285,10 @@ Validation déjà réalisée :
 - flow web OTP validé
 - flow web refresh validé
 - flow web logout validé
+- restauration de session web avec état de bootstrap stable validée
+- protection des routes organisation validée
 - flow web Google validé
+- flow mobile refresh avec rotation validé
 - backend Docker lancé sans erreur après correction de la configuration d'environnement
 
 Le guide de test détaillé est disponible dans :
@@ -307,13 +319,13 @@ Donc :
 - **ne pas présenter Sprint 1 comme un système cookie-based**
 - **présenter `HttpOnly cookies` comme une perspective d'évolution Sprint futur / hardening prod**
 
-### 3. Mobile : URL backend à externaliser
+### 3. Mobile : configuration d'URL backend
 
-L'URL API mobile est encore codée en dur et devra être externalisée avant déploiement multi-environnements.
+L'URL API mobile est configurable, mais devra rester explicitement contrôlée par environnement avant déploiement multi-environnements.
 
 En pratique pour la démonstration :
 - il faut conserver un réseau stable entre le téléphone et le backend
-- si l'adresse IP de la machine change, il faut mettre à jour l'URL mobile
+- si l'adresse IP de la machine change, vérifier `EXPO_PUBLIC_API_BASE_URL` ou l'hôte Expo détecté
 - si l'IP change aussi côté backend, `DJANGO_ALLOWED_HOSTS` doit rester aligné puis le conteneur backend doit être recréé
 
 ### 4. Alerte de connexion suspecte

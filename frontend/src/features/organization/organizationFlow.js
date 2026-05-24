@@ -61,7 +61,7 @@ export const validateOrganizationProfileForm = (values) => {
   if (!phone) {
     errors.phone = 'Enter your phone number';
   } else if (!TUNISIA_PHONE_PATTERN.test(phone)) {
-    errors.phone = 'Enter a valid Tunisian phone number starting with +216 followed by 8 digits.';
+    errors.phone = 'Enter a valid Tunisian phone number.';
   }
 
   if (website) {

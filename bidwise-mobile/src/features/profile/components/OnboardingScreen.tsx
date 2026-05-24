@@ -15,12 +15,11 @@ import { useRouter } from 'expo-router';
 
 import ProfileAutocompleteInput from '@/src/features/profile/components/ProfileAutocompleteInput';
 import PreferenceChipGroup from '@/src/features/profile/components/PreferenceChipGroup';
-import SalaryExpectationField from '@/src/features/profile/components/SalaryExpectationField';
 import {
   DEFAULT_COMPENSATION_CURRENCY,
   DEFAULT_COMPENSATION_PERIOD,
   EMPLOYMENT_TYPE_OPTIONS,
-  OPPORTUNITY_TYPE_OPTIONS,
+  ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
   TUNISIAN_LOCATION_OPTIONS,
   WORK_MODE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
@@ -30,16 +29,17 @@ import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 import {
   normalizeLocations,
   normalizeProfilePreferenceData,
-  validateSalaryExpectation,
+  validateSalaryRange,
 } from '@/src/features/profile/utils/profileValidation';
 
 const STEPS = [
   { title: 'Opportunity goals', description: 'Choose what you want BidWise to prioritize.' },
-  { title: 'Location and work mode', description: 'Keep this Tunisia-first, with custom values when needed.' },
-  { title: 'Expected salary', description: 'Tunisia market defaults to TND per month.' },
+  { title: 'Location and work mode', description: 'Location is required for on-site or hybrid work, and optional for remote.' },
+  { title: 'Key skills', description: 'Skills power your AI match score.' },
+  { title: 'Expected salary range', description: 'Optional TND/month range for less brittle matching.' },
   { title: 'Employment type', description: 'Select the contract types that fit your search.' },
   { title: 'Target roles', description: 'Roles must come from suggestions to protect matching quality.' },
-  { title: 'Career signals', description: 'Skills are what you can do. Interests are industries you want.' },
+  { title: 'Career interests', description: 'Industries and interests help tune recommendations.' },
   { title: 'Profile visibility', description: 'Control how recruiters see your profile.' },
 ];
 
@@ -50,6 +50,8 @@ type OnboardingData = {
   preferred_locations: string[];
   work_mode_preferences: string[];
   compensation_expectation: string;
+  compensation_min_expectation: string;
+  compensation_max_expectation: string;
   compensation_currency: string;
   compensation_period: string;
   employment_types: string[];
@@ -64,6 +66,8 @@ const initialData: OnboardingData = {
   preferred_locations: [],
   work_mode_preferences: [],
   compensation_expectation: '',
+  compensation_min_expectation: '',
+  compensation_max_expectation: '',
   compensation_currency: DEFAULT_COMPENSATION_CURRENCY,
   compensation_period: DEFAULT_COMPENSATION_PERIOD,
   employment_types: [],
@@ -92,9 +96,13 @@ export default function OnboardingScreen() {
   const isLast = currentStep === STEPS.length - 1;
   const step = STEPS[currentStep];
 
-  const salaryValidation = useMemo(
-    () => validateSalaryExpectation(data.compensation_expectation, data.compensation_period),
-    [data.compensation_expectation, data.compensation_period],
+  const salaryRangeValidation = useMemo(
+    () => validateSalaryRange(
+      data.compensation_min_expectation,
+      data.compensation_max_expectation,
+      data.compensation_period,
+    ),
+    [data.compensation_min_expectation, data.compensation_max_expectation, data.compensation_period],
   );
 
   const addLocation = (location: string) => {
@@ -115,7 +123,17 @@ export default function OnboardingScreen() {
   };
 
   const validateCurrentStep = () => {
-    if (currentStep === 2 && salaryValidation.error) return salaryValidation.error;
+    if (currentStep === 0 && data.opportunity_types.length === 0) return 'Select at least one opportunity type.';
+    if (currentStep === 1 && data.work_mode_preferences.length === 0) return 'Select at least one work mode.';
+    if (
+      currentStep === 1 &&
+      data.work_mode_preferences.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID') &&
+      data.preferred_locations.length === 0
+    ) {
+      return 'Choose at least one location for on-site or hybrid work.';
+    }
+    if (currentStep === 2 && data.competences.length === 0) return 'Skills power your AI match score.';
+    if (currentStep === 3 && salaryRangeValidation.error) return salaryRangeValidation.error;
     return '';
   };
 
@@ -150,7 +168,9 @@ export default function OnboardingScreen() {
       if (!skipData) {
         Object.assign(payload, {
           ...normalizeProfilePreferenceData(data),
-          compensation_expectation: salaryValidation.value,
+          compensation_expectation: salaryRangeValidation.min ?? salaryRangeValidation.max,
+          compensation_min_expectation: salaryRangeValidation.min,
+          compensation_max_expectation: salaryRangeValidation.max,
           compensation_currency: DEFAULT_COMPENSATION_CURRENCY,
           compensation_period: data.compensation_period || DEFAULT_COMPENSATION_PERIOD,
         });
@@ -188,6 +208,11 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      <Text style={[styles.helperText, { color: muted }]}>
+        {data.work_mode_preferences.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID')
+          ? 'Location is required for on-site or hybrid work.'
+          : 'Location is optional when you are open to remote work.'}
+      </Text>
 
       <View style={styles.quickWrap}>
         {TUNISIAN_LOCATION_OPTIONS.slice(0, 8).map((location) => (
@@ -230,25 +255,80 @@ export default function OnboardingScreen() {
     </View>
   );
 
+  const toggleOpportunityType = (option: (typeof ONBOARDING_OPPORTUNITY_TYPE_OPTIONS)[number]) => {
+    const selected = option.values.every((value) => data.opportunity_types.includes(value));
+    setData((prev) => ({
+      ...prev,
+      opportunity_types: selected
+        ? prev.opportunity_types.filter((value) => !option.values.includes(value))
+        : Array.from(new Set([...prev.opportunity_types, ...option.values])),
+    }));
+  };
+
+  const renderOpportunityStep = () => (
+    <View style={styles.stepBody}>
+      {ONBOARDING_OPPORTUNITY_TYPE_OPTIONS.map((option) => {
+        const selected = option.values.every((value) => data.opportunity_types.includes(value));
+        return (
+          <TouchableOpacity
+            key={option.value}
+            activeOpacity={0.75}
+            onPress={() => toggleOpportunityType(option)}
+            style={[
+              styles.optionCard,
+              {
+                borderColor: selected ? tint : border,
+                backgroundColor: selected ? tint + '12' : card,
+              },
+            ]}
+          >
+            <Text style={[styles.optionTitle, { color: selected ? tint : text }]}>{option.label}</Text>
+            <Text style={[styles.optionDescription, { color: muted }]}>{option.description}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const renderSalaryRangeStep = () => (
+    <View style={styles.stepBody}>
+      <Text style={[styles.label, { color: text }]}>Expected salary range</Text>
+      <View style={styles.inputRow}>
+        <TextInput
+          value={data.compensation_min_expectation}
+          onChangeText={(value) => setData((prev) => ({ ...prev, compensation_min_expectation: value }))}
+          placeholder="Min"
+          placeholderTextColor={muted}
+          keyboardType="number-pad"
+          style={[styles.input, { backgroundColor: card, borderColor: border, color: text }]}
+        />
+        <TextInput
+          value={data.compensation_max_expectation}
+          onChangeText={(value) => setData((prev) => ({ ...prev, compensation_max_expectation: value }))}
+          placeholder="Max"
+          placeholderTextColor={muted}
+          keyboardType="number-pad"
+          style={[styles.input, { backgroundColor: card, borderColor: border, color: text }]}
+        />
+      </View>
+      <Text style={[styles.helperText, { color: muted }]}>TND/month. Optional.</Text>
+    </View>
+  );
+
   const stepRenderers = [
-    () => (
-      <PreferenceChipGroup
-        options={OPPORTUNITY_TYPE_OPTIONS}
-        value={data.opportunity_types}
-        onChange={(value) => setData((prev) => ({ ...prev, opportunity_types: value }))}
-        colors={colors}
-      />
-    ),
+    renderOpportunityStep,
     renderLocationStep,
     () => (
-      <SalaryExpectationField
-        amount={data.compensation_expectation}
-        period={data.compensation_period}
-        onAmountChange={(value) => setData((prev) => ({ ...prev, compensation_expectation: value }))}
-        onPeriodChange={(value) => setData((prev) => ({ ...prev, compensation_period: value }))}
+      <ProfileAutocompleteInput
+        label="What are your top skills?"
+        termType="skill"
+        value={data.competences}
+        onChange={(value) => setData((prev) => ({ ...prev, competences: value }))}
+        placeholder="Python, React, Django..."
         colors={colors}
       />
     ),
+    renderSalaryRangeStep,
     () => (
       <PreferenceChipGroup
         options={EMPLOYMENT_TYPE_OPTIONS}
@@ -271,14 +351,6 @@ export default function OnboardingScreen() {
     ),
     () => (
       <View style={styles.stepBody}>
-        <ProfileAutocompleteInput
-          label="Skills"
-          termType="skill"
-          value={data.competences}
-          onChange={(value) => setData((prev) => ({ ...prev, competences: value }))}
-          placeholder="React, Python, CSS..."
-          colors={colors}
-        />
         <ProfileAutocompleteInput
           label="Industries / Interests"
           termType="interest"
@@ -418,6 +490,24 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  helperText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  optionCard: {
+    borderRadius: 16,
+    borderWidth: 1.25,
+    padding: 16,
+  },
+  optionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  optionDescription: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   inputRow: {
     flexDirection: 'row',

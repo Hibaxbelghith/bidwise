@@ -297,7 +297,7 @@ def parse_profile_resume(resume_id):
         profile_id = locked_resume.profile_id
 
     semantic_result = None
-    if should_refresh_embedding and status == ProfileResume.ParsingStatus.SUCCEEDED:
+    if status == ProfileResume.ParsingStatus.SUCCEEDED:
         try:
             semantic_result = process_profile_resume_semantics(locked_resume)
         except Exception:

@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from applications.models import Candidature, StatutSuiviCandidature
 from opportunities.models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
 from opportunities.services.scheduler_monitoring import (
     cache_scheduler_decision_snapshot,
@@ -148,6 +149,34 @@ class AdminApiTests(APITestCase):
         self.assertEqual(logo_metrics["missing_or_placeholder"], 2)
         self.assertAlmostEqual(logo_metrics["coverage"], 100 / 3)
         self.assertAlmostEqual(response.data["kpis"]["logo_coverage"], 100 / 3)
+
+    def test_admin_dashboard_reports_platform_global_statistics(self):
+        Candidature.objects.create(
+            candidat=self.user,
+            opportunite=self.opportunity,
+            statut=StatutSuiviCandidature.INTERESSEE,
+        )
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/admin/dashboard/", {"view": "platform"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        platform = response.data["platform"]
+        self.assertNotIn("monitoring", response.data)
+        self.assertNotIn("celery", response.data)
+        self.assertEqual(platform["users"]["total"], 2)
+        self.assertEqual(platform["users"]["active"], 2)
+        self.assertEqual(platform["users"]["admins"], 1)
+        self.assertEqual(platform["users"]["candidates"], 1)
+        self.assertEqual(platform["applications"]["total"], 1)
+        self.assertEqual(platform["applications"]["by_status"]["INTERESSEE"], 1)
+        self.assertEqual(platform["opportunities"]["total"], 2)
+        self.assertEqual(platform["opportunities"]["active"], 2)
+        self.assertEqual(platform["opportunities"]["by_type"][TypeOpportunite.EMPLOI], 2)
+        self.assertAlmostEqual(platform["conversion"]["application_rate"], 50.0)
+        self.assertEqual(len(platform["growth"]["users"]), 30)
+        self.assertEqual(len(platform["growth"]["applications"]), 30)
+        self.assertEqual(len(platform["growth"]["opportunities"]), 30)
 
     def test_scheduler_decision_serializer_returns_dashboard_contract(self):
         next_run_at = timezone.now()

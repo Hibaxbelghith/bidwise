@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -5,6 +6,8 @@ import {
   BellRing,
   BriefcaseBusiness,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   LayoutDashboard,
   LogOut,
   RadioTower,
@@ -15,12 +18,20 @@ import {
 import { Button } from '../../components/ui/button.jsx';
 import { adminLogout } from './adminAuthService.js';
 
+const LOGOUT_REDIRECT_DELAY_MS = 160;
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'bidwise-admin-sidebar-collapsed';
+
 const navItems = [
   {
     to: '/admin/dashboard',
     label: 'Dashboard',
     icon: LayoutDashboard,
     children: [
+      {
+        to: '/admin/dashboard/operations',
+        label: 'Operations Monitoring',
+        icon: LayoutDashboard,
+      },
       {
         to: '/admin/dashboard/sources',
         label: 'Sources Monitoring',
@@ -63,21 +74,54 @@ const navItems = [
 const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [isLogoutPending, setIsLogoutPending] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const isDashboardSection = location.pathname.startsWith('/admin/dashboard');
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname]);
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next));
+      } catch {
+        // Local storage can be unavailable in restricted browser contexts.
+      }
+      return next;
+    });
+  };
+
   const handleLogout = () => {
-    adminLogout();
-    navigate('/admin/login', { replace: true });
+    if (isLogoutPending) return;
+
+    setIsLogoutPending(true);
+    window.setTimeout(() => {
+      adminLogout();
+      navigate('/admin/login', { replace: true });
+    }, LOGOUT_REDIRECT_DELAY_MS);
   };
 
   return (
     <div className="min-h-screen bg-neutral-100 text-neutral-900">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-neutral-800 bg-neutral-950 text-neutral-100 lg:block">
-        <div className="flex h-16 items-center gap-3 border-b border-neutral-800 px-5">
+      <aside
+        className={`fixed inset-y-0 left-0 hidden border-r border-neutral-800 bg-neutral-950 text-neutral-100 transition-[width] duration-200 lg:block ${
+          isSidebarCollapsed ? 'w-20' : 'w-64'
+        }`}
+      >
+        <div className={`flex h-16 items-center border-b border-neutral-800 ${isSidebarCollapsed ? 'justify-center px-3' : 'gap-3 px-5'}`}>
           <div className="rounded-md bg-blue-500 p-2 text-white">
             <ShieldCheck className="h-5 w-5" aria-hidden="true" />
           </div>
-          <div>
+          <div className={isSidebarCollapsed ? 'sr-only' : ''}>
             <p className="text-sm font-semibold">BidWise Admin</p>
             <p className="text-xs text-neutral-400">Backoffice</p>
           </div>
@@ -89,10 +133,13 @@ const AdminLayout = () => {
               <NavLink
                 to={to}
                 end={to === '/admin/dashboard'}
+                title={isSidebarCollapsed ? label : undefined}
                 className={({ isActive }) => {
                   const active = isActive || (to === '/admin/dashboard' && isDashboardSection);
 
-                  return `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
+                  return `flex items-center rounded-md px-3 py-2 text-sm font-medium transition ${
+                    isSidebarCollapsed ? 'justify-center' : 'gap-3'
+                  } ${
                     active
                       ? 'bg-blue-500 text-white'
                       : 'text-neutral-300 hover:bg-neutral-900 hover:text-white'
@@ -100,10 +147,10 @@ const AdminLayout = () => {
                 }}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
-                {label}
+                <span className={isSidebarCollapsed ? 'sr-only' : ''}>{label}</span>
               </NavLink>
 
-              {children && isDashboardSection ? (
+              {children && isDashboardSection && !isSidebarCollapsed ? (
                 <div className="mt-1 space-y-1 border-l border-neutral-800 pl-4">
                   {children.map(({ to: childTo, label: childLabel, icon: ChildIcon }) => (
                     <NavLink
@@ -126,9 +173,23 @@ const AdminLayout = () => {
             </div>
           ))}
         </nav>
+
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700 bg-neutral-950 text-neutral-200 shadow-sm transition hover:bg-neutral-900 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+          aria-label={isSidebarCollapsed ? 'Open admin sidebar' : 'Close admin sidebar'}
+          title={isSidebarCollapsed ? 'Open sidebar' : 'Close sidebar'}
+        >
+          {isSidebarCollapsed ? (
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
       </aside>
 
-      <div className="lg:pl-64">
+      <div className={`transition-[padding] duration-200 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
         <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
           <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
@@ -142,7 +203,9 @@ const AdminLayout = () => {
             </div>
 
             <div className="flex items-center gap-3">
-              <Button type="button" variant="outline" onClick={handleLogout}>
+            
+              
+              <Button type="button" variant="outline" onClick={handleLogout} disabled={isLogoutPending}>
                 <LogOut className="h-4 w-4" aria-hidden="true" />
                 Logout
               </Button>

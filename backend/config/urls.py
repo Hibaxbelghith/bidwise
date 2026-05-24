@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
-from users.views import request_otp, verify_otp, logout_view
+from users.views import csrf_token, request_otp, verify_otp, logout_view
 from users.google_auth import google_authenticate
 
 
@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/auth/google/', google_authenticate, name='google_auth'),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/logout/', logout_view, name='auth_logout'),
+    path('api/auth/csrf/', csrf_token, name='csrf_token'),
     path('api/profile/', include('users.urls')),
     path('api/', include('ai.urls')),
     path('api/', include('opportunities.urls')),

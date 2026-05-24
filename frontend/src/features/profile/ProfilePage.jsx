@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../../components/ui/button.jsx';
 import { Input } from '../../components/ui/input.jsx';
@@ -28,9 +28,9 @@ import LocationMultiSelect from './components/LocationMultiSelect.jsx';
 import ProfileAutocompleteInput from './components/ProfileAutocompleteInput.jsx';
 import PreferenceChipGroup from './components/PreferenceChipGroup.jsx';
 import ResumeSection from './components/ResumeSection.jsx';
-import SalaryExpectationInput from './components/SalaryExpectationInput.jsx';
 import {
 	EMPLOYMENT_TYPE_OPTIONS,
+	ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
 	OPPORTUNITY_TYPE_OPTIONS,
 	WORK_MODE_OPTIONS,
 	normalizeLocations,
@@ -39,9 +39,10 @@ import {
 	normalizeSkillList,
 	normalizeTextList,
 } from './profilePreferences.js';
+import { buildProfileEditorState } from './profileEditorState.js';
 import {
 	DEFAULT_COMPENSATION_PERIOD,
-	validateSalaryExpectation,
+	validateSalaryRange,
 	validateOpportunityTypes,
 	validateProfileName,
 	validateYearsOfExperience,
@@ -62,16 +63,42 @@ const NAV_ITEMS = [
 	{ id: 'settings', label: 'Account Settings', icon: Settings },
 ];
 
+const FIELD_SECTION_BY_ERROR_KEY = {
+	firstName: 'personal',
+	lastName: 'personal',
+	yearsOfExperience: 'personal',
+	preferredLocations: 'work',
+	salaryExpectation: 'work',
+	opportunityTypes: 'career',
+};
+
+const FIELD_ERROR_LABELS = {
+	firstName: 'First name',
+	lastName: 'Last name',
+	yearsOfExperience: 'Years of experience',
+	preferredLocations: 'Desired work locations',
+	salaryExpectation: 'Expected salary range',
+	opportunityTypes: 'Opportunity types',
+};
+
+const getFirstErrorKey = (errors) =>
+	Object.keys(FIELD_SECTION_BY_ERROR_KEY).find((key) => Boolean(errors[key]));
+
 const Profile = () => {
 	const { user, updateUserProfile, refreshUser } = useAuth();
 	const profile = user?.profil;
 	const profileCompletion = profile?.profile_completion || { score: 0, missing: [] };
+	const lastHydratedEditorStateRef = useRef('');
+	const preserveDraftOnResumeRefreshRef = useRef(false);
+	const fieldRefs = useRef({});
 	const [formData, setFormData] = useState({
 		firstName: '',
 		lastName: '',
 		experienceLevel: '',
 		yearsOfExperience: '',
 		salaryExpectation: '',
+		salaryMinExpectation: '',
+		salaryMaxExpectation: '',
 		salaryPeriod: DEFAULT_COMPENSATION_PERIOD,
 	});
 	const [skills, setSkills] = useState([]);
@@ -86,6 +113,7 @@ const Profile = () => {
 	const [isLoading, setIsLoading] = useState(false);
 	const [showSuccess, setShowSuccess] = useState(false);
 	const [formError, setFormError] = useState('');
+	const [validationSummary, setValidationSummary] = useState('');
 	const [fieldErrors, setFieldErrors] = useState({});
 	const [activeSection, setActiveSection] = useState('personal');
 	
@@ -106,66 +134,127 @@ const Profile = () => {
 		[employmentTypes]
 	);
 	const salaryValidation = useMemo(
-		() => validateSalaryExpectation(formData.salaryExpectation, formData.salaryPeriod),
-		[formData.salaryExpectation, formData.salaryPeriod]
+		() => validateSalaryRange(
+			formData.salaryMinExpectation,
+			formData.salaryMaxExpectation,
+			formData.salaryPeriod
+		),
+		[formData.salaryMinExpectation, formData.salaryMaxExpectation, formData.salaryPeriod]
 	);
+	const locationRequired = workModePreferencesPayload.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID');
+	const displayOpportunityTypeOptions = ONBOARDING_OPPORTUNITY_TYPE_OPTIONS.map((option) => ({
+		...option,
+		value: option.value,
+	}));
+	const displayOpportunityTypes = useMemo(() => {
+		const selected = new Set(opportunityTypesPayload);
+		return ONBOARDING_OPPORTUNITY_TYPE_OPTIONS
+			.filter((option) => option.values.every((value) => selected.has(value)))
+			.map((option) => option.value);
+	}, [opportunityTypesPayload]);
+	const handleOpportunityTypeChange = (values) => {
+		const selectedDisplayValues = new Set(values);
+		const nextBackendValues = ONBOARDING_OPPORTUNITY_TYPE_OPTIONS.flatMap((option) =>
+			selectedDisplayValues.has(option.value) ? option.values : []
+		);
+		setOpportunityTypes(Array.from(new Set(nextBackendValues)));
+		setFieldErrors((prev) => ({ ...prev, opportunityTypes: '' }));
+		setValidationSummary('');
+	};
 
 	useEffect(() => {
 		if (!user) return;
-		let onboarding = null;
+		let storedProfile = null;
 		try {
-			const storedProfile = localStorage.getItem('bidwise_user_profile');
-			onboarding = storedProfile ? JSON.parse(storedProfile) : null;
+			const persistedProfile = localStorage.getItem('bidwise_user_profile');
+			storedProfile = persistedProfile ? JSON.parse(persistedProfile) : null;
 		} catch {
-			onboarding = null;
+			storedProfile = null;
 		}
 
-		const backendSkills = normalizeTextList(profile?.competences);
-		const backendInterests = normalizeTextList(profile?.domaines_interet);
-		const onboardingInterests = Array.isArray(onboarding?.target_roles)
-			? onboarding.target_roles.filter(Boolean)
-			: [];
-		const onboardingPreferences = normalizeProfilePreferenceData(onboarding || {});
-
-		setFormData({
-			firstName: profile?.prenom || user?.first_name || '',
-			lastName: profile?.nom || user?.last_name || '',
-			experienceLevel: profile?.niveau_experience || '',
-			yearsOfExperience: profile?.annees_experience?.toString() || '',
-			salaryExpectation: profile?.compensation_expectation?.toString() || onboarding?.compensation_expectation?.toString() || '',
-			salaryPeriod: profile?.compensation_period || onboarding?.compensation_period || DEFAULT_COMPENSATION_PERIOD,
+		const nextEditorState = buildProfileEditorState({
+			user,
+			profile,
+			storedProfile,
 		});
-		setSkills(backendSkills);
-		setInterests(backendInterests.length ? backendInterests : onboardingInterests);
-		setTargetRoles(normalizeTextList(profile?.target_roles).length ? normalizeTextList(profile?.target_roles) : onboardingInterests);
-		setOpportunityTypes(
-			normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS).length
-				? normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS)
-				: onboardingPreferences.opportunity_types
-		);
-		setPreferredLocations(
-			normalizeLocations(profile?.preferred_locations).length
-				? normalizeLocations(profile?.preferred_locations)
-				: onboardingPreferences.preferred_locations
-		);
-		setWorkModePreferences(
-			normalizeOptionValues(profile?.work_mode_preferences, WORK_MODE_OPTIONS).length
-				? normalizeOptionValues(profile?.work_mode_preferences, WORK_MODE_OPTIONS)
-				: onboardingPreferences.work_mode_preferences
-		);
-		setEmploymentTypes(
-			normalizeOptionValues(profile?.employment_types, EMPLOYMENT_TYPE_OPTIONS).length
-				? normalizeOptionValues(profile?.employment_types, EMPLOYMENT_TYPE_OPTIONS)
-				: onboardingPreferences.employment_types
-		);
-		setProfileVisibility(profile?.profile_visibility ?? onboardingPreferences.profile_visibility);
-		setOnboardingCompleted(Boolean(profile?.onboarding_completed));
+		const nextEditorStateKey = JSON.stringify(nextEditorState);
+		const shouldPreserveDraft =
+			preserveDraftOnResumeRefreshRef.current
+			&& lastHydratedEditorStateRef.current === nextEditorStateKey;
+
+		if (!shouldPreserveDraft) {
+			setFormData(nextEditorState.formData);
+			setSkills(nextEditorState.skills);
+			setInterests(nextEditorState.interests);
+			setTargetRoles(nextEditorState.targetRoles);
+			setOpportunityTypes(nextEditorState.opportunityTypes);
+			setPreferredLocations(nextEditorState.preferredLocations);
+			setWorkModePreferences(nextEditorState.workModePreferences);
+			setEmploymentTypes(nextEditorState.employmentTypes);
+			setProfileVisibility(nextEditorState.profileVisibility);
+			setOnboardingCompleted(nextEditorState.onboardingCompleted);
+		}
+
+		lastHydratedEditorStateRef.current = nextEditorStateKey;
+		preserveDraftOnResumeRefreshRef.current = false;
 	}, [profile, user]);
+
+	const handleResumeChanged = async () => {
+		preserveDraftOnResumeRefreshRef.current = true;
+		const result = await refreshUser();
+		if (!result?.success) {
+			preserveDraftOnResumeRefreshRef.current = false;
+		}
+		return result;
+	};
 
 	const handleChange = (field, value) => {
 		setFormData((prev) => ({ ...prev, [field]: value }));
 		setFieldErrors((prev) => ({ ...prev, [field]: '' }));
+		setValidationSummary('');
 	};
+
+	const handlePreferredLocationsChange = (locations) => {
+		setPreferredLocations(locations);
+		setFieldErrors((prev) => ({ ...prev, preferredLocations: '' }));
+		setValidationSummary('');
+	};
+
+	const handleWorkModePreferencesChange = (values) => {
+		setWorkModePreferences(values);
+		const normalizedValues = normalizeOptionValues(values, WORK_MODE_OPTIONS);
+		const nextLocationRequired = normalizedValues.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID');
+
+		if (!nextLocationRequired) {
+			setFieldErrors((prev) => ({ ...prev, preferredLocations: '' }));
+			setValidationSummary('');
+		}
+	};
+
+	useEffect(() => {
+		if (!validationSummary) return undefined;
+
+		const firstErrorKey = getFirstErrorKey(fieldErrors);
+		if (!firstErrorKey) return undefined;
+
+		const sectionId = FIELD_SECTION_BY_ERROR_KEY[firstErrorKey];
+		if (sectionId) {
+			setActiveSection(sectionId);
+		}
+
+		const frame = window.requestAnimationFrame(() => {
+			const target = fieldRefs.current[firstErrorKey] || document.getElementById(sectionId);
+			if (!target) return;
+
+			target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			const focusTarget = target.querySelector(
+				'input, button, [role="combobox"], textarea, select, [tabindex]:not([tabindex="-1"])'
+			);
+			focusTarget?.focus?.({ preventScroll: true });
+		});
+
+		return () => window.cancelAnimationFrame(frame);
+	}, [fieldErrors, validationSummary]);
 
 	const handleSubmit = async (event) => {
 		event.preventDefault();
@@ -183,14 +272,20 @@ const Profile = () => {
 			yearsOfExperience: yearsValidation.error,
 			salaryExpectation: salaryValidation.error,
 			opportunityTypes: opportunityTypesError,
+			preferredLocations:
+				locationRequired && preferredLocationsPayload.length === 0
+					? 'Choose at least one location for on-site or hybrid work.'
+					: '',
 		};
 		const hasFieldErrors = Object.values(nextFieldErrors).some(Boolean);
 
 		if (hasFieldErrors) {
 			setFieldErrors(nextFieldErrors);
+			setValidationSummary('Please fix the highlighted fields before saving.');
 			return;
 		}
 
+		setValidationSummary('');
 		setIsLoading(true);
 		const payload = {
 			prenom: firstNameValidation.value,
@@ -204,7 +299,9 @@ const Profile = () => {
 			preferred_locations: preferredLocationsPayload,
 			work_mode_preferences: workModePreferencesPayload,
 			employment_types: employmentTypesPayload,
-			compensation_expectation: salaryValidation.value,
+			compensation_expectation: salaryValidation.min ?? salaryValidation.max,
+			compensation_min_expectation: salaryValidation.min,
+			compensation_max_expectation: salaryValidation.max,
 			compensation_currency: 'TND',
 			compensation_period: DEFAULT_COMPENSATION_PERIOD,
 			profile_visibility: profileVisibility,
@@ -215,10 +312,15 @@ const Profile = () => {
 		setIsLoading(false);
 
 		if (result.success) {
+			const refreshedResult = await refreshUser();
+			const persistedProfile = refreshedResult?.data?.profil || result.data?.profil || payload;
 			localStorage.setItem(
 				'bidwise_user_profile',
-				JSON.stringify(normalizeProfilePreferenceData(payload))
+				JSON.stringify(normalizeProfilePreferenceData(persistedProfile))
 			);
+			setSkills(normalizeTextList(persistedProfile.competences));
+			setInterests(normalizeTextList(persistedProfile.domaines_interet));
+			setTargetRoles(normalizeTextList(persistedProfile.target_roles));
 			setShowSuccess(true);
 			setTimeout(() => setShowSuccess(false), 3000);
 		} else if (result.error) {
@@ -304,19 +406,32 @@ const Profile = () => {
 					<main className="flex-1 space-y-6">
 						{/* Success Alert */}
 						{showSuccess && (
-							<Alert className="border-green-200 bg-green-50">
-								<CheckCircle2 className="h-4 w-4 text-green-600" />
-								<AlertDescription className="text-green-800">
-									Profile updated successfully!
-								</AlertDescription>
-							</Alert>
-						)}
+	<div className="fixed bottom-6 left-6 z-50 animate-in fade-in slide-in-from-bottom-2">
+		<div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 shadow-lg">
+			<CheckCircle2 className="h-5 w-5 text-green-600" />
+			<p className="text-sm font-medium text-green-800">
+				Profile updated successfully!
+			</p>
+		</div>
+	</div>
+)}
 
 						{formError && (
 							<Alert variant="destructive">
 								<AlertDescription>{formError}</AlertDescription>
 							</Alert>
 						)}
+
+						{validationSummary ? (
+							<Alert variant="destructive">
+								<AlertDescription>
+									{validationSummary}
+									{getFirstErrorKey(fieldErrors)
+										? ` First issue: ${FIELD_ERROR_LABELS[getFirstErrorKey(fieldErrors)]}.`
+										: ''}
+								</AlertDescription>
+							</Alert>
+						) : null}
 
 						<form onSubmit={handleSubmit} className="space-y-6" noValidate>
 							{/* Section 1: Personal Information */}
@@ -328,7 +443,12 @@ const Profile = () => {
 								
 								<div className="space-y-4">
 									<div className="grid gap-4 sm:grid-cols-2">
-										<div className="space-y-1">
+										<div
+											ref={(node) => {
+												fieldRefs.current.firstName = node;
+											}}
+											className="space-y-1"
+										>
 											<Label htmlFor="firstName" className="text-sm font-medium text-neutral-700">First name</Label>
 											<Input
 												id="firstName"
@@ -348,7 +468,12 @@ const Profile = () => {
 											) : null}
 										</div>
 
-										<div className="space-y-1">
+										<div
+											ref={(node) => {
+												fieldRefs.current.lastName = node;
+											}}
+											className="space-y-1"
+										>
 											<Label htmlFor="lastName" className="text-sm font-medium text-neutral-700">Last name</Label>
 											<Input
 												id="lastName"
@@ -387,7 +512,12 @@ const Profile = () => {
 											</Select>
 										</div>
 
-										<div className="space-y-1">
+										<div
+											ref={(node) => {
+												fieldRefs.current.yearsOfExperience = node;
+											}}
+											className="space-y-1"
+										>
 											<Label htmlFor="yearsOfExperience" className="text-sm font-medium text-neutral-700">Years of experience</Label>
 											<Input
 												id="yearsOfExperience"
@@ -431,24 +561,65 @@ const Profile = () => {
 										/>
 									</div>
 
-									<div>
+									<div
+										ref={(node) => {
+											fieldRefs.current.preferredLocations = node;
+										}}
+									>
 										<LocationMultiSelect
 											id="preferredLocations"
 											label="Desired work locations"
 											value={preferredLocations}
-											onChange={setPreferredLocations}
-											placeholder="Add a location"
+											onChange={handlePreferredLocationsChange}
+											placeholder={locationRequired ? 'Add a location' : 'Optional for remote roles'}
 										/>
+										<p className="mt-2 text-xs text-neutral-500">
+											{locationRequired
+												? 'Location is required for on-site or hybrid work.'
+												: 'Location is optional when you are open to remote work.'}
+										</p>
+										{fieldErrors.preferredLocations ? (
+											<p id="preferredLocations-error" className="mt-2 text-sm text-red-600" role="alert">
+												{fieldErrors.preferredLocations}
+											</p>
+										) : null}
 									</div>
 
-									<div>
-										<SalaryExpectationInput
-											label="Minimum desired salary"
-											amount={formData.salaryExpectation}
-											period={formData.salaryPeriod}
-											error={salaryValidation.error}
-											onAmountChange={(value) => handleChange('salaryExpectation', value)}
-										/>
+									<div
+										ref={(node) => {
+											fieldRefs.current.salaryExpectation = node;
+										}}
+									>
+										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Expected salary range</Label>
+										<div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+											<Input
+												type="number"
+												inputMode="numeric"
+												min="0"
+												placeholder="Min"
+												value={formData.salaryMinExpectation}
+												onChange={(event) => handleChange('salaryMinExpectation', event.target.value)}
+												aria-label="Minimum expected salary"
+												className="border-neutral-200 bg-white"
+											/>
+											<span className="text-sm text-neutral-400">-</span>
+											<Input
+												type="number"
+												inputMode="numeric"
+												min="0"
+												placeholder="Max"
+												value={formData.salaryMaxExpectation}
+												onChange={(event) => handleChange('salaryMaxExpectation', event.target.value)}
+												aria-label="Maximum expected salary"
+												className="border-neutral-200 bg-white"
+											/>
+										</div>
+										<p className="mt-2 text-sm text-neutral-500">TND/month. Optional.</p>
+										{fieldErrors.salaryExpectation || salaryValidation.error ? (
+											<p className="mt-2 text-sm text-red-600" role="alert">
+												{fieldErrors.salaryExpectation || salaryValidation.error}
+											</p>
+										) : null}
 									</div>
 
 									<div>
@@ -456,7 +627,7 @@ const Profile = () => {
 										<PreferenceChipGroup
 											options={WORK_MODE_OPTIONS}
 											value={workModePreferences}
-											onChange={setWorkModePreferences}
+											onChange={handleWorkModePreferencesChange}
 										/>
 									</div>
 
@@ -475,7 +646,7 @@ const Profile = () => {
 							<section id="career" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
 									<h2 className="text-lg font-semibold text-neutral-900">Career Signals</h2>
-									<p className="text-sm text-neutral-500">Skills and industries you're interested in</p>
+									<p className="text-sm text-neutral-500">Skills and sectors used to improve opportunity matching</p>
 								</div>
 
 								<div className="space-y-5">
@@ -493,24 +664,25 @@ const Profile = () => {
 									<div>
 										<ProfileAutocompleteInput
 											id="interests"
-											label="Industries / Interests"
+											label="Secteurs"
 											termType="interest"
 											value={interests}
 											onChange={setInterests}
 											maxItems={8}
-											placeholder="Add an industry"
+											placeholder="Finance, Banque, Marketing digital..."
 										/>
 									</div>
 
-									<div>
+									<div
+										ref={(node) => {
+											fieldRefs.current.opportunityTypes = node;
+										}}
+									>
 										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Opportunity types</Label>
 										<PreferenceChipGroup
-											options={OPPORTUNITY_TYPE_OPTIONS}
-											value={opportunityTypes}
-											onChange={(value) => {
-												setOpportunityTypes(value);
-												setFieldErrors((prev) => ({ ...prev, opportunityTypes: '' }));
-											}}
+											options={displayOpportunityTypeOptions}
+											value={displayOpportunityTypes}
+											onChange={handleOpportunityTypeChange}
 										/>
 										{fieldErrors.opportunityTypes ? (
 											<p className="mt-2 text-sm text-red-600" role="alert">
@@ -531,7 +703,7 @@ const Profile = () => {
 								<ResumeSection
 									profile={profile}
 									activeResume={profile?.active_resume}
-									onChanged={refreshUser}
+									onChanged={handleResumeChanged}
 								/>
 							</section>
 
@@ -573,20 +745,36 @@ const Profile = () => {
 
 							{/* Sticky Save Bar */}
 							<div className="sticky bottom-4 z-20 rounded-lg border border-neutral-200 bg-white p-4 shadow-lg">
-								<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+								<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+									{validationSummary ? (
+										<div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">
+											{validationSummary}
+											{getFirstErrorKey(fieldErrors)
+												? ` ${FIELD_ERROR_LABELS[getFirstErrorKey(fieldErrors)]} needs attention.`
+												: ''}
+										</div>
+									) : (
+										<span aria-hidden="true" />
+									)}
+									<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
 									<Button type="button" variant="outline" onClick={() => window.history.back()}>
 										Cancel
 									</Button>
-									<Button type="submit" disabled={isLoading || Boolean(salaryValidation.error)}>
-										{isLoading ? (
-											<>
-												<Spinner size={18} className="mr-2" />
-												Saving...
-											</>
-										) : (
-											'Save changes'
-										)}
+									<Button
+											type="submit"
+											
+											disabled={isLoading || Boolean(salaryValidation.error)}
+										>
+											{isLoading ? (
+												<>
+													<Spinner size={18} className="mr-2" />
+													Saving...
+												</>
+											) : (
+												'Save changes'
+											)}
 									</Button>
+									</div>
 								</div>
 							</div>
 						</form>

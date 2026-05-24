@@ -34,6 +34,28 @@ class Utilisateur(AbstractUser):
         default=False,
         help_text="Can access BidWise admin backoffice APIs.",
     )
+    is_suspended = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Account suspended by admin moderation.",
+    )
+    suspension_reason = models.CharField(
+        max_length=20,
+        choices=[
+            ("spam", "Spam"),
+            ("abuse", "Abuse"),
+            ("fraud", "Fraud"),
+            ("other", "Other"),
+        ],
+        blank=True,
+        default="",
+        help_text="Reason for suspension.",
+    )
+    suspended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when user was suspended.",
+    )
 
     def __str__(self):
         return self.username
@@ -52,6 +74,19 @@ class Profil(models.Model):
         blank=True,
         help_text="Structured list of profile skills used for ML features"
     )
+    raw_skills = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="User-entered skill strings preserved before ESCO normalization.",
+    )
+    normalized_skills = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Structured ESCO normalization results stored alongside legacy profile skills.",
+    )
+    skills_normalization_hash = models.CharField(max_length=64, blank=True, default="")
+    skills_normalization_updated_at = models.DateTimeField(null=True, blank=True)
+    skills_normalization_error = models.TextField(blank=True, default="")
     domaines_interet = models.JSONField(
         default=list,
         blank=True,
@@ -95,6 +130,10 @@ class Profil(models.Model):
         default="",
         help_text="Deterministic hash of semantic profile content used for embeddings"
     )
+    jobbert_embedding = models.JSONField(null=True, blank=True)
+    jobbert_embedding_model = models.CharField(max_length=200, blank=True, default="")
+    jobbert_embedding_content_hash = models.CharField(max_length=64, blank=True, default="")
+    jobbert_embedding_updated_at = models.DateTimeField(null=True, blank=True)
 
     class NiveauExperience(models.TextChoices):
         DEBUTANT = 'DEBUTANT', 'Débutant (0–1 an)'
@@ -141,6 +180,14 @@ class Profil(models.Model):
     compensation_expectation = models.PositiveIntegerField(
         null=True, blank=True,
         help_text="Expected compensation amount"
+    )
+    compensation_min_expectation = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Minimum expected compensation amount"
+    )
+    compensation_max_expectation = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Maximum expected compensation amount"
     )
     compensation_currency = models.CharField(
         max_length=3,
@@ -320,6 +367,19 @@ class ProfileResume(models.Model):
         default=list,
         help_text="Canonical semantic skills extracted from the resume. Does not overwrite user-entered skills.",
     )
+    extracted_raw_skills = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Raw semantic skill mentions extracted from the resume before ESCO normalization.",
+    )
+    extracted_normalized_skills = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Structured ESCO normalization results for extracted resume skill mentions.",
+    )
+    extracted_skills_normalization_hash = models.CharField(max_length=64, blank=True, default="")
+    extracted_skills_normalization_updated_at = models.DateTimeField(null=True, blank=True)
+    extracted_skills_normalization_error = models.TextField(blank=True, default="")
     extracted_domains = models.JSONField(
         blank=True,
         default=list,
@@ -693,3 +753,76 @@ class LoginEvent(models.Model):
         )
         msg.attach_alternative(html_content, "text/html")
         msg.send(fail_silently=True)
+
+class AuditLog(models.Model):
+    """
+    Traçabilité MVP des actions admin sensibles sur les comptes utilisateurs.
+    Append-only : aucun UPDATE ni DELETE autorisé.
+    """
+ 
+    # ── Actions disponibles ─────────────────────────────────────────────────
+    class Action(models.TextChoices):
+        SUSPEND       = "SUSPEND",    "Suspend user"
+        REACTIVATE    = "REACTIVATE", "Reactivate user"
+        TOGGLE_ADMIN  = "TOGGLE_ADMIN","Toggle admin privilege"
+        TOGGLE_ACTIVE = "TOGGLE_ACTIVE","Toggle active status"
+ 
+    # ── Champs ──────────────────────────────────────────────────────────────
+    actor = models.ForeignKey(
+        "Utilisateur",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="audit_actions",
+        help_text="Admin who performed the action.",
+    )
+    target = models.ForeignKey(
+        "Utilisateur",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="audit_events",
+        help_text="User affected by the action.",
+    )
+    action = models.CharField(
+        max_length=30,
+        choices=Action.choices,
+        db_index=True,
+        help_text="Type of admin action performed.",
+    )
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Lightweight context: reason, detail, before/after values. "
+            "Keep flat and minimal — not a general-purpose log store."
+        ),
+    )
+    created_at = models.DateTimeField(
+        default=timezone.now,
+        db_index=True,
+        editable=False,
+    )
+ 
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["actor", "-created_at"]),
+            models.Index(fields=["target", "-created_at"]),
+        ]
+        verbose_name = "Audit Log"
+        verbose_name_plural = "Audit Logs"
+ 
+    def __str__(self):
+        actor_email = self.actor.email if self.actor else "unknown"
+        target_email = self.target.email if self.target else "unknown"
+        return f"[{self.action}] {actor_email} → {target_email} @ {self.created_at:%Y-%m-%d %H:%M}"
+ 
+    # ── Append-only enforcement ─────────────────────────────────────────────
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            # Silently refuse updates — log entries are immutable
+            return
+        super().save(*args, **kwargs)
+ 
+    def delete(self, *args, **kwargs):
+        # Refuse deletion at model level
+        raise NotImplementedError("AuditLog entries are immutable and cannot be deleted.")

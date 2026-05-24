@@ -55,8 +55,6 @@ MATCH_BASE_SCORE = {
     "fuzzy": 0.58,
     "popular": 0.38,
 }
-
-
 @dataclass(frozen=True)
 class MatchResult:
     score: float
@@ -593,10 +591,19 @@ def normalize_profile_terms(
     for value in values or []:
         text = clean_display_text(value, max_length=160)
         key = normalize_lookup_key(text)
-        if not key or _cross_type_known(term_type, key):
+        if not key:
             continue
 
-        canonical = _dictionary_canonical(term_type, key) or normalized_to_canonical.get(key)
+        if term_type == ProfileSuggestionType.INTEREST.value and preserve_unknown:
+            canonical = text
+        else:
+            if (
+                _cross_type_known(term_type, key)
+                and not (term_type == ProfileSuggestionType.SKILL.value and preserve_unknown)
+            ):
+                continue
+            canonical = _dictionary_canonical(term_type, key) or normalized_to_canonical.get(key)
+
         if canonical is None:
             if strict_known_only or not preserve_unknown or is_rejected_profile_term(term_type, text):
                 continue

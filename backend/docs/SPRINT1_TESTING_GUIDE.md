@@ -14,6 +14,7 @@ This guide covers the final validation of Sprint 1 authentication features:
 - JWT session handling
 - logout and refresh
 - onboarding redirection
+- organization route protection
 - suspicious login detection
 - token storage behavior
 - OTP security limits
@@ -49,12 +50,9 @@ The web app must point to the backend API through `VITE_API_URL`.
 ### Mobile app
 
 Before running mobile tests, verify the API base URL in:
-- [api.ts](d:/Documents/BidWise/bidwise-mobile/src/services/api.ts)
+- [api.ts](d:/Documents/BidWise/bidwise-mobile/src/shared/services/api.ts)
 
-Current implementation uses a hardcoded LAN IP:
-- `http://10.12.0.3:8000/api`
-
-Update it if your machine IP changes.
+The mobile app uses `EXPO_PUBLIC_API_BASE_URL` when provided, otherwise it resolves the development host from Expo. For Android emulator testing, the fallback host is `10.0.2.2`.
 
 ---
 
@@ -238,6 +236,8 @@ Files involved:
 - [api.js](d:/Documents/BidWise/frontend/src/lib/api.js)
 - [tokenManager.js](d:/Documents/BidWise/frontend/src/lib/tokenManager.js)
 - [App.jsx](d:/Documents/BidWise/frontend/src/App.jsx)
+- [AppLayout.jsx](d:/Documents/BidWise/frontend/src/components/layout/AppLayout.jsx)
+- [OrganizationRoute.jsx](d:/Documents/BidWise/frontend/src/features/organization/OrganizationRoute.jsx)
 
 ### Test WEB-01 — OTP login
 
@@ -281,6 +281,8 @@ Files involved:
 **Expected result**
 - session is restored through the existing refresh mechanism
 - protected pages remain accessible if refresh token is still valid
+- navbar remains in a neutral bootstrap state until authentication is resolved
+- route content is not redirected before auth bootstrap finishes
 
 ### Test WEB-05 — Access token storage behavior
 
@@ -316,10 +318,23 @@ Files involved:
 **Expected result**
 - local tokens removed
 - refresh token blacklisted server-side
-- user redirected out of protected area
+- user redirected out of protected area with a short, controlled visual delay
 - dashboard no longer accessible
 
-### Test WEB-08 — Refresh failure
+### Test WEB-08 — Organization route protection
+
+**Steps**
+1. Log in as a candidate account
+2. Open `/organization/dashboard` directly
+3. Complete organization profile creation, or log in as an existing organization account
+4. Open `/organization/dashboard` again
+
+**Expected result**
+- candidate account is redirected to `/organization/create-account`
+- organization account with a complete organization profile can access the dashboard
+- no redirect loop occurs between organization setup and dashboard
+
+### Test WEB-09 — Refresh failure
 
 **Steps**
 1. Log in
@@ -337,11 +352,12 @@ Files involved:
 Files involved:
 - [login.tsx](d:/Documents/BidWise/bidwise-mobile/app/login.tsx)
 - [otp.tsx](d:/Documents/BidWise/bidwise-mobile/app/otp.tsx)
-- [AuthContext.tsx](d:/Documents/BidWise/bidwise-mobile/src/context/AuthContext.tsx)
-- [auth.ts](d:/Documents/BidWise/bidwise-mobile/src/services/auth.ts)
-- [api.ts](d:/Documents/BidWise/bidwise-mobile/src/services/api.ts)
-- [tokenStorage.ts](d:/Documents/BidWise/bidwise-mobile/src/services/tokenStorage.ts)
-- [useGoogleAuth.ts](d:/Documents/BidWise/bidwise-mobile/src/hooks/useGoogleAuth.ts)
+- [AuthContext.tsx](d:/Documents/BidWise/bidwise-mobile/src/features/auth/context/AuthContext.tsx)
+- [authService.ts](d:/Documents/BidWise/bidwise-mobile/src/features/auth/services/authService.ts)
+- [api.ts](d:/Documents/BidWise/bidwise-mobile/src/shared/services/api.ts)
+- [tokenStorage.ts](d:/Documents/BidWise/bidwise-mobile/src/shared/services/tokenStorage.ts)
+- [useGoogleAuth.ts](d:/Documents/BidWise/bidwise-mobile/src/features/auth/hooks/useGoogleAuth.ts)
+- [DashboardScreen.tsx](d:/Documents/BidWise/bidwise-mobile/src/features/dashboard/components/DashboardScreen.tsx)
 
 ### Mobile run options
 
@@ -461,6 +477,7 @@ Google mobile prerequisites:
 **Expected result**
 - mobile interceptor refreshes token automatically
 - if backend returns a rotated refresh token, it is saved correctly
+- a second refresh still works after the first rotation
 - original request continues successfully
 
 ### Test MOB-08 — Logout
@@ -473,6 +490,7 @@ Google mobile prerequisites:
 **Expected result**
 - SecureStore tokens are removed
 - refresh token is blacklisted server-side
+- navigation to login uses a short, controlled visual delay
 - protected content is no longer accessible
 
 ---
@@ -521,6 +539,7 @@ Google mobile prerequisites:
 **Expected result**
 - refresh flow continues cleanly on web and mobile
 - mobile stores `data.refresh ?? refresh`
+- repeated mobile refreshes keep working after rotation
 
 ### Security-06 — Logout blacklist
 
@@ -561,8 +580,10 @@ Sprint 1 can be considered fully validated if all of the following are true:
 - OTP request and verify work end-to-end
 - Google auth works on web and on mobile native build / APK
 - protected routes are actually protected
+- organization dashboard is restricted to organization accounts
 - refresh flow works on web and mobile
 - logout invalidates the session correctly
+- web session restore keeps navbar state stable during authentication bootstrap
 - suspicious login alert is triggered on a new device or browser
 - access token is not persisted in web localStorage
 - mobile tokens persist securely in SecureStore
@@ -573,6 +594,6 @@ Sprint 1 can be considered fully validated if all of the following are true:
 
 These are known next-step improvements, not Sprint 1 blockers:
 - move web refresh token from `sessionStorage` to a stronger cookie-based model when architecture allows it
-- add environment-based mobile API configuration
+- formalize environment-based mobile API configuration for staging/production builds
 - improve reverse proxy and trusted proxy configuration for more accurate suspicious-login IP reporting
 - optionally move toward HttpOnly cookies in a future auth redesign

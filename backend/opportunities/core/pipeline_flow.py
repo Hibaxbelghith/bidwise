@@ -9,6 +9,8 @@ raw -> normalization -> enrichment -> scoring -> materialization
 
 from typing import Any
 
+from django.db import transaction
+
 from opportunities.enrichment import enrich_opportunity_text
 from opportunities.materialization import materialize_opportunity
 from opportunities.normalization import normalize_raw_opportunity
@@ -27,4 +29,11 @@ def process_opportunity(raw: Any):
     if not scored_data.get("is_usable", True):
         reason = scored_data.get("unusable_reason") or "quality_gate_rejected"
         raise ValueError(f"Quality gate rejected record: {reason}")
-    return materialize_opportunity(scored_data)
+    opportunity = materialize_opportunity(scored_data)
+
+    from ai.tasks import enqueue_opportunity_skill_normalization
+
+    transaction.on_commit(
+        lambda opportunity_id=opportunity.pk: enqueue_opportunity_skill_normalization(opportunity_id)
+    )
+    return opportunity

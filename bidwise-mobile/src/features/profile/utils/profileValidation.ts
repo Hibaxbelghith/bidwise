@@ -201,6 +201,8 @@ export const normalizeProfilePreferenceData = (data: Record<string, unknown>) =>
   preferred_locations: normalizeLocations(data.preferred_locations),
   work_mode_preferences: normalizeOptionValues(data.work_mode_preferences, WORK_MODE_OPTIONS),
   compensation_expectation: data.compensation_expectation ?? null,
+  compensation_min_expectation: data.compensation_min_expectation ?? null,
+  compensation_max_expectation: data.compensation_max_expectation ?? null,
   compensation_currency: data.compensation_currency || 'TND',
   compensation_period: data.compensation_period || DEFAULT_COMPENSATION_PERIOD,
   employment_types: normalizeOptionValues(data.employment_types, EMPLOYMENT_TYPE_OPTIONS),
@@ -234,4 +236,30 @@ export const validateSalaryExpectation = (
     return { value: amount, error: `Enter ${limits.max} TND or less for ${period.toLowerCase()}.` };
   }
   return { value: amount, error: '' };
+};
+
+export const validateSalaryRange = (
+  minValue: unknown,
+  maxValue: unknown,
+  period = DEFAULT_COMPENSATION_PERIOD,
+) => {
+  const minValidation = validateSalaryExpectation(minValue, period);
+  if (minValidation.error) return { min: minValidation.value, max: null, error: minValidation.error };
+
+  const maxValidation = validateSalaryExpectation(maxValue, period);
+  if (maxValidation.error) return { min: minValidation.value, max: maxValidation.value, error: maxValidation.error };
+
+  if (
+    minValidation.value !== null &&
+    maxValidation.value !== null &&
+    minValidation.value > maxValidation.value
+  ) {
+    return {
+      min: minValidation.value,
+      max: maxValidation.value,
+      error: 'Maximum salary must be greater than or equal to minimum salary.',
+    };
+  }
+
+  return { min: minValidation.value, max: maxValidation.value, error: '' };
 };

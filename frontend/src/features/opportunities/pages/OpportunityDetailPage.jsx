@@ -29,8 +29,14 @@ const OpportunityDetailPage = () => {
   const isUserAuthenticated = !authLoading && isAuthenticated;
   const userHasResume = hasActiveResume(user);
   const handleBackToOpportunities = () => {
-    if (location.state?.from) {
-      navigate(-1);
+    if (location.state?.returnTab) {
+      navigate('/opportunities', {
+        state: {
+          returnTab: location.state.returnTab,
+          scrollY: location.state.scrollY,
+          opportunityId: location.state.opportunityId,
+        },
+      });
       return;
     }
 
@@ -102,7 +108,7 @@ const OpportunityDetailPage = () => {
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">
             {viewModel.recommendation ? (
-              <RecommendationInsightPanel recommendation={viewModel.recommendation} />
+              <RecommendationInsightPanel recommendation={viewModel.recommendation} context="detail" />
             ) : detailPage.recommendationLoading && isUserAuthenticated ? (
               <RecommendationInsightSkeleton />
             ) : !detailPage.recommendationLoading && isUserAuthenticated && !userHasResume ? (

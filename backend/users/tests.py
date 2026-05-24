@@ -361,7 +361,8 @@ class ProfilSerializerTests(TestCase):
             'niveau_experience', 'annees_experience',
             'opportunity_types', 'preferred_locations', 'preferred_location',
             'remote_preference', 'work_mode_preferences',
-            'compensation_expectation', 'compensation_currency', 'compensation_period',
+            'compensation_expectation', 'compensation_min_expectation',
+            'compensation_max_expectation', 'compensation_currency', 'compensation_period',
             'employment_types', 'target_roles', 'profile_visibility',
             'onboarding_completed', 'last_onboarding_step',
             'active_resume', 'profile_completion',
@@ -591,6 +592,18 @@ class ProfilUpdateSerializerTests(TestCase):
         self.assertEqual(instance.nom, "UpdatedNom")
         self.assertEqual(instance.prenom, "UpdatedPrenom")
 
+    def test_candidate_names_are_optional_on_profile_update(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"nom": "", "prenom": ""},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.nom, "")
+        self.assertEqual(instance.prenom, "")
+
     def test_onboarding_fields_update(self):
         data = {
             "opportunity_types": ["JOB"],
@@ -727,7 +740,7 @@ class ProfilUpdateSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("preferred_location", serializer.errors)
 
-    def test_profile_interests_are_canonical_and_cross_type_safe(self):
+    def test_profile_sectors_preserve_user_entered_terms(self):
         serializer = ProfilUpdateSerializer(
             self.profil,
             data={"domaines_interet": ["sante", "React", "Backend Developer"]},
@@ -736,7 +749,29 @@ class ProfilUpdateSerializerTests(TestCase):
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
         instance = serializer.save()
-        self.assertEqual(instance.domaines_interet, ["HEALTHCARE"])
+        self.assertEqual(instance.domaines_interet, ["sante", "React", "Backend Developer"])
+
+    def test_profile_update_preserves_user_entered_skill_terms(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"competences": ["Laravel", "Angular", "Finance"]},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.competences, ["Laravel", "Angular", "Finance"])
+
+    def test_profile_update_preserves_user_entered_interest_terms(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"domaines_interet": ["Finance", "Banque", "Marketing digital"]},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.domaines_interet, ["Finance", "Banque", "Marketing digital"])
 
     def test_salary_validation_is_tunisia_monthly_safe(self):
         serializer = ProfilUpdateSerializer(
@@ -1009,13 +1044,41 @@ class ProfileDetailViewTests(APITestCase):
         self.user.profil.refresh_from_db()
         self.assertEqual(self.user.profil.competences, ["Python", "Django"])
 
+    def test_put_profile_preserves_user_entered_free_terms_in_api_response(self):
+        response = self.client.put(
+            self.url,
+            {
+                "competences": ["Laravel", "Angular", "Finance"],
+                "domaines_interet": ["Finance", "Banque", "Marketing digital"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.profil.refresh_from_db()
+        self.assertEqual(self.user.profil.competences, ["Laravel", "Angular", "Finance"])
+        self.assertEqual(
+            self.user.profil.domaines_interet,
+            ["Finance", "Banque", "Marketing digital"],
+        )
+        self.assertEqual(
+            response.data["profil"]["competences"],
+            ["Laravel", "Angular", "Finance"],
+        )
+        self.assertEqual(
+            response.data["profil"]["domaines_interet"],
+            ["Finance", "Banque", "Marketing digital"],
+        )
+
     def test_put_onboarding_fields(self):
         data = {
             "opportunity_types": ["JOB", "INTERNSHIP"],
             "preferred_location": "Tunis",
             "remote_preference": "REMOTE",
-            "compensation_expectation": 60000,
-            "compensation_period": "YEARLY",
+            "compensation_expectation": 3000,
+            "compensation_min_expectation": 2800,
+            "compensation_max_expectation": 3200,
+            "compensation_period": "MONTHLY",
             "employment_types": ["Stage"],
             "target_roles": ["Data Engineer"],
             "profile_visibility": False,
@@ -1029,6 +1092,8 @@ class ProfileDetailViewTests(APITestCase):
         self.assertEqual(self.user.profil.preferred_locations, ["Tunis"])
         self.assertEqual(self.user.profil.work_mode_preferences, ["REMOTE"])
         self.assertEqual(self.user.profil.employment_types, ["INTERNSHIP"])
+        self.assertEqual(self.user.profil.compensation_min_expectation, 2800)
+        self.assertEqual(self.user.profil.compensation_max_expectation, 3200)
 
     def test_put_returns_full_user_serializer(self):
         response = self.client.put(self.url, {"nom": "Test"})

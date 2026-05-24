@@ -158,10 +158,14 @@ def _interest_generated_alias_keys(canonical: str) -> list[str]:
 
 
 def _alias_keys(aggregate: AggregatedTerm) -> list[str]:
-    values = [aggregate.best_canonical, *aggregate.aliases]
-    keys = [normalize_lookup_key(value) for value in values]
     if aggregate.term_type == ProfileSuggestionType.ROLE.value:
-        keys.extend(_role_generated_alias_keys(aggregate.best_canonical))
+        values = [
+            aggregate.best_canonical,
+            *_role_generated_alias_keys(aggregate.best_canonical),
+        ]
+    else:
+        values = [aggregate.best_canonical, *aggregate.aliases]
+    keys = [normalize_lookup_key(value) for value in values]
     if aggregate.term_type == ProfileSuggestionType.INTEREST.value:
         keys.extend(_interest_generated_alias_keys(aggregate.best_canonical))
     return [
@@ -181,7 +185,14 @@ def _compact_keys(aggregate: AggregatedTerm) -> list[str]:
 
 def _token_keys(aggregate: AggregatedTerm) -> list[str]:
     tokens = []
-    for key in _alias_keys(aggregate):
+    if aggregate.term_type == ProfileSuggestionType.ROLE.value:
+        keys = [
+            normalize_lookup_key(aggregate.best_canonical),
+            *_role_generated_alias_keys(aggregate.best_canonical),
+        ]
+    else:
+        keys = _alias_keys(aggregate)
+    for key in keys:
         tokens.extend(key.split())
     return [token for token in dict.fromkeys(tokens) if token]
 

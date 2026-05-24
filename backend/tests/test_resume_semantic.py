@@ -12,9 +12,15 @@ from ai.quality_gates import passes_recommendation_quality_gate
 from ai.recommendation_service import rank_opportunities
 from ai.user_features import build_user_features
 from users.models import ProfileResume, Utilisateur
+from users.resume_semantic.candidate_quality import filter_resume_skill_candidates
 from users.resume_semantic.esco_mapping import map_to_esco
 from users.resume_semantic.extraction import extract_skill_candidates
-from users.resume_semantic.models import SEMANTIC_RESUME_VERSION, SEMANTIC_STATUS_SKIPPED, SEMANTIC_STATUS_SUCCEEDED
+from users.resume_semantic.models import (
+    SEMANTIC_RESUME_VERSION,
+    SEMANTIC_STATUS_SKIPPED,
+    SEMANTIC_STATUS_SUCCEEDED,
+    SkillCandidate,
+)
 from users.resume_semantic.normalization import detect_languages, normalize_skill_label
 from users.resume_semantic.service import enrich_resume_text, process_profile_resume_semantics
 
@@ -84,6 +90,75 @@ class ResumeSemanticExtractionTests(SimpleTestCase):
         languages = detect_languages("Python engineer. Développeur backend. مهندس بايثون.")
 
         self.assertEqual(languages, ["ar", "fr", "en"])
+
+    def test_candidate_quality_filter_rejects_phrase_fragments_but_keeps_real_skills(self):
+        accepted, rejected = filter_resume_skill_candidates(
+            [
+                SkillCandidate(text="React", source="lexical", confidence=0.9),
+                SkillCandidate(
+                    text="et développer un portefeuille de clients",
+                    source="escoxlmr",
+                    confidence=0.8,
+                ),
+                SkillCandidate(text="opportunités", source="escoxlmr", confidence=0.7),
+                SkillCandidate(text="d", source="escoxlmr", confidence=0.6),
+            ]
+        )
+
+        self.assertEqual([candidate.text for candidate in accepted], ["React"])
+        self.assertEqual(
+            [candidate.reason for candidate in rejected],
+            ["phrase_fragment", "generic_business_term", "too_short"],
+        )
+
+    def test_candidate_quality_keeps_market_skills_and_rejects_generic_cv_noise(self):
+        accepted, rejected = filter_resume_skill_candidates(
+            [
+                SkillCandidate(text="Python", source="lexical", confidence=0.95),
+                SkillCandidate(text="Django", source="lexical", confidence=0.95),
+                SkillCandidate(text="React", source="lexical", confidence=0.95),
+                SkillCandidate(text="Excel", source="lexical", confidence=0.95),
+                SkillCandidate(text="Sage", source="lexical", confidence=0.95),
+                SkillCandidate(text="etre", source="model", confidence=0.8),
+                SkillCandidate(text="proposer", source="model", confidence=0.8),
+                SkillCandidate(text="equipe", source="model", confidence=0.8),
+                SkillCandidate(text="être", source="model", confidence=0.8),
+                SkillCandidate(text="à la pression", source="model", confidence=0.8),
+                SkillCandidate(text="équipe", source="model", confidence=0.8),
+                SkillCandidate(text="Assurer", source="model", confidence=0.8),
+                SkillCandidate(text="Maintenir", source="model", confidence=0.8),
+                SkillCandidate(text="Prospec", source="model", confidence=0.8),
+                SkillCandidate(text="creating", source="model", confidence=0.8),
+                SkillCandidate(text="robust and scalable systems", source="model", confidence=0.8),
+                SkillCandidate(text="reusable components", source="model", confidence=0.8),
+                SkillCandidate(text="force", source="model", confidence=0.8),
+                SkillCandidate(text="pression", source="model", confidence=0.8),
+            ]
+        )
+
+        self.assertEqual(
+            [candidate.text for candidate in accepted],
+            ["Python", "Django", "React", "Excel", "Sage"],
+        )
+        self.assertEqual(
+            {candidate.text: candidate.reason for candidate in rejected},
+            {
+                "etre": "generic_action_term",
+                "proposer": "generic_action_term",
+                "equipe": "generic_business_term",
+                "être": "generic_noise_term",
+                "à la pression": "generic_noise_term",
+                "équipe": "generic_noise_term",
+                "Assurer": "generic_action_term",
+                "Maintenir": "generic_action_term",
+                "Prospec": "generic_action_term",
+                "creating": "generic_action_term",
+                "robust and scalable systems": "non_skill_phrase",
+                "reusable components": "non_skill_phrase",
+                "force": "generic_business_term",
+                "pression": "generic_business_term",
+            },
+        )
 
 
 class FakeResumeQuerySet:
@@ -253,7 +328,7 @@ class ResumeSemanticRecommendationImpactTests(SimpleTestCase):
         self.assertIn("ar", features["semantic_resume_languages"])
 
 
-@override_settings(OPPORTUNITY_PGVECTOR_DIMENSIONS=2)
+@override_settings(OPPORTUNITY_PGVECTOR_DIMENSIONS=2, LLM_ENRICHMENT_ENABLED=False)
 class ResumeSemanticServiceTests(TestCase):
     def setUp(self):
         self.user = Utilisateur.objects.create_user(
@@ -298,6 +373,73 @@ class ResumeSemanticServiceTests(TestCase):
         )
 
         self.assertEqual(second["status"], SEMANTIC_STATUS_SKIPPED)
+
+    @override_settings(LLM_ENRICHMENT_ENABLED=True)
+    @patch("ai.llm.enrichment.enrich_resume_text")
+    def test_process_resume_persists_llm_business_family_metadata(self, mock_llm_enrich):
+        mock_llm_enrich.return_value = SimpleNamespace(
+            as_dict=lambda: {
+                "target_roles": ["IT Helpdesk Officer"],
+                "canonical_role": "Technicien support informatique",
+                "skills": ["Support utilisateur"],
+                "tools": ["Windows", "TCP/IP"],
+                "domains": ["support IT"],
+                "business_families": ["it_network_support"],
+                "family_confidence": 0.91,
+                "confidence": 0.92,
+                "provider": "ollama",
+                "model": "llama3.2:3b",
+            }
+        )
+        resume = self.create_resume("Support utilisateurs Windows TCP/IP et diagnostic materiel")
+
+        result = process_profile_resume_semantics(
+            resume,
+            use_model=False,
+            allow_semantic_mapping=False,
+            force=True,
+        )
+
+        resume.refresh_from_db()
+        self.assertEqual(result["business_families"], ["it_network_support"])
+        self.assertEqual(result["canonical_role"], "Technicien support informatique")
+        self.assertEqual(resume.semantic_resume_metadata["business_families"], ["it_network_support"])
+        self.assertEqual(resume.semantic_resume_metadata["family_confidence"], 0.91)
+        self.assertEqual(
+            resume.semantic_resume_metadata["llm_enrichment"]["business_families"],
+            ["it_network_support"],
+        )
+
+    @override_settings(LLM_ENRICHMENT_ENABLED=True)
+    @patch("ai.llm.enrichment.enrich_resume_text")
+    def test_office_admin_cv_overrides_customer_support_family(self, mock_llm_enrich):
+        mock_llm_enrich.return_value = SimpleNamespace(
+            as_dict=lambda: {
+                "target_roles": ["Assistante de Bureau"],
+                "canonical_role": "Assistante de Bureau",
+                "skills": ["Organisation", "Communication"],
+                "tools": [],
+                "domains": ["Administration"],
+                "business_families": ["customer_support"],
+                "family_confidence": 1.0,
+                "confidence": 1.0,
+            }
+        )
+        resume = self.create_resume(
+            "Assistante de bureau junior. Classement et archivage des dossiers, "
+            "préparation de courriers et suivi administratif."
+        )
+
+        result = process_profile_resume_semantics(
+            resume,
+            use_model=False,
+            allow_semantic_mapping=False,
+            force=True,
+        )
+
+        resume.refresh_from_db()
+        self.assertEqual(result["business_families"], ["administration"])
+        self.assertEqual(resume.semantic_resume_metadata["business_families"], ["administration"])
 
     def test_embedding_features_prioritize_structured_resume_signals_over_raw_text(self):
         resume = self.create_resume("Raw CV says Python Django Postgres Docker K8s")
@@ -351,3 +493,35 @@ class ResumeSemanticServiceTests(TestCase):
             features = build_user_features(profile)
 
         self.assertIn("python", features["skills"])
+
+    @patch("users.resume_semantic.service.extract_skill_candidates")
+    def test_process_resume_metadata_keeps_rejected_candidate_analytics_out_of_raw_skill_storage(
+        self,
+        mock_extract_skill_candidates,
+    ):
+        resume = self.create_resume("React et développer un portefeuille de clients")
+        mock_extract_skill_candidates.return_value = [
+            SkillCandidate(text="React", source="lexical", confidence=0.9),
+            SkillCandidate(
+                text="et développer un portefeuille de clients",
+                source="escoxlmr",
+                confidence=0.8,
+            ),
+            SkillCandidate(text="opportunités", source="escoxlmr", confidence=0.7),
+        ]
+
+        result = process_profile_resume_semantics(
+            resume,
+            use_model=False,
+            allow_semantic_mapping=False,
+            force=True,
+        )
+
+        resume.refresh_from_db()
+        self.assertEqual(result["status"], SEMANTIC_STATUS_SUCCEEDED)
+        self.assertEqual(resume.extracted_raw_skills, ["React"])
+        self.assertEqual(len(resume.semantic_resume_metadata["rejected_raw_candidates"]), 2)
+        self.assertEqual(
+            [item["reason"] for item in resume.semantic_resume_metadata["rejected_raw_candidates"]],
+            ["phrase_fragment", "generic_business_term"],
+        )

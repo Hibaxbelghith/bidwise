@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-SEMANTIC_RESUME_VERSION = "semantic-cv-v1"
+SEMANTIC_RESUME_VERSION = "semantic-cv-v3"
 SEMANTIC_STATUS_PENDING = "PENDING"
 SEMANTIC_STATUS_PROCESSING = "PROCESSING"
 SEMANTIC_STATUS_SUCCEEDED = "SUCCEEDED"
@@ -32,28 +32,64 @@ class SkillCandidate:
 
 
 @dataclass(frozen=True)
+class RejectedSkillCandidate:
+    text: str
+    source: str
+    reason: str
+    confidence: float = 0.0
+    normalized_key: str = ""
+    token_count: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "text": self.text,
+            "source": self.source,
+            "reason": self.reason,
+            "confidence": round(float(self.confidence or 0.0), 4),
+            "normalized_key": self.normalized_key,
+            "token_count": int(self.token_count or 0),
+        }
+
+
+@dataclass(frozen=True)
 class ResumeSemanticSignals:
     skills: list[str] = field(default_factory=list)
     domains: list[str] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
+    business_families: list[str] = field(default_factory=list)
+    family_confidence: float = 0.0
+    canonical_role: str = ""
+    target_roles: list[str] = field(default_factory=list)
     languages_detected: list[str] = field(default_factory=list)
     semantic_confidence: float = 0.0
+    llm_enrichment: dict[str, Any] = field(default_factory=dict)
     raw_candidates: list[SkillCandidate] = field(default_factory=list)
+    rejected_candidates: list[RejectedSkillCandidate] = field(default_factory=list)
     mapped_candidates: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def has_structured_signal(self) -> bool:
-        return bool(self.skills or self.domains or self.tools)
+        return bool(
+            self.skills
+            or self.domains
+            or self.tools
+            or (self.business_families and self.family_confidence >= 0.75)
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "skills": self.skills,
             "domains": self.domains,
             "tools": self.tools,
+            "business_families": self.business_families,
+            "family_confidence": round(float(self.family_confidence or 0.0), 4),
+            "canonical_role": self.canonical_role,
+            "target_roles": self.target_roles,
             "languages_detected": self.languages_detected,
             "semantic_confidence": round(float(self.semantic_confidence or 0.0), 4),
+            "llm_enrichment": self.llm_enrichment,
             "raw_candidates": [candidate.as_dict() for candidate in self.raw_candidates],
+            "rejected_candidates": [candidate.as_dict() for candidate in self.rejected_candidates],
             "mapped_candidates": self.mapped_candidates,
             "warnings": self.warnings,
         }
-

@@ -9,6 +9,27 @@ export const OPPORTUNITY_TYPE_OPTIONS = [
   { value: 'FUNDING', label: 'Funding', description: 'Grants, scholarships, and programs' },
 ];
 
+export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
+  {
+    value: 'JOB',
+    label: 'Jobs',
+    description: 'Full-time, part-time, contract, SIVP',
+    values: ['JOB'],
+  },
+  {
+    value: 'INTERNSHIP',
+    label: 'Internships',
+    description: 'Stage et programmes trainee',
+    values: ['INTERNSHIP'],
+  },
+  {
+    value: 'PROJECTS',
+    label: 'Projects',
+    description: "Appels d'offres, financements, R&D",
+    values: ['RESEARCH', 'FUNDING'],
+  },
+];
+
 export const WORK_MODE_OPTIONS = [
   { value: 'REMOTE', label: 'Remote' },
   { value: 'HYBRID', label: 'Hybrid' },

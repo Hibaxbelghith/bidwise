@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
+const LOGOUT_REDIRECT_DELAY_MS = 160;
+
 export default function DashboardScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const [isLogoutPending, setIsLogoutPending] = useState(false);
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -15,9 +19,14 @@ export default function DashboardScreen() {
   const cardColor = useThemeColor({}, 'card');
   const borderColor = useThemeColor({}, 'border');
 
-  const handleLogout = async () => {
-    await logout();
-    router.replace('/login');
+  const handleLogout = () => {
+    if (isLogoutPending) return;
+
+    setIsLogoutPending(true);
+    setTimeout(async () => {
+      await logout();
+      router.replace('/login');
+    }, LOGOUT_REDIRECT_DELAY_MS);
   };
 
   const handleOpenOpportunities = () => {
@@ -38,7 +47,7 @@ export default function DashboardScreen() {
           </Text>
           <Text style={[styles.title, { color: textColor }]}>Dashboard</Text>
         </View>
-        <TouchableOpacity onPress={handleLogout} activeOpacity={0.7}>
+        <TouchableOpacity onPress={handleLogout} activeOpacity={0.7} disabled={isLogoutPending}>
           <Text style={[styles.logoutText, { color: tintColor }]}>Logout</Text>
         </TouchableOpacity>
       </View>

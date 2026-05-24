@@ -241,7 +241,7 @@ class RecommendationPgvectorRetrievalTests(TestCase):
         self.assertLessEqual(len(ids), 5)
         self.assertLessEqual(len(ids), MAX_SEMANTIC_CANDIDATES)
 
-    def test_recommendation_api_global_fallback_respects_profile_opportunity_types(self):
+    def test_recommendation_api_error_suppresses_recent_fallback_by_default(self):
         user = Utilisateur.objects.create_user(
             username="fallback_job_user",
             email="fallback_job_user@example.com",
@@ -270,10 +270,42 @@ class RecommendationPgvectorRetrievalTests(TestCase):
             response = client.get("/api/recommendations/?limit=5")
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    @override_settings(RECOMMENDATION_SHOW_RECENT_FALLBACK=True)
+    def test_recommendation_api_flagged_global_fallback_respects_profile_opportunity_types(self):
+        user = Utilisateur.objects.create_user(
+            username="flagged_fallback_job_user",
+            email="flagged_fallback_job_user@example.com",
+            password="x",
+        )
+        profile = user.profil
+        profile.opportunity_types = ["JOB"]
+        profile.save(update_fields=["opportunity_types"])
+
+        job = self.create_opportunity(
+            "Frontend Developer",
+            vector_at(0),
+            type_opportunite=TypeOpportunite.EMPLOI,
+            date_publication=date.today() - timedelta(days=1),
+        )
+        self.create_opportunity(
+            "Public Tender",
+            vector_at(1),
+            type_opportunite=TypeOpportunite.PROJET,
+            date_publication=date.today(),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        with patch("ai.views._build_recommendations", side_effect=RuntimeError("boom")):
+            response = client.get("/api/recommendations/?limit=5")
+
+        self.assertEqual(response.status_code, 200)
         self.assertEqual([item["id"] for item in response.data], [job.id])
         self.assertTrue(all(item["type"] == TypeOpportunite.EMPLOI for item in response.data))
 
-    def test_recommendation_api_missing_profile_embedding_respects_profile_opportunity_types(self):
+    def test_recommendation_api_missing_profile_embedding_suppresses_recent_fallback_by_default(self):
         user = Utilisateur.objects.create_user(
             username="missing_embedding_job_user",
             email="missing_embedding_job_user@example.com",
@@ -309,5 +341,4 @@ class RecommendationPgvectorRetrievalTests(TestCase):
             response = client.get("/api/recommendations/?limit=5")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(job.id, [item["id"] for item in response.data])
-        self.assertTrue(all(item["type"] == TypeOpportunite.EMPLOI for item in response.data))
+        self.assertEqual(response.data, [])

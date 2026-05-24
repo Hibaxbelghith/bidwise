@@ -52,6 +52,43 @@ def _merge_unique(*values):
     return merged
 
 
+def _clean_normalized_skill_entries(value):
+    if not isinstance(value, list):
+        return []
+
+    cleaned = []
+    seen = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        uri = str(item.get("esco_uri") or "").strip()
+        raw_skill = str(item.get("raw_skill") or "").strip().casefold()
+        match_type = str(item.get("match_type") or "").strip().lower()
+        key = (uri, raw_skill, match_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(dict(item))
+    return cleaned
+
+
+def _merge_normalized_skill_entries(*values):
+    merged = []
+    seen = set()
+    for value in values:
+        for item in _clean_normalized_skill_entries(value):
+            key = (
+                str(item.get("esco_uri") or "").strip(),
+                str(item.get("raw_skill") or "").strip().casefold(),
+                str(item.get("match_type") or "").strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged
+
+
 def _get_active_resume_parsed_text(profile):
     active_resume = _get_active_resume(profile)
     return _clean_text(getattr(active_resume, "parsed_text", "")) if active_resume else ""
@@ -70,11 +107,13 @@ def _get_active_resume(profile):
                 "profile_id",
                 "parsed_text",
                 "extracted_skills",
+                "extracted_normalized_skills",
                 "extracted_domains",
                 "extracted_tools",
                 "extracted_languages",
                 "semantic_resume_confidence",
                 "semantic_resume_status",
+                "semantic_resume_metadata",
             )
             .first()
         )
@@ -94,6 +133,10 @@ def _semantic_signals_from_resume(active_resume):
         "tools": [],
         "languages": [],
         "confidence": 0.0,
+        "business_families": [],
+        "family_confidence": 0.0,
+        "canonical_role": "",
+        "target_roles": [],
     }
     if not active_resume:
         return empty
@@ -105,12 +148,24 @@ def _semantic_signals_from_resume(active_resume):
     except (TypeError, ValueError):
         confidence = 0.0
 
+    metadata = getattr(active_resume, "semantic_resume_metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    try:
+        family_confidence = float(metadata.get("family_confidence") or 0.0)
+    except (TypeError, ValueError):
+        family_confidence = 0.0
+
     return {
         "skills": _clean_list(getattr(active_resume, "extracted_skills", [])),
         "domains": _clean_list(getattr(active_resume, "extracted_domains", [])),
         "tools": _clean_list(getattr(active_resume, "extracted_tools", [])),
         "languages": _clean_list(getattr(active_resume, "extracted_languages", [])),
         "confidence": max(0.0, min(1.0, confidence)),
+        "business_families": _clean_list(metadata.get("business_families")),
+        "family_confidence": max(0.0, min(1.0, family_confidence)),
+        "canonical_role": _clean_text(metadata.get("canonical_role")),
+        "target_roles": _clean_list(metadata.get("target_roles")),
     }
 
 
@@ -131,6 +186,16 @@ def build_user_features(profile):
         semantic_resume["skills"],
         semantic_resume["tools"],
     )
+    normalized_profile_skills = _clean_normalized_skill_entries(
+        getattr(profile, "normalized_skills", []),
+    )
+    normalized_resume_skills = _clean_normalized_skill_entries(
+        getattr(active_resume, "extracted_normalized_skills", []),
+    )
+    normalized_skills = _merge_normalized_skill_entries(
+        normalized_profile_skills,
+        normalized_resume_skills,
+    )
 
     features = {
         "profile_skills": _clean_list(getattr(profile, "competences", [])),
@@ -139,12 +204,19 @@ def build_user_features(profile):
         "semantic_resume_tools": semantic_resume["tools"],
         "semantic_resume_languages": semantic_resume["languages"],
         "semantic_resume_confidence": semantic_resume["confidence"],
+        "semantic_resume_business_families": semantic_resume["business_families"],
+        "semantic_resume_family_confidence": semantic_resume["family_confidence"],
+        "semantic_resume_canonical_role": semantic_resume["canonical_role"],
+        "semantic_resume_target_roles": semantic_resume["target_roles"],
+        "profile_business_families": semantic_resume["business_families"],
+        "profile_family_confidence": semantic_resume["family_confidence"],
         "skills": _merge_unique(
             getattr(profile, "competences", []),
             semantic_resume_skills,
         ),
         "roles": _merge_unique(
             target_roles,
+            semantic_resume["target_roles"],
             interests,
             semantic_resume["domains"],
         ),
@@ -158,9 +230,17 @@ def build_user_features(profile):
         "work_modes": _clean_list(getattr(profile, "work_mode_preferences", [])),
         "employment_types": _clean_list(getattr(profile, "employment_types", [])),
         "salary": _clean_positive_int(getattr(profile, "compensation_expectation", None)),
+        "salary_min": _clean_positive_int(getattr(profile, "compensation_min_expectation", None)),
+        "salary_max": _clean_positive_int(getattr(profile, "compensation_max_expectation", None)),
         "salary_currency": _clean_text(getattr(profile, "compensation_currency", "")),
         "salary_period": _clean_text(getattr(profile, "compensation_period", "")),
     }
+    if normalized_profile_skills:
+        features["normalized_profile_skills"] = normalized_profile_skills
+    if normalized_resume_skills:
+        features["normalized_resume_skills"] = normalized_resume_skills
+    if normalized_skills:
+        features["normalized_skills"] = normalized_skills
     resume_text = _clean_text(getattr(active_resume, "parsed_text", "")) if active_resume else ""
     if resume_text:
         features["resume_text"] = resume_text

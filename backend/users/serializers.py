@@ -2,12 +2,15 @@ import re
 import unicodedata
 from pathlib import Path
 from urllib.parse import urlparse
+from .models import AuditLog, Utilisateur
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 from ai.embeddings import enqueue_profile_embedding_refresh
+from ai.esco_skill_storage import clean_skill_storage_list
+from ai.tasks import enqueue_profile_skill_normalization
 from .models import Utilisateur, Profil, ProfileResume, OrganizationProfile
 from opportunities.autocomplete.service import normalize_profile_terms
 from opportunities.normalization.employment import (
@@ -208,6 +211,8 @@ def _normalize_required_profile_text(value):
 
 def _normalize_candidate_name(value):
     text = re.sub(r"\s+", " ", (value or "").strip())
+    if not text:
+        return ""
     if len(text) < 2 or len(text) > 100:
         raise serializers.ValidationError(PROFILE_NAME_LENGTH_ERROR)
     return text
@@ -480,6 +485,10 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             "parsing_error",
             "parsed_at",
             "parsed_text_available",
+            "semantic_resume_status",
+            "semantic_resume_confidence",
+            "semantic_resume_updated_at",
+            "semantic_resume_version",
         ]
         read_only_fields = [
             "id",
@@ -491,6 +500,10 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             "parsing_error",
             "parsed_at",
             "parsed_text_available",
+            "semantic_resume_status",
+            "semantic_resume_confidence",
+            "semantic_resume_updated_at",
+            "semantic_resume_version",
         ]
 
     def get_file_url(self, obj):
@@ -568,7 +581,8 @@ class ProfilSerializer(serializers.ModelSerializer):
             'niveau_experience', 'annees_experience',
             'opportunity_types', 'preferred_locations', 'preferred_location',
             'remote_preference', 'work_mode_preferences',
-            'compensation_expectation', 'compensation_currency', 'compensation_period',
+            'compensation_expectation', 'compensation_min_expectation',
+            'compensation_max_expectation', 'compensation_currency', 'compensation_period',
             'employment_types', 'target_roles', 'profile_visibility',
             'onboarding_completed', 'last_onboarding_step',
             'active_resume', 'profile_completion',
@@ -747,6 +761,8 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         'work_mode_preferences',
         'remote_preference',
         'compensation_expectation',
+        'compensation_min_expectation',
+        'compensation_max_expectation',
         'compensation_currency',
         'compensation_period',
         'employment_types',
@@ -760,7 +776,8 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             'niveau_experience', 'annees_experience',
             'opportunity_types', 'preferred_locations', 'preferred_location',
             'remote_preference', 'work_mode_preferences',
-            'compensation_expectation', 'compensation_currency', 'compensation_period',
+            'compensation_expectation', 'compensation_min_expectation',
+            'compensation_max_expectation', 'compensation_currency', 'compensation_period',
             'employment_types', 'target_roles', 'profile_visibility',
             'onboarding_completed', 'last_onboarding_step',
         ]
@@ -832,14 +849,13 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         return period
 
     def _validate_compensation(self, attrs):
-        if "compensation_expectation" not in attrs and "compensation_period" not in attrs:
-            return attrs
-
-        amount = attrs.get(
+        compensation_fields = {
             "compensation_expectation",
-            getattr(self.instance, "compensation_expectation", None),
-        )
-        if amount is None:
+            "compensation_min_expectation",
+            "compensation_max_expectation",
+            "compensation_period",
+        }
+        if not compensation_fields.intersection(attrs):
             return attrs
 
         period = attrs.get(
@@ -851,13 +867,36 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"compensation_period": "Unsupported compensation period."})
 
         minimum, maximum = limits
-        if amount < minimum:
+        values = {
+            "compensation_expectation": attrs.get(
+                "compensation_expectation",
+                getattr(self.instance, "compensation_expectation", None),
+            ),
+            "compensation_min_expectation": attrs.get(
+                "compensation_min_expectation",
+                getattr(self.instance, "compensation_min_expectation", None),
+            ),
+            "compensation_max_expectation": attrs.get(
+                "compensation_max_expectation",
+                getattr(self.instance, "compensation_max_expectation", None),
+            ),
+        }
+
+        for field, amount in values.items():
+            if amount is None:
+                continue
+            if amount < minimum:
+                raise serializers.ValidationError({field: MIN_MONTHLY_SALARY_TND_ERROR})
+            if amount > maximum:
+                raise serializers.ValidationError({
+                    field: f"Expected salary is too high for {period.lower()} TND."
+                })
+
+        min_amount = values["compensation_min_expectation"]
+        max_amount = values["compensation_max_expectation"]
+        if min_amount is not None and max_amount is not None and min_amount > max_amount:
             raise serializers.ValidationError({
-                "compensation_expectation": MIN_MONTHLY_SALARY_TND_ERROR
-            })
-        if amount > maximum:
-            raise serializers.ValidationError({
-                "compensation_expectation": f"Expected salary is too high for {period.lower()} TND."
+                "compensation_max_expectation": "Maximum salary must be greater than or equal to minimum salary."
             })
         return attrs
 
@@ -905,8 +944,18 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         should_invalidate_embedding = bool(
             self.EMBEDDING_FEATURE_FIELDS.intersection(validated_data.keys())
         )
+        should_refresh_skill_normalization = "competences" in validated_data
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+
+        if should_refresh_skill_normalization:
+            instance.raw_skills = clean_skill_storage_list(
+                validated_data.get("competences", [])
+            )
+            instance.normalized_skills = []
+            instance.skills_normalization_hash = ""
+            instance.skills_normalization_updated_at = None
+            instance.skills_normalization_error = ""
 
         if should_invalidate_embedding:
             instance.embedding = None
@@ -918,6 +967,10 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             instance.embedding_content_hash = ''
 
         instance.save()
+        if should_refresh_skill_normalization:
+            transaction.on_commit(
+                lambda profile_id=instance.pk: enqueue_profile_skill_normalization(profile_id)
+            )
         if should_invalidate_embedding:
             transaction.on_commit(
                 lambda profile_id=instance.pk: enqueue_profile_embedding_refresh(profile_id)
@@ -941,3 +994,117 @@ class OTPVerifySerializer(serializers.Serializer):
     """Validates email + 6-digit OTP code for passwordless login."""
     email = serializers.EmailField(required=True)
     otp = serializers.CharField(required=True, min_length=6, max_length=6)
+
+
+class UserSuspensionSerializer(serializers.Serializer):
+    """Validates suspension request with reason and optional detail."""
+    
+    SUSPENSION_REASONS = {
+        "spam": "Spam",
+        "abuse": "Abuse",
+        "fraud": "Fraud",
+        "other": "Other",
+    }
+    
+    reason = serializers.ChoiceField(
+        choices=list(SUSPENSION_REASONS.keys()),
+        required=True,
+        error_messages={
+            "required": "Reason is required.",
+            "invalid_choice": "Reason must be one of: spam, abuse, fraud, other.",
+        }
+    )
+    detail = serializers.CharField(
+        max_length=500,
+        required=False,
+        allow_blank=True,
+        trim_whitespace=True,
+    )
+    
+    def validate(self, data):
+        """Validate that detail is required if reason is 'other'."""
+        reason = data.get("reason")
+        detail = data.get("detail", "").strip()
+        
+        if reason == "other" and not detail:
+            raise serializers.ValidationError(
+                {"detail": "Detail is required when reason is 'other'."}
+            )
+        
+        # Clean up empty/whitespace-only detail
+        if not detail:
+            data["detail"] = ""
+        else:
+            data["detail"] = detail
+        
+        return data
+
+
+# ── Admin user list ───────────────────────────────────────────────────────────
+
+class AdminUserListSerializer(serializers.ModelSerializer):
+    """
+    Read-only serializer for the admin user management table.
+
+    Exposes only the fields needed for the MVP table:
+      email, account_type, is_admin, is_active, is_suspended,
+      date_joined, last_login, display_name
+    """
+
+    display_name = serializers.SerializerMethodField(
+        help_text="Best available display name: first+last name or email fallback."
+    )
+
+    class Meta:
+        model = Utilisateur
+        fields = [
+            "id",
+            "email",
+            "display_name",
+            "account_type",
+            "is_admin",
+            "is_active",
+            "is_suspended",
+            "suspension_reason",
+            "suspended_at",
+            "date_joined",
+            "last_login",
+        ]
+        read_only_fields = fields
+
+    def get_display_name(self, obj: Utilisateur) -> str:
+        # Prefer profil nom/prenom if the related object is prefetched
+        profil = getattr(obj, "profil", None)
+        if profil:
+            full = f"{profil.prenom} {profil.nom}".strip()
+            if full:
+                return full
+        # Fallback: Django first_name / last_name
+        full = f"{obj.first_name} {obj.last_name}".strip()
+        return full or obj.email
+
+
+# ── Audit log (read-only) ─────────────────────────────────────────────────────
+
+class AdminAuditLogSerializer(serializers.ModelSerializer):
+    """
+    Read-only serializer for the audit log feed.
+    Embeds actor and target as lightweight email-only objects.
+    """
+
+    actor_email  = serializers.EmailField(source="actor.email",  default=None, read_only=True)
+    target_email = serializers.EmailField(source="target.email", default=None, read_only=True)
+    action_label = serializers.CharField(source="get_action_display", read_only=True)
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "action",
+            "action_label",
+            "actor_email",
+            "target_email",
+            "metadata",
+            "created_at",
+        ]
+        read_only_fields = fields

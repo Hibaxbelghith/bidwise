@@ -1,20 +1,32 @@
 import ast
+import csv
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, Q, Sum
-from django.db.models import Max, OuterRef, Subquery
+from django.db.models import DateTimeField, Max, OuterRef, Subquery
+from django.db.models.functions import TruncDate
+from django.http import HttpResponse
 from django.conf import settings
+from django.utils import timezone
 from django.utils.timezone import now
+from django_filters import rest_framework as django_filters
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from config.celery import app as celery_app
-from users.models import LoginEvent
+from users.models import AuditLog, LoginEvent
 from users.permissions import IsAdminUser
+from users.serializers import UserSuspensionSerializer
+from applications.models import Candidature
 from .dataset_metrics import compute_pipeline_metrics
 from .monitoring import collect_pipeline_anomalies
 from .models import (
@@ -23,6 +35,7 @@ from .models import (
     PipelineRunStatus,
     RawOpportunite,
     RawOpportuniteProcessingStatus,
+    StatutOpportunite,
 )
 from .source_cleanup import REMOVED_SOURCE_KEYS, removed_source_q
 from .services.scheduler_monitoring import get_scheduler_decision_snapshots
@@ -69,10 +82,129 @@ class AdminOpportunitySerializer(serializers.ModelSerializer):
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
+    last_login_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    provider = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ["id", "email", "is_admin", "is_active", "date_joined"]
+        fields = [
+            "id",
+            "email",
+            "is_admin",
+            "is_active",
+            "is_suspended",
+            "suspension_reason",
+            "suspended_at",
+            "account_type",
+            "date_joined",
+            "last_login_at",
+            "provider",
+        ]
         read_only_fields = fields
+
+    def get_provider(self, obj):
+        password = getattr(obj, "password", "") or ""
+        return "PASSWORDLESS" if password.startswith("!") else "PASSWORD"
+
+
+class AdminAuditLogSerializer(serializers.ModelSerializer):
+    actor_email = serializers.EmailField(source="actor.email", read_only=True, allow_null=True)
+    target_email = serializers.EmailField(source="target.email", read_only=True, allow_null=True)
+    ip_address = serializers.SerializerMethodField()
+    detail = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "action",
+            "actor_email",
+            "target_email",
+            "ip_address",
+            "detail",
+            "metadata",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_ip_address(self, obj):
+        return (obj.metadata or {}).get("ip_address", "")
+
+    def get_detail(self, obj):
+        metadata = obj.metadata or {}
+        return (
+            metadata.get("detail")
+            or metadata.get("reason")
+            or metadata.get("message")
+            or ""
+        )
+
+
+class AdminUserPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
+class AdminAuditLogPagination(PageNumberPagination):
+    page_size = 25
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
+class AdminUserFilter(django_filters.FilterSet):
+    role = django_filters.CharFilter(method="filter_role")
+    status = django_filters.CharFilter(method="filter_status")
+    provider = django_filters.CharFilter(method="filter_provider")
+
+    joined_after = django_filters.DateFilter(field_name="date_joined", lookup_expr="date__gte")
+    joined_before = django_filters.DateFilter(field_name="date_joined", lookup_expr="date__lte")
+
+    last_login_after = django_filters.DateFilter(field_name="last_login_at", lookup_expr="date__gte")
+    last_login_before = django_filters.DateFilter(field_name="last_login_at", lookup_expr="date__lte")
+
+    class Meta:
+        model = User
+        fields = []
+
+    def filter_role(self, queryset, name, value):
+        """
+        Filter by role/account type.
+        - admin: is_admin=True
+        - candidat/candidate: account_type='candidate' AND is_admin=False
+        - promoteur/organization: account_type='organization' AND is_admin=False
+        - user (backward compat): same as 'all' (no filter)
+        """
+        normalized = (value or "").strip().lower()
+        if normalized in {"admin"}:
+            return queryset.filter(is_admin=True)
+        if normalized in {"candidat", "candidate"}:
+            return queryset.filter(is_admin=False, account_type='candidate')
+        if normalized in {"promoteur", "organization"}:
+            return queryset.filter(is_admin=False, account_type='organization')
+        # Default: no filter, return all (includes 'user' for backward compat)
+        return queryset
+
+    def filter_status(self, queryset, name, value):
+        """
+        Filter by account status considering both is_active and is_suspended.
+        - active: is_active=True AND is_suspended=False
+        - suspended: is_suspended=True (regardless of is_active)
+        """
+        normalized = (value or "").strip().lower()
+        if normalized in {"active"}:
+            return queryset.filter(is_active=True, is_suspended=False)
+        if normalized in {"suspended"}:
+            return queryset.filter(is_suspended=True)
+        return queryset
+
+    def filter_provider(self, queryset, name, value):
+        normalized = (value or "").strip().lower()
+        if normalized in {"passwordless", "otp", "google"}:
+            return queryset.filter(password__startswith="!")
+        if normalized in {"password", "credentials"}:
+            return queryset.exclude(password__startswith="!")
+        return queryset
 
 
 class AdminOpportunityViewSet(
@@ -104,13 +236,82 @@ class AdminOpportunityViewSet(
 class AdminUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     serializer_class = AdminUserSerializer
     permission_classes = [IsAdminUser]
-    queryset = User.objects.all().order_by("-date_joined", "-id")
+    pagination_class = AdminUserPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = AdminUserFilter
+    search_fields = [
+        "email",
+        "first_name",
+        "last_name",
+        "username",
+        "profil__nom",
+        "profil__prenom",
+    ]
+    ordering_fields = ["email", "date_joined", "last_login_at"]
+    ordering = ["-date_joined", "-id"]
+
+    def _client_ip(self):
+        forwarded = self.request.META.get("HTTP_X_FORWARDED_FOR", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        return self.request.META.get("REMOTE_ADDR", "")
+
+    def _blacklist_user_refresh_tokens(self, user):
+        for token in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=token)
+
+    def _audit(self, *, action, target, metadata=None):
+        payload = {
+            "ip_address": self._client_ip(),
+            "user_agent": self.request.META.get("HTTP_USER_AGENT", ""),
+            **(metadata or {}),
+        }
+        AuditLog.objects.create(
+            actor=self.request.user,
+            target=target,
+            action=action,
+            metadata=payload,
+        )
+
+    def get_queryset(self):
+        last_login_subquery = (
+            LoginEvent.objects.filter(user_id=OuterRef("pk"))
+            .order_by("-created_at")
+            .values("created_at")[:1]
+        )
+        return (
+            User.objects.all()
+            .annotate(
+                last_login_at=Subquery(
+                    last_login_subquery,
+                    output_field=DateTimeField(),
+                )
+            )
+            .order_by("-date_joined", "-id")
+        )
 
     @action(detail=True, methods=["post"], url_path="toggle-admin")
     def toggle_admin(self, request, pk=None):
         user = self.get_object()
+        if user.pk == request.user.pk:
+            return Response(
+                {"detail": "You cannot modify your own admin role."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        before = user.is_admin
         user.is_admin = not user.is_admin
         user.save(update_fields=["is_admin"])
+        self._blacklist_user_refresh_tokens(user)
+        self._audit(
+            action=AuditLog.Action.TOGGLE_ADMIN,
+            target=user,
+            metadata={
+                "before_is_admin": before,
+                "after_is_admin": user.is_admin,
+                "message": "Admin role changed; refresh tokens revoked.",
+            },
+        )
         return Response(self.get_serializer(user).data)
 
     @action(detail=True, methods=["post"], url_path="toggle-active")
@@ -125,7 +326,264 @@ class AdminUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
         user.is_active = not user.is_active
         user.save(update_fields=["is_active"])
+        self._blacklist_user_refresh_tokens(user)
+        self._audit(
+            action=AuditLog.Action.TOGGLE_ACTIVE,
+            target=user,
+            metadata={
+                "after_is_active": user.is_active,
+                "message": "Active status changed; refresh tokens revoked.",
+            },
+        )
         return Response(self.get_serializer(user).data)
+
+    @action(detail=True, methods=["post"], url_path="suspend")
+    def suspend_user(self, request, pk=None):
+        """
+        Suspend a user account for moderation reasons.
+        POST /admin/users/{id}/suspend/ 
+        Body: {"reason": "spam|abuse|fraud|other", "detail": "optional context"}
+        """
+        # Validate input data
+        serializer = UserSuspensionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        user = self.get_object()
+        reason = serializer.validated_data.get("reason")
+        detail = serializer.validated_data.get("detail", "")
+
+        # Guard: cannot suspend self
+        if user.pk == request.user.pk:
+            return Response(
+                {"detail": "Vous ne pouvez pas suspendre votre propre compte administrateur."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Guard: cannot suspend last active admin
+        if user.is_admin and user.is_active:
+            other_active_admins = (
+                User.objects.filter(is_admin=True, is_active=True)
+                .exclude(pk=user.pk)
+                .exists()
+            )
+            if not other_active_admins:
+                return Response(
+                    {"detail": "Impossible de suspendre le dernier administrateur actif."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Suspend user
+        from django.utils import timezone
+        user.is_suspended = True
+        user.suspension_reason = reason
+        user.suspended_at = timezone.now()
+        user.save(update_fields=["is_suspended", "suspension_reason", "suspended_at"])
+        self._blacklist_user_refresh_tokens(user)
+        self._audit(
+            action=AuditLog.Action.SUSPEND,
+            target=user,
+            metadata={
+                "reason": reason,
+                "detail": detail,
+                "message": "User suspended; refresh tokens revoked.",
+            },
+        )
+
+        return Response(self.get_serializer(user).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="reactivate")
+    def reactivate_user(self, request, pk=None):
+        """
+        Reactivate a suspended user account.
+        POST /admin/users/{id}/reactivate/
+        """
+        user = self.get_object()
+
+        # Reactivate user
+        user.is_suspended = False
+        user.suspension_reason = ""
+        user.suspended_at = None
+        user.save(update_fields=["is_suspended", "suspension_reason", "suspended_at"])
+        self._blacklist_user_refresh_tokens(user)
+        self._audit(
+            action=AuditLog.Action.REACTIVATE,
+            target=user,
+            metadata={
+                "message": "User reactivated; refresh tokens revoked.",
+            },
+        )
+
+        return Response(self.get_serializer(user).data, status=status.HTTP_200_OK)
+
+
+class AdminAuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    serializer_class = AdminAuditLogSerializer
+    permission_classes = [IsAdminUser]
+    pagination_class = AdminAuditLogPagination
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ["created_at", "action"]
+    ordering = ["-created_at", "-id"]
+
+    class AuditLogFilter(django_filters.FilterSet):
+        action = django_filters.CharFilter(method="filter_action")
+
+        class Meta:
+            model = AuditLog
+            fields = []
+
+        def filter_action(self, queryset, name, value):
+            normalized = (value or "").strip().upper()
+            allowed = {choice.value for choice in AuditLog.Action}
+            if normalized in allowed:
+                return queryset.filter(action=normalized)
+            return queryset
+
+    filterset_class = AuditLogFilter
+
+    def get_queryset(self):
+        return AuditLog.objects.select_related("actor", "target").order_by("-created_at", "-id")
+
+    def _audit_export_rows(self, queryset):
+        for entry in queryset[:5000]:
+            metadata = entry.metadata or {}
+            yield {
+                "timestamp": timezone.localtime(entry.created_at).strftime("%Y-%m-%d %H:%M"),
+                "action": entry.action,
+                "target": entry.target.email if entry.target else "",
+                "admin": entry.actor.email if entry.actor else "",
+                "detail": metadata.get("detail") or metadata.get("reason") or metadata.get("message") or "",
+            }
+
+    def _escape_pdf_text(self, value):
+        text = str(value or "").replace("\r", " ").replace("\n", " ")
+        text = text.encode("ascii", "replace").decode("ascii")
+        return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    def _build_pdf(self, rows):
+        columns = [
+            ("Date", 92),
+            ("Action", 92),
+            ("User email", 170),
+            ("Admin email", 170),
+            ("Details", 245),
+        ]
+        row_height = 18
+        rows_per_page = 22
+        pages = [rows[index:index + rows_per_page] for index in range(0, len(rows), rows_per_page)] or [[]]
+        objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids ["
+            + " ".join(f"{3 + page_index * 2} 0 R" for page_index in range(len(pages)))
+            + f"] /Count {len(pages)} >>",
+        ]
+
+        for page_index, page_lines in enumerate(pages):
+            page_object_id = 3 + page_index * 2
+            content_object_id = page_object_id + 1
+            content_lines = [
+                "0.96 0.98 1 rg 0 535 842 60 re f",
+                "0.08 0.17 0.30 rg 0 535 842 60 re f",
+                "1 1 1 rg BT /F2 20 Tf 36 564 Td (BidWise) Tj ET",
+                "1 1 1 rg BT /F1 10 Tf 36 548 Td (Admin audit log export) Tj ET",
+                f"1 1 1 rg BT /F1 9 Tf 650 564 Td (Page {page_index + 1} of {len(pages)}) Tj ET",
+                f"1 1 1 rg BT /F1 9 Tf 650 548 Td (Generated {self._escape_pdf_text(timezone.localtime(now()).strftime('%Y-%m-%d %H:%M'))}) Tj ET",
+                "0.20 0.25 0.33 rg BT /F1 9 Tf 36 514 Td "
+                f"({self._escape_pdf_text(f'{len(rows)} filtered audit events exported. Limit: 5000 most recent events.')}) Tj ET",
+                "0.93 0.95 0.97 rg 36 484 770 24 re f",
+                "0.72 0.76 0.82 RG 36 484 770 24 re S",
+            ]
+
+            x = 44
+            for label, width in columns:
+                content_lines.append(
+                    f"0.16 0.20 0.28 rg BT /F2 8 Tf {x} 493 Td "
+                    f"({self._escape_pdf_text(label)}) Tj ET"
+                )
+                x += width
+
+            y = 466
+            for row_index, row in enumerate(page_lines):
+                fill = "0.99 0.99 1 rg" if row_index % 2 == 0 else "1 1 1 rg"
+                content_lines.append(f"{fill} 36 {y - 5} 770 {row_height} re f")
+                content_lines.append(f"0.90 0.92 0.95 RG 36 {y - 5} 770 {row_height} re S")
+                values = [
+                    row["timestamp"],
+                    row["action"],
+                    row["target"] or "Deleted user",
+                    row["admin"] or "Unknown admin",
+                    row["detail"] or "-",
+                ]
+                x = 44
+                for value, (_, width) in zip(values, columns):
+                    max_chars = max(int(width / 4.6), 8)
+                    text = str(value)
+                    if len(text) > max_chars:
+                        text = text[:max_chars - 3] + "..."
+                    content_lines.append(
+                        f"0.20 0.25 0.33 rg BT /F1 7 Tf {x} {y} Td "
+                        f"({self._escape_pdf_text(text)}) Tj ET"
+                    )
+                    x += width
+                y -= row_height
+
+            content = "\n".join(content_lines)
+            objects.append(
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] "
+                f"/Resources << /Font << /F1 {3 + len(pages) * 2} 0 R "
+                f"/F2 {4 + len(pages) * 2} 0 R >> >> "
+                f"/Contents {content_object_id} 0 R >>"
+            )
+            objects.append(f"<< /Length {len(content.encode('utf-8'))} >>\nstream\n{content}\nendstream")
+
+        objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+        objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+
+        pdf = bytearray(b"%PDF-1.4\n")
+        offsets = [0]
+        for object_index, body in enumerate(objects, start=1):
+            offsets.append(len(pdf))
+            pdf.extend(f"{object_index} 0 obj\n{body}\nendobj\n".encode("utf-8"))
+        xref_offset = len(pdf)
+        pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("utf-8"))
+        pdf.extend(b"0000000000 65535 f \n")
+        for offset in offsets[1:]:
+            pdf.extend(f"{offset:010d} 00000 n \n".encode("utf-8"))
+        pdf.extend(
+            (
+                f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+                f"startxref\n{xref_offset}\n%%EOF\n"
+            ).encode("utf-8")
+        )
+        return bytes(pdf)
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export_csv(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="bidwise-admin-audit-log.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["timestamp", "action", "target_email", "admin_email", "detail"])
+        for row in self._audit_export_rows(queryset):
+            writer.writerow([
+                row["timestamp"],
+                row["action"],
+                row["target"],
+                row["admin"],
+                row["detail"],
+            ])
+        return response
+
+    @action(detail=False, methods=["get"], url_path="export-pdf")
+    def export_pdf(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        pdf = self._build_pdf(list(self._audit_export_rows(queryset)))
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="bidwise-admin-audit-log.pdf"'
+        return response
 
 PIPELINE_TASK_NAME = [
     "opportunities.collect_opportunities",
@@ -439,6 +897,106 @@ def get_pipeline_lag_monitoring():
     }
 
 
+def _count_since(queryset, field_name, start_date):
+    return queryset.filter(**{f"{field_name}__date__gte": start_date}).count()
+
+
+def _count_today(queryset, field_name, today):
+    return queryset.filter(**{f"{field_name}__date": today}).count()
+
+
+def _serialize_status_counts(queryset, field_name):
+    return {
+        row[field_name]: row["count"]
+        for row in queryset.values(field_name).annotate(count=Count("id")).order_by(field_name)
+    }
+
+
+def _daily_series(queryset, field_name, start_date, end_date):
+    rows = (
+        queryset.filter(**{f"{field_name}__date__gte": start_date, f"{field_name}__date__lte": end_date})
+        .annotate(day=TruncDate(field_name))
+        .values("day")
+        .annotate(count=Count("id"))
+        .order_by("day")
+    )
+    counts_by_day = {row["day"]: row["count"] for row in rows}
+    days_count = (end_date - start_date).days + 1
+
+    return [
+        {
+            "date": (start_date + timedelta(days=offset)).isoformat(),
+            "count": counts_by_day.get(start_date + timedelta(days=offset), 0),
+        }
+        for offset in range(days_count)
+    ]
+
+
+def get_platform_statistics():
+    today = now().date()
+    start_7_days = today - timedelta(days=6)
+    start_30_days = today - timedelta(days=29)
+    users = User.objects.all()
+    opportunities = Opportunite.objects.exclude(removed_source_q("source__nom"))
+    applications = Candidature.objects.all()
+
+    total_users = users.count()
+    total_opportunities = opportunities.count()
+    total_applications = applications.count()
+    non_admin_users = users.filter(is_admin=False)
+    active_users = users.filter(is_active=True, is_suspended=False)
+    candidate_users = non_admin_users.filter(account_type="candidate")
+    organization_users = non_admin_users.filter(account_type="organization")
+    active_opportunities = opportunities.filter(statut=StatutOpportunite.ACTIVE)
+    active_opportunities_count = active_opportunities.count()
+
+    return {
+        "generated_at": now(),
+        "users": {
+            "total": total_users,
+            "active": active_users.count(),
+            "suspended": users.filter(is_suspended=True).count(),
+            "admins": users.filter(is_admin=True).count(),
+            "candidates": candidate_users.count(),
+            "organizations": organization_users.count(),
+            "new_today": _count_today(users, "date_joined", today),
+            "new_7_days": _count_since(users, "date_joined", start_7_days),
+            "new_30_days": _count_since(users, "date_joined", start_30_days),
+        },
+        "applications": {
+            "total": total_applications,
+            "today": _count_today(applications, "date_creation", today),
+            "last_7_days": _count_since(applications, "date_creation", start_7_days),
+            "last_30_days": _count_since(applications, "date_creation", start_30_days),
+            "by_status": _serialize_status_counts(applications, "statut"),
+        },
+        "opportunities": {
+            "total": total_opportunities,
+            "active": active_opportunities_count,
+            "expired": opportunities.filter(statut=StatutOpportunite.EXPIREE).count(),
+            "archived": opportunities.filter(statut=StatutOpportunite.ARCHIVEE).count(),
+            "created_today": _count_today(opportunities, "date_creation", today),
+            "created_7_days": _count_since(opportunities, "date_creation", start_7_days),
+            "created_30_days": _count_since(opportunities, "date_creation", start_30_days),
+            "by_type": _serialize_status_counts(opportunities, "type_opportunite"),
+            "by_status": _serialize_status_counts(opportunities, "statut"),
+        },
+        "conversion": {
+            "application_rate": (total_applications / total_opportunities) * 100 if total_opportunities else 0.0,
+            "applications_per_user": total_applications / total_users if total_users else 0.0,
+            "applications_per_active_opportunity": (
+                total_applications / active_opportunities_count if active_opportunities_count else 0.0
+            ),
+        },
+        "growth": {
+            "days": 30,
+            "users": _daily_series(users, "date_joined", start_30_days, today),
+            "applications": _daily_series(applications, "date_creation", start_30_days, today),
+            "opportunities": _daily_series(opportunities, "date_creation", start_30_days, today),
+        },
+    }
+
+
 def _serialize_pipeline_run(run):
     processed = _run_total(run, "total_processed", "processed_count")
     created = _run_total(run, "total_created", "created_count")
@@ -465,6 +1023,10 @@ class AdminDashboardView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
+        view = (request.query_params.get("view") or "").strip().lower()
+        if view in {"platform", "global"}:
+            return Response({"platform": get_platform_statistics()})
+
         today = now().date()
         total_opportunities = Opportunite.objects.exclude(removed_source_q("source__nom")).count()
         opportunities_today = RawOpportunite.objects.exclude(
@@ -507,6 +1069,7 @@ class AdminDashboardView(APIView):
         embedding_monitoring = get_embedding_monitoring()
         logo_monitoring = get_logo_monitoring()
         pipeline_lag = get_pipeline_lag_monitoring()
+        platform_statistics = get_platform_statistics()
         alerts = collect_pipeline_anomalies()
         latest_processed = _run_total(latest_run, "total_processed", "processed_count") if latest_run else 0
         latest_created = _run_total(latest_run, "total_created", "created_count") if latest_run else 0
@@ -553,6 +1116,7 @@ class AdminDashboardView(APIView):
                     }
                     for item in sources
                 ],
+                "platform": platform_statistics,
                 "celery": celery_response,
                 "monitoring": {
                     "sources": monitoring_sources,

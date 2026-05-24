@@ -318,6 +318,19 @@ class Opportunite(models.Model):
     salary = models.CharField(max_length=120, blank=True, default="")
     experience_years = models.PositiveSmallIntegerField(null=True, blank=True)
     skills = ArrayField(models.CharField(max_length=64), blank=True, default=list)
+    raw_skills = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Legacy opportunity skill strings captured before ESCO normalization.",
+    )
+    normalized_skills = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Structured ESCO normalization results stored in parallel with legacy skills.",
+    )
+    skills_normalization_hash = models.CharField(max_length=64, blank=True, default="")
+    skills_normalization_updated_at = models.DateTimeField(null=True, blank=True)
+    skills_normalization_error = models.TextField(blank=True, default="")
     normalized_industries = models.JSONField(
         blank=True,
         default=list,
@@ -336,6 +349,9 @@ class Opportunite(models.Model):
     embedding_vector = models.JSONField(null=True, blank=True)
     embedding_vector_pg = VectorField(dimensions=384, null=True, blank=True)
     embedding_model = models.CharField(max_length=200, blank=True, default="", db_index=True)
+    jobbert_embedding_vector = models.JSONField(null=True, blank=True)
+    jobbert_embedding_model = models.CharField(max_length=200, blank=True, default="", db_index=True)
+    jobbert_embedding_updated_at = models.DateTimeField(null=True, blank=True)
 
     type_opportunite = models.CharField(
         max_length=30,

@@ -8,8 +8,13 @@ import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 import type { BidWiseProfile, ProfileUser } from '@/src/features/profile/types';
 import {
+  ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
+  OPPORTUNITY_TYPE_OPTIONS,
+} from '@/src/features/profile/constants/profileOptions';
+import {
   normalizeInterestList,
   normalizeLocations,
+  normalizeOptionValues,
   normalizeSkillList,
   normalizeTextList,
 } from '@/src/features/profile/utils/profileValidation';
@@ -28,9 +33,22 @@ const formatPreference = (value: unknown) => {
 const formatList = (value: unknown) => normalizeTextList(value).map(formatPreference);
 
 const formatSalary = (profile?: BidWiseProfile) => {
+  const min = profile?.compensation_min_expectation;
+  const max = profile?.compensation_max_expectation;
+  if (min || max) {
+    if (min && max) return `${min} - ${max} ${profile?.compensation_currency || 'TND'} / month`;
+    return `${min || max} ${profile?.compensation_currency || 'TND'} / month`;
+  }
   if (!profile?.compensation_expectation) return 'Not specified';
   const period = formatPreference(profile.compensation_period || 'MONTHLY').toLowerCase();
   return `${profile.compensation_expectation} ${profile.compensation_currency || 'TND'} / ${period}`;
+};
+
+const formatOpportunityTypes = (value: unknown) => {
+  const selected = new Set(normalizeOptionValues(value, OPPORTUNITY_TYPE_OPTIONS));
+  return ONBOARDING_OPPORTUNITY_TYPE_OPTIONS
+    .filter((option) => option.values.every((item) => selected.has(item)))
+    .map((option) => option.label);
 };
 
 export default function ProfileScreen() {
@@ -143,6 +161,10 @@ export default function ProfileScreen() {
       >
         <InfoItem label="Salary" value={formatSalary(profile)} muted={mutedColor} text={textColor} />
         <InfoItem label="Locations" value={normalizeLocations(profile?.preferred_locations).join(', ') || 'Not specified'} muted={mutedColor} text={textColor} />
+        <View style={styles.block}>
+          <Text style={[styles.blockLabel, { color: mutedColor }]}>Opportunity types</Text>
+          {renderChips(formatOpportunityTypes(profile?.opportunity_types))}
+        </View>
         <View style={styles.block}>
           <Text style={[styles.blockLabel, { color: mutedColor }]}>Work modes</Text>
           {renderChips(formatList(profile?.work_mode_preferences))}

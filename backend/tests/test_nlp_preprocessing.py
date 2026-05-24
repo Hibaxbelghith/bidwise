@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from django.test import SimpleTestCase
 
@@ -142,9 +143,10 @@ class NLPPreprocessingTests(SimpleTestCase):
         combined = prepare_combined_text(opportunity)
 
         self.assertTrue(combined)
-        self.assertIn("stage data engineer", combined)
-        self.assertIn("bidwise", combined)
-        self.assertIn("tunis", combined)
+        combined_lower = combined.lower()
+        self.assertIn("stage data engineer", combined_lower)
+        self.assertIn("bidwise", combined_lower)
+        self.assertIn("tunis", combined_lower)
 
     def test_prepare_combined_text_removes_embedding_artifacts_for_jobs(self):
         opportunity = {
@@ -157,5 +159,144 @@ class NLPPreprocessingTests(SimpleTestCase):
         combined = prepare_combined_text(opportunity)
 
         self.assertTrue(combined)
-        self.assertNotIn("type: job", combined)
-        self.assertNotIn("title:", combined)
+        combined_lower = combined.lower()
+        self.assertNotIn("type: job", combined_lower)
+        self.assertNotIn("title:", combined_lower)
+
+    def test_prepare_combined_text_keeps_rich_job_sections_for_jobbert(self):
+        opportunity = SimpleNamespace(
+            titre="Developpeur Frontend React",
+            description="""
+            A propos de nous: societe digitale en croissance.
+            Missions: developper des interfaces React, integrer des APIs REST,
+            construire des composants reutilisables et optimiser les pages responsive.
+            Profil recherche: junior avec JavaScript, HTML, CSS, Git et sens produit.
+            Avantages: environnement dynamique.
+            """,
+            organisation_nom="BidWise",
+            ville="Tunis",
+            contract_type="CDI",
+            availability="Plein temps",
+            normalized_work_mode="HYBRID",
+            experience_min=0,
+            experience_max=2,
+            education_level="Bac+3",
+            salary="",
+            skills=["React", "JavaScript"],
+            raw_skills=[],
+            normalized_skills=[{"preferred_label": "web development"}],
+            languages=["Francais"],
+            extra_data={"company_sector": "informatique / telecoms"},
+            type_opportunite="EMPLOI",
+            source=SimpleNamespace(nom="Keejob"),
+        )
+
+        combined = prepare_combined_text(opportunity)
+        combined_lower = combined.lower()
+
+        self.assertTrue(combined)
+        self.assertLessEqual(len(combined), 2200)
+        self.assertIn("developpeur frontend react", combined_lower)
+        self.assertIn("keejob", combined_lower)
+        self.assertIn("informatique", combined_lower)
+        self.assertIn("developper des interfaces react", combined_lower)
+        self.assertIn("integrer des apis rest", combined_lower)
+        self.assertIn("javascript", combined_lower)
+        self.assertIn("web development", combined_lower)
+
+    def test_prepare_combined_text_uses_ville_and_extra_data_metadata(self):
+        opportunity = SimpleNamespace(
+            titre="Comptable Junior",
+            description="Missions: saisie comptable, factures fournisseurs, rapprochement bancaire.",
+            organisation_nom="Cabinet Finance",
+            ville="Sousse",
+            contract_type="CDI",
+            availability="Plein temps",
+            normalized_work_mode="ON_SITE",
+            experience_min=1,
+            experience_max=2,
+            experience_years=None,
+            education_level="Bac+3",
+            salary="",
+            skills=["Excel", "Sage"],
+            raw_skills=[],
+            normalized_skills=[],
+            languages=[],
+            extra_data={"company_sector": "comptabilite / gestion / audit"},
+            type_opportunite="EMPLOI",
+            source=SimpleNamespace(nom="Keejob"),
+        )
+
+        combined = prepare_combined_text(opportunity).lower()
+
+        self.assertIn("sousse", combined)
+        self.assertIn("comptabilite", combined)
+        self.assertIn("1-2 years", combined)
+        self.assertIn("excel", combined)
+        self.assertIn("rapprochement bancaire", combined)
+
+    def test_prepare_combined_text_handles_future_non_job_opportunity_types(self):
+        opportunity = {
+            "titre": "Projet de maintenance reseau fibre optique",
+            "description": (
+                "Avis de consultation: acquisition et maintenance des equipements reseau. "
+                "Exigences: fibre optique, configuration routeur, support technique."
+            ),
+            "organisation_nom": "Office Telecom",
+            "ville": "Tunis",
+            "type_opportunite": "PROJET",
+            "source": {"nom": "MarchesPublics"},
+            "extra_data": {"sector": "telecoms"},
+        }
+
+        combined = prepare_combined_text(opportunity).lower()
+
+        self.assertIn("projet de maintenance reseau fibre optique", combined)
+        self.assertIn("marchespublics", combined)
+        self.assertIn("telecoms", combined)
+        self.assertIn("fibre optique", combined)
+        self.assertIn("support technique", combined)
+
+    def test_prepare_combined_text_prioritizes_llm_matching_fields_for_jobbert(self):
+        opportunity = {
+            "titre": "Poste technique",
+            "description": "Nous recrutons pour renforcer notre equipe.",
+            "organisation_nom": "Digital Factory",
+            "ville": "Tunis",
+            "skills": [],
+            "type_opportunite": "EMPLOI",
+            "source": {"nom": "Keejob"},
+            "extra_data": {
+                "llm_enrichment": {
+                    "canonical_role": "Frontend Developer",
+                    "target_roles": ["React Developer"],
+                    "skills": ["React", "JavaScript"],
+                    "tools": ["TypeScript"],
+                    "soft_skills": ["Communication", "Autonomy"],
+                    "domains": ["Web application development"],
+                    "years_experience_min": 1,
+                    "years_experience_max": 2,
+                    "contract_types": ["CDI"],
+                    "work_modes": ["Hybrid"],
+                    "locations": ["Tunis"],
+                    "salary": "1200-1800 TND",
+                    "education_level": "Bac+3",
+                    "responsibilities": ["Build responsive UI components"],
+                    "requirements": ["One year frontend experience"],
+                    "evidence": ["React user interfaces"],
+                }
+            },
+        }
+
+        combined = prepare_combined_text(opportunity).lower()
+
+        self.assertIn("extracted role - frontend developer", combined)
+        self.assertIn("react developer", combined)
+        self.assertIn("react", combined)
+        self.assertIn("typescript", combined)
+        self.assertIn("soft skills - communication", combined)
+        self.assertIn("autonomy", combined)
+        self.assertIn("1-2 years", combined)
+        self.assertIn("hybrid", combined)
+        self.assertIn("1200-1800 tnd", combined)
+        self.assertIn("build responsive ui components", combined)

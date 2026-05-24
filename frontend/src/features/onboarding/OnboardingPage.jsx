@@ -7,6 +7,7 @@ import { Spinner } from '../../components/ui/spinner.jsx';
 
 import StepOpportunityIntent from './steps/StepOpportunityIntent.jsx';
 import StepLocation from './steps/StepLocation.jsx';
+import StepSkills from './steps/StepSkills.jsx';
 import StepSalary from './steps/StepSalary.jsx';
 import StepEmploymentType from './steps/StepEmploymentType.jsx';
 import StepTargetRoles from './steps/StepTargetRoles.jsx';
@@ -14,7 +15,7 @@ import StepVisibility from './steps/StepVisibility.jsx';
 import { normalizeProfilePreferenceData } from '../profile/profilePreferences.js';
 import {
 	DEFAULT_COMPENSATION_PERIOD,
-	validateSalaryExpectation,
+	validateSalaryRange,
 } from '../profile/profileValidation.js';
 import {
 	ORGANIZATION_CREATE_ACCOUNT_PATH,
@@ -23,13 +24,14 @@ import {
 	isOrganizationProfileComplete,
 } from '../organization/organizationFlow.js';
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 const STORAGE_KEY = 'bidwise_onboarding';
 const USER_PROFILE_STORAGE_KEY = 'bidwise_user_profile';
 
 const STEPS = [
 	StepOpportunityIntent,
 	StepLocation,
+	StepSkills,
 	StepSalary,
 	StepEmploymentType,
 	StepTargetRoles,
@@ -44,12 +46,15 @@ const STEP_META = [
 	},
 	{
 		title: 'Where would you like to work?',
-		subtitle: 'We use this to match you with relevant opportunities.',
+		subtitle: 'Location is required for on-site or hybrid work, and optional for remote.',
 	},
 	{
-		title: 'Compensation expectations',
-		subtitle:
-			'This helps filter opportunities aligned with your expectations.',
+		title: 'Add your key skills',
+		subtitle: 'Skills power your AI match score.',
+	},
+	{
+		title: 'Expected salary range',
+		subtitle: 'Share an optional TND/month range so matches are less brittle.',
 	},
 	{
 		title: 'What type of work arrangement do you prefer?',
@@ -71,16 +76,68 @@ const initialData = {
 	preferred_locations: [],
 	work_mode_preferences: [],
 	compensation_expectation: null,
+	compensation_min_expectation: null,
+	compensation_max_expectation: null,
 	compensation_currency: 'TND',
 	compensation_period: DEFAULT_COMPENSATION_PERIOD,
 	employment_types: [],
 	target_roles: [],
+	competences: [],
 	profile_visibility: true,
 };
 
-const buildStoredProfileData = (data) => ({
+const buildStoredProfileData = (data, onboardingCompleted = false) => ({
 	...normalizeProfilePreferenceData(data),
+	onboarding_completed: Boolean(onboardingCompleted),
 });
+
+const getStepValidationError = (step, data) => {
+	if (step === 0 && (!Array.isArray(data.opportunity_types) || data.opportunity_types.length === 0)) {
+		return 'Select at least one opportunity type to help us recommend relevant matches.';
+	}
+
+	if (step === 1 && (!Array.isArray(data.work_mode_preferences) || data.work_mode_preferences.length === 0)) {
+		return 'Select at least one work mode preference so we can tailor your recommendations.';
+	}
+
+	if (
+		step === 1 &&
+		Array.isArray(data.work_mode_preferences) &&
+		data.work_mode_preferences.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID') &&
+		(!Array.isArray(data.preferred_locations) || data.preferred_locations.length === 0)
+	) {
+		return 'Choose at least one location for on-site or hybrid work.';
+	}
+
+	if (step === 2 && (!Array.isArray(data.competences) || data.competences.length === 0)) {
+		return 'Skills power your AI match score.';
+	}
+
+	if (step === 3) {
+		return validateSalaryRange(
+			data.compensation_min_expectation,
+			data.compensation_max_expectation,
+			data.compensation_period || DEFAULT_COMPENSATION_PERIOD
+		).error;
+	}
+
+	if (step === 5 && (!Array.isArray(data.target_roles) || data.target_roles.length === 0)) {
+		return 'Add at least one target role to guide your recommendations.';
+	}
+
+	return '';
+};
+
+const findFirstIncompleteRequiredStep = (data) => {
+	for (const step of [0, 1, 2, 3, 5]) {
+		const error = getStepValidationError(step, data);
+		if (error) {
+			return { step, error };
+		}
+	}
+
+	return null;
+};
 
 function loadSavedState() {
 	try {
@@ -109,7 +166,8 @@ const Onboarding = () => {
 	const [currentStep, setCurrentStep] = useState(saved?.step ?? 0);
 	const [data, setData] = useState(saved?.data ?? { ...initialData });
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [error, setError] = useState(null);
+	const [validationError, setValidationError] = useState('');
+	const [submissionError, setSubmissionError] = useState(null);
 	const headingRef = useRef(null);
 
 	// Already onboarded → redirect to opportunities
@@ -144,18 +202,17 @@ const Onboarding = () => {
 
 	const handleChange = (field, value) => {
 		setData((prev) => ({ ...prev, [field]: value }));
+		setValidationError('');
 	};
 
 	const handleNext = () => {
-		const salaryValidation = validateSalaryExpectation(
-			data.compensation_expectation,
-			data.compensation_period || DEFAULT_COMPENSATION_PERIOD
-		);
-		if (currentStep === 2 && salaryValidation.error) {
-			setError(salaryValidation.error);
+		const stepError = getStepValidationError(currentStep, data);
+		if (stepError) {
+			setValidationError(stepError);
 			return;
 		}
-		setError(null);
+		setValidationError('');
+		setSubmissionError(null);
 		if (currentStep === TOTAL_STEPS - 1) {
 			handleFinish();
 		} else {
@@ -164,15 +221,26 @@ const Onboarding = () => {
 	};
 
 	const handleBack = () => {
+		setValidationError('');
 		setCurrentStep((s) => Math.max(s - 1, 0));
 	};
 
 	const handleFinish = async () => {
-		setError(null);
+		const incompleteStep = findFirstIncompleteRequiredStep(data);
+		if (incompleteStep) {
+			setCurrentStep(incompleteStep.step);
+			setValidationError(incompleteStep.error);
+			return;
+		}
+
+		setValidationError('');
+		setSubmissionError(null);
 		setIsSubmitting(true);
 		try {
 			const payload = {
 				...normalizeProfilePreferenceData(data),
+				compensation_expectation:
+					data.compensation_min_expectation ?? data.compensation_max_expectation ?? null,
 				onboarding_completed: true,
 				last_onboarding_step: currentStep,
 			};
@@ -180,40 +248,42 @@ const Onboarding = () => {
 			if (result.success) {
 				localStorage.setItem(
 					USER_PROFILE_STORAGE_KEY,
-					JSON.stringify(buildStoredProfileData(data))
+					JSON.stringify(buildStoredProfileData(data, true))
 				);
 				sessionStorage.removeItem(STORAGE_KEY);
 				navigate('/opportunities', { replace: true });
 			} else {
-				setError(result.error || 'Failed to save profile');
+				setSubmissionError(result.error || 'Failed to save profile');
 			}
 		} catch (err) {
-			setError(err.message || 'Failed to save profile');
+			setSubmissionError(err.message || 'Failed to save profile');
 		} finally {
 			setIsSubmitting(false);
 		}
 	};
 
 	const handleSkip = async () => {
-		setError(null);
+		setValidationError('');
+		setSubmissionError(null);
 		setIsSubmitting(true);
 		try {
 			const result = await updateUserProfile({
-				onboarding_completed: true,
+				...normalizeProfilePreferenceData(data),
+				onboarding_completed: false,
 				last_onboarding_step: currentStep,
 			});
 			if (result.success) {
 				localStorage.setItem(
 					USER_PROFILE_STORAGE_KEY,
-					JSON.stringify({ onboarding_completed: true })
+					JSON.stringify(buildStoredProfileData(data, false))
 				);
 				sessionStorage.removeItem(STORAGE_KEY);
 				navigate('/opportunities', { replace: true });
 			} else {
-				setError(result.error || 'Failed to save profile');
+				setSubmissionError(result.error || 'Failed to save profile');
 			}
 		} catch (err) {
-			setError(err.message || 'Failed to save profile');
+			setSubmissionError(err.message || 'Failed to save profile');
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -278,13 +348,13 @@ const Onboarding = () => {
 
 					{/* Step content */}
 					<div className="px-8 py-6">
-						<StepComponent data={data} onChange={handleChange} />
+						<StepComponent data={data} onChange={handleChange} error={validationError} />
 					</div>
 
 					{/* Error */}
-					{error && (
+					{submissionError && (
 						<div className="px-8 pb-2" role="alert" aria-live="assertive">
-							<p className="text-sm text-red-600">{error}</p>
+							<p className="text-sm text-red-600">{submissionError}</p>
 						</div>
 					)}
 

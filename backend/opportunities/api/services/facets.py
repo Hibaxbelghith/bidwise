@@ -18,6 +18,8 @@ FACET_QUERY_PARAMS = (
     "source",
     "work_mode",
     "experience_level",
+    "sector",
+    "industry",
     "status",
     "statut",
     "min_salary",

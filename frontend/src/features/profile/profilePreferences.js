@@ -29,6 +29,27 @@ export const OPPORTUNITY_TYPE_OPTIONS = [
 	{ value: 'FUNDING', label: 'Funding' },
 ];
 
+export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
+	{
+		value: 'JOB',
+		label: 'Jobs',
+		description: ' : Full-time, part-time, contract, SIVP',
+		values: ['JOB'],
+	},
+	{
+		value: 'INTERNSHIP',
+		label: 'Internships',
+		description: ' : Stage et programmes trainee',
+		values: ['INTERNSHIP'],
+	},
+	{
+		value: 'PROJECTS',
+		label: 'Projects',
+		description: " : Appels d'offres, financements, R&D",
+		values: ['RESEARCH', 'FUNDING'],
+	},
+];
+
 export const TUNISIAN_LOCATION_OPTIONS = [
 	'Tunis',
 	'Sidi Bouzid',
@@ -173,6 +194,8 @@ export const normalizeProfilePreferenceData = (data = {}) => ({
 		WORK_MODE_OPTIONS
 	),
 	compensation_expectation: data.compensation_expectation ?? null,
+	compensation_min_expectation: data.compensation_min_expectation ?? null,
+	compensation_max_expectation: data.compensation_max_expectation ?? null,
 	compensation_currency: data.compensation_currency || 'TND',
 	compensation_period: data.compensation_period || DEFAULT_COMPENSATION_PERIOD,
 	employment_types: normalizeOptionValues(
@@ -180,6 +203,8 @@ export const normalizeProfilePreferenceData = (data = {}) => ({
 		EMPLOYMENT_TYPE_OPTIONS
 	),
 	target_roles: normalizeTextList(data.target_roles),
+	competences: normalizeSkillList(data.competences),
+	domaines_interet: normalizeTextList(data.domaines_interet),
 	profile_visibility: data.profile_visibility ?? true,
 });
 

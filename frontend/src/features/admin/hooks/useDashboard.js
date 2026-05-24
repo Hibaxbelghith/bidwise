@@ -17,6 +17,49 @@ export const emptyDashboard = {
     updated: 0,
   },
   sources: [],
+  platform: {
+    generated_at: null,
+    users: {
+      total: 0,
+      active: 0,
+      suspended: 0,
+      admins: 0,
+      candidates: 0,
+      organizations: 0,
+      new_today: 0,
+      new_7_days: 0,
+      new_30_days: 0,
+    },
+    applications: {
+      total: 0,
+      today: 0,
+      last_7_days: 0,
+      last_30_days: 0,
+      by_status: {},
+    },
+    opportunities: {
+      total: 0,
+      active: 0,
+      expired: 0,
+      archived: 0,
+      created_today: 0,
+      created_7_days: 0,
+      created_30_days: 0,
+      by_type: {},
+      by_status: {},
+    },
+    conversion: {
+      application_rate: 0,
+      applications_per_user: 0,
+      applications_per_active_opportunity: 0,
+    },
+    growth: {
+      days: 30,
+      users: [],
+      applications: [],
+      opportunities: [],
+    },
+  },
   celery: {
     workers: 0,
     active_tasks: 0,
@@ -59,6 +102,33 @@ const normalizeDashboard = (data) => ({
   pipeline: { ...emptyDashboard.pipeline, ...(data?.pipeline || {}) },
   celery: { ...emptyDashboard.celery, ...(data?.celery || {}) },
   sources: Array.isArray(data?.sources) ? data.sources : [],
+  platform: {
+    ...emptyDashboard.platform,
+    ...(data?.platform || {}),
+    users: { ...emptyDashboard.platform.users, ...(data?.platform?.users || {}) },
+    applications: {
+      ...emptyDashboard.platform.applications,
+      ...(data?.platform?.applications || {}),
+      by_status: data?.platform?.applications?.by_status || {},
+    },
+    opportunities: {
+      ...emptyDashboard.platform.opportunities,
+      ...(data?.platform?.opportunities || {}),
+      by_type: data?.platform?.opportunities?.by_type || {},
+      by_status: data?.platform?.opportunities?.by_status || {},
+    },
+    conversion: {
+      ...emptyDashboard.platform.conversion,
+      ...(data?.platform?.conversion || {}),
+    },
+    growth: {
+      ...emptyDashboard.platform.growth,
+      ...(data?.platform?.growth || {}),
+      users: Array.isArray(data?.platform?.growth?.users) ? data.platform.growth.users : [],
+      applications: Array.isArray(data?.platform?.growth?.applications) ? data.platform.growth.applications : [],
+      opportunities: Array.isArray(data?.platform?.growth?.opportunities) ? data.platform.growth.opportunities : [],
+    },
+  },
   monitoring: {
     ...emptyDashboard.monitoring,
     ...(data?.monitoring || {}),
@@ -79,7 +149,7 @@ const normalizeDashboard = (data) => ({
   },
 });
 
-export const useDashboard = () => {
+export const useDashboard = (view = 'dashboard') => {
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -91,7 +161,8 @@ export const useDashboard = () => {
       try {
         setIsLoading(true);
         setError('');
-        const { data } = await getDashboard();
+        const requestView = view === 'dashboard' ? 'platform' : undefined;
+        const { data } = await getDashboard({ view: requestView });
         if (isMounted) {
           setDashboard(normalizeDashboard(data));
         }
@@ -111,7 +182,7 @@ export const useDashboard = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [view]);
 
   return {
     dashboard,

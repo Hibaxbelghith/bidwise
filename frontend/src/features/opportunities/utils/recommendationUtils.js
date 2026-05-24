@@ -18,6 +18,15 @@ const normalizeArray = (value) => {
   return value.map(normalizeText).filter(Boolean);
 };
 
+const hasProfileListValues = (value) => normalizeArray(value).length > 0;
+
+const hasExperienceSignal = (profile = {}) => {
+  const level = normalizeText(profile?.niveau_experience);
+  const years = Number(profile?.annees_experience);
+
+  return Boolean(level) || (Number.isFinite(years) && years >= 0);
+};
+
 export const FOR_YOU_PROFILE_MIN_SCORE = 40;
 export const FOR_YOU_PROFILE_FULL_SCORE = 70;
 export const FOR_YOU_MIN_MATCH_SCORE = 40;
@@ -35,6 +44,60 @@ const dedupe = (items) => {
   }
 
   return result;
+};
+
+const reasonPriority = (reason) => {
+  const text = normalizeText(reason).toLowerCase();
+  if (text.includes('role aligned') || text.includes('role alignment')) return 10;
+  if (text.includes('strong') && text.includes('alignment')) return 20;
+  if (text.includes('matching skill') || text.includes('skill signal')) return 30;
+  if (text.includes('job family') || text.includes('category')) return 40;
+  if (text.includes('resume') || text.includes('semantic')) return 50;
+  if (text.includes('remote') || text.includes('hybrid') || text.includes('on-site')) return 60;
+  if (text.includes('location')) return 70;
+  return 90;
+};
+
+const humanizeReason = (reason) => {
+  const text = normalizeText(reason);
+  if (!text) return '';
+  if (text === 'Related job family signal detected') return 'Same job family as your profile';
+  if (text === 'Role alignment detected') return 'Target role aligned';
+  if (text === 'Title language overlaps your goals') return 'Title aligns with your goals';
+  if (text === 'Industry preference aligned') return 'Industry preference aligned';
+  if (text === 'Sector preference aligned') return 'Sector aligned with your profile';
+  if (text === 'Resume signal detected') return 'CV signal detected';
+  if (text === 'Semantic similarity is strong') return 'Strong profile similarity';
+  if (text === 'On-site preference') return 'On-site preference aligned';
+  return text;
+};
+
+const prioritizeReasons = (items, limit) =>
+  dedupe(items.map(humanizeReason).filter(Boolean))
+    .sort((left, right) => reasonPriority(left) - reasonPriority(right))
+    .slice(0, limit);
+
+const buildSignalChips = (recommendation = {}) => {
+  const evidence = recommendation.evidence_summary || {};
+  const rawReasons = normalizeArray(recommendation.reasons || recommendation.reason);
+  const chips = [];
+  const add = (key, label, tone = 'neutral') => {
+    if (!chips.some((chip) => chip.key === key)) chips.push({ key, label, tone });
+  };
+
+  if (evidence.role_match) add('role', 'Role', 'strong');
+  if (Number(evidence.skill_overlap) > 0 || rawReasons.some((reason) => /skill|alignment/i.test(reason))) {
+    add('skills', 'Skill match', 'strong');
+  }
+  if (evidence.llm_family_match) add('family', 'Job category', 'strong');
+  if (evidence.resume_signal) add('cv', 'CV', 'support');
+  if (rawReasons.some((reason) => /remote|hybrid|on-site|work preference/i.test(reason))) {
+    add('work_mode', 'Work mode', 'support');
+  }
+  if (rawReasons.some((reason) => /location/i.test(reason))) add('location', 'Location', 'support');
+  if (evidence.llm_family_mismatch) add('family_gap', 'Review category', 'gap');
+
+  return chips.slice(0, 6);
 };
 
 export const getRecommendationScorePercent = (value) => {
@@ -152,7 +215,10 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
   const tone = getRecommendationTone(recommendation);
   const rawReasons = normalizeArray(recommendation.reasons || recommendation.reason);
   const evidenceReasons = buildEvidenceReasons(recommendation.evidence_summary);
-  const visibleReasons = dedupe([...rawReasons, ...evidenceReasons]).slice(0, options.reasonLimit || 4);
+  const visibleReasons = prioritizeReasons(
+    [...rawReasons, ...evidenceReasons],
+    options.reasonLimit || 4,
+  );
   const gaps = normalizeArray(recommendation.gaps).map(formatGapLabel).filter(Boolean);
   const fitLabel =
     scorePercent >= 80
@@ -164,6 +230,39 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
           : scoreLabel;
   const scoreText =
     scorePercent && scorePercent > 0 ? `${scorePercent}% match` : scoreLabel;
+  const signalChips = buildSignalChips(recommendation);
+  const primaryReason = visibleReasons[0] || '';
+  const matchSummary =
+    options.context === 'detail'
+      ? scorePercent >= 70 && primaryReason
+        ? `Recommended to apply: ${primaryReason}.`
+        : scorePercent >= 60 && primaryReason
+          ? `Good fit, but review the details: ${primaryReason}.`
+          : primaryReason
+            ? `Worth reviewing before applying: ${primaryReason}.`
+            : `${fitLabel} based on your profile signals.`
+      : scorePercent >= 70 && primaryReason
+        ? `${primaryReason}.`
+        : scorePercent >= 60 && primaryReason
+          ? `Good fit: ${primaryReason}.`
+          : primaryReason
+            ? `Worth reviewing: ${primaryReason}.`
+            : `${fitLabel} based on your profile signals.`;
+  const panelTitle = options.context === 'detail' ? 'Your fit' : 'Recommendation match';
+  const verdictLabel =
+    scorePercent >= 70
+      ? 'Recommended to apply'
+      : scorePercent >= 60
+        ? 'Good fit'
+        : scorePercent > 0
+          ? 'Worth reviewing'
+          : scoreLabel;
+  const verdictDescription =
+    scorePercent >= 70
+      ? 'Your profile has strong evidence for this opportunity.'
+      : scorePercent >= 60
+        ? 'The opportunity is relevant, but review the gaps before applying.'
+        : 'Review the details carefully before deciding.';
 
   return {
     scorePercent,
@@ -172,6 +271,11 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     scoreText,
     confidenceLabel,
     visibleReasons,
+    signalChips,
+    matchSummary,
+    panelTitle,
+    verdictLabel,
+    verdictDescription,
     gaps: dedupe(gaps).slice(0, options.gapLimit || 4),
     hasGaps: gaps.length > 0,
     tone,
@@ -194,6 +298,8 @@ export const mergeRecommendationIntoOpportunity = (opportunity, recommendation) 
     gaps: recommendation.gaps,
     recommendation_confidence: recommendation.recommendation_confidence,
     recommendation_mode: recommendation.recommendation_mode,
+    recommendation_bucket: recommendation.recommendation_bucket,
+    recommendation_bucket_reason: recommendation.recommendation_bucket_reason,
     profile_strength: recommendation.profile_strength,
     evidence_summary: recommendation.evidence_summary,
   };
@@ -252,15 +358,93 @@ export const isProfileIncomplete = (user) => {
   );
 };
 
-export const getProfileActionItems = (user) => {
+export const getRecommendationImprovementHints = (user) => {
   const profile = user?.profil || {};
-  const actions = [];
+  const hints = [];
 
-  if (!hasActiveResume(user)) actions.push('Upload Resume');
-  if (!Array.isArray(profile.competences) || profile.competences.length === 0) actions.push('Add Skills');
-  if (!Array.isArray(profile.target_roles) || profile.target_roles.length === 0) {
-    actions.push('Add Preferred Roles');
+  if (!hasProfileListValues(profile.target_roles)) {
+    hints.push({
+      type: 'target_roles',
+      priority: 100,
+      title: 'Add preferred roles',
+      message: 'To improve recommendation accuracy.',
+      ctaLabel: 'Add preferred roles',
+    });
   }
 
-  return actions.length ? actions : ['Review Profile'];
+  if (!hasProfileListValues(profile.work_mode_preferences)) {
+    hints.push({
+      type: 'work_preferences',
+      priority: 95,
+      title: 'Add work preferences',
+      message: 'To refine opportunity matching.',
+      ctaLabel: 'Add work preferences',
+    });
+  }
+
+  if (!hasProfileListValues(profile.employment_types)) {
+    hints.push({
+      type: 'employment_preferences',
+      priority: 90,
+      title: 'Add employment preferences',
+      message: 'Add employment preferences to sharpen role matching.',
+      ctaLabel: 'Add employment preferences',
+    });
+  }
+
+  if (!hasProfileListValues(profile.competences)) {
+    hints.push({
+      type: 'skills',
+      priority: 80,
+      title: 'Add skills',
+      message: 'To improve recommendation precision.',
+      ctaLabel: 'Add skills',
+    });
+  }
+
+  if (!hasExperienceSignal(profile)) {
+    hints.push({
+      type: 'experience',
+      priority: 75,
+      title: 'Add experience details',
+      message: 'Add your experience level to improve fit and ranking quality.',
+      ctaLabel: 'Add experience',
+    });
+  }
+
+  if (!hasProfileListValues(profile.preferred_locations)) {
+    hints.push({
+      type: 'preferred_locations',
+      priority: 70,
+      title: 'Add preferred locations',
+      message: 'Add preferred locations to tailor where opportunities appear.',
+      ctaLabel: 'Add locations',
+    });
+  }
+
+  if (!hasActiveResume(user)) {
+    hints.push({
+      type: 'resume',
+      priority: 60,
+      title: 'Upload a resume',
+      message: 'Upload a resume to enrich AI matching with additional context.',
+      ctaLabel: 'Upload resume',
+    });
+  }
+
+  if (hints.length === 0) {
+    hints.push({
+      type: 'profile_review',
+      priority: 0,
+      title: 'Review your profile',
+      message: 'Keep your roles, preferences, and experience current so recommendations stay aligned.',
+      ctaLabel: 'Review profile',
+    });
+  }
+
+  return hints.sort((left, right) => right.priority - left.priority).slice(0, 2);
+};
+
+export const getProfileActionItems = (user) => {
+  return getRecommendationImprovementHints(user).map((hint) => hint.ctaLabel);
 };

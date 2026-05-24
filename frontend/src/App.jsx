@@ -13,9 +13,10 @@ import AdminLoginPage from './features/admin/AdminLoginPage.jsx';
 import AdminRoute from './features/admin/AdminRoute.jsx';
 import DashboardAdminPage from './features/admin/DashboardAdminPage.jsx';
 import AdminOpportunitiesPage from './features/admin/AdminOpportunitiesPage.jsx';
-import AdminUsersPage from './features/admin/AdminUsersPage.jsx';
+import AdminUsersPage from './features/admin/AdminUsersPage/index.jsx';
 import Profile from './features/profile/ProfilePage.jsx';
 import ProtectedRoute from './features/auth/ProtectedRoute.jsx';
+import OrganizationRoute from './features/organization/OrganizationRoute.jsx';
 import OrganizationLandingPage from './features/organization/pages/OrganizationLandingPage.jsx';
 import CreateOrganizationAccountPage from './features/organization/pages/CreateOrganizationAccountPage.jsx';
 import OrganizationDashboardPage from './features/organization/pages/OrganizationDashboardPage.jsx';
@@ -35,7 +36,11 @@ const App = () => (
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
+        </Route>
+        <Route element={<OrganizationRoute />}>
           <Route path="/organization/create-account" element={<CreateOrganizationAccountPage />} />
+        </Route>
+        <Route element={<OrganizationRoute requireOrganizationAccount />}>
           <Route path="/organization/dashboard" element={<OrganizationDashboardPage />} />
         </Route>
 
@@ -49,6 +54,7 @@ const App = () => (
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/dashboard" element={<DashboardAdminPage />} />
+          <Route path="/admin/dashboard/:dashboardView" element={<DashboardAdminPage />} />
           <Route path="/admin/opportunities" element={<AdminOpportunitiesPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
         </Route>

@@ -1,28 +1,31 @@
-import { Briefcase, GraduationCap, BookOpen, TrendingUp } from 'lucide-react';
-import { Badge } from '../../../components/ui/badge.jsx';
-import { OPPORTUNITY_TYPE_OPTIONS } from '../../profile/profilePreferences.js';
+import { Briefcase, GraduationCap, Rocket } from 'lucide-react';
+import { ONBOARDING_OPPORTUNITY_TYPE_OPTIONS } from '../../profile/profilePreferences.js';
 
 const OPTION_META = {
-	JOB: { description: 'Full-time, part-time, and contract positions', icon: Briefcase },
-	INTERNSHIP: { description: 'Internship and trainee programs', icon: GraduationCap },
-	RESEARCH: { description: 'Academic and R&D opportunities', icon: BookOpen },
-	FUNDING: { description: 'Grants, scholarships, and funding', icon: TrendingUp },
+	JOB: { icon: Briefcase },
+	INTERNSHIP: { icon: GraduationCap },
+	PROJECTS: { icon: Rocket },
 };
 
-const OPTIONS = OPPORTUNITY_TYPE_OPTIONS.map((option) => ({
+const OPTIONS = ONBOARDING_OPPORTUNITY_TYPE_OPTIONS.map((option) => ({
 	...option,
 	...(OPTION_META[option.value] || {}),
-	enabled: true,
 }));
 
-const StepOpportunityIntent = ({ data, onChange }) => {
+const StepOpportunityIntent = ({ data, onChange, error = '' }) => {
 	const selected = data.opportunity_types || [];
 
-	const toggle = (value) => {
-		if (selected.includes(value)) {
-			onChange('opportunity_types', selected.filter((v) => v !== value));
+	const isOptionSelected = (option) =>
+		option.values.every((value) => selected.includes(value));
+
+	const toggle = (option) => {
+		if (isOptionSelected(option)) {
+			onChange(
+				'opportunity_types',
+				selected.filter((value) => !option.values.includes(value))
+			);
 		} else {
-			onChange('opportunity_types', [...selected, value]);
+			onChange('opportunity_types', Array.from(new Set([...selected, ...option.values])));
 		}
 	};
 
@@ -30,28 +33,20 @@ const StepOpportunityIntent = ({ data, onChange }) => {
 		<div className="space-y-4">
 			<div className="grid grid-cols-2 gap-3">
 				{OPTIONS.map((opt) => {
-					const isSelected = selected.includes(opt.value);
+					const isSelected = isOptionSelected(opt);
 					const Icon = opt.icon;
 					return (
 						<button
 							key={opt.value}
 							type="button"
-							disabled={!opt.enabled}
-							onClick={() => toggle(opt.value)}
+							onClick={() => toggle(opt)}
 							className={[
 								'relative flex flex-col items-center gap-2 rounded-lg border p-5 text-center transition-all',
-								opt.enabled
-									? isSelected
-										? 'border-blue-600 bg-blue-50 text-blue-700 ring-2 ring-blue-600/20'
-										: 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50'
-									: 'cursor-not-allowed border-neutral-100 bg-neutral-50 text-neutral-400',
+								isSelected
+									? 'border-blue-600 bg-blue-50 text-blue-700 ring-2 ring-blue-600/20'
+									: 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50',
 							].join(' ')}
 						>
-							{!opt.enabled && (
-								<Badge variant="secondary" className="absolute right-2 top-2 text-[10px]">
-									Soon
-								</Badge>
-							)}
 							<Icon className="h-6 w-6" />
 							<span className="text-sm font-medium">{opt.label}</span>
 							<span className="text-xs leading-tight opacity-70">{opt.description}</span>
@@ -62,6 +57,11 @@ const StepOpportunityIntent = ({ data, onChange }) => {
 			<p className="text-center text-xs text-neutral-400">
 				This helps us personalize your experience.
 			</p>
+			{error ? (
+				<p className="text-sm text-red-600" role="alert">
+					{error}
+				</p>
+			) : null}
 		</div>
 	);
 };

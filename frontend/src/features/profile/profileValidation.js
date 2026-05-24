@@ -182,6 +182,36 @@ export const validateSalaryExpectation = (value, period = DEFAULT_COMPENSATION_P
 	return { value: amount, error: '' };
 };
 
+export const validateSalaryRange = (
+	minValue,
+	maxValue,
+	period = DEFAULT_COMPENSATION_PERIOD
+) => {
+	const minValidation = validateSalaryExpectation(minValue, period);
+	if (minValidation.error) {
+		return { min: minValidation.value, max: null, error: minValidation.error };
+	}
+
+	const maxValidation = validateSalaryExpectation(maxValue, period);
+	if (maxValidation.error) {
+		return { min: minValidation.value, max: maxValidation.value, error: maxValidation.error };
+	}
+
+	if (
+		minValidation.value !== null &&
+		maxValidation.value !== null &&
+		minValidation.value > maxValidation.value
+	) {
+		return {
+			min: minValidation.value,
+			max: maxValidation.value,
+			error: 'Maximum salary must be greater than or equal to minimum salary.',
+		};
+	}
+
+	return { min: minValidation.value, max: maxValidation.value, error: '' };
+};
+
 export const buildSalaryHelperText = (period = DEFAULT_COMPENSATION_PERIOD) => {
 	const limits = SALARY_LIMITS_BY_PERIOD.MONTHLY;
 	return `Use TND/month. Accepted range ${limits.min}-${limits.max} TND.`;
@@ -189,6 +219,9 @@ export const buildSalaryHelperText = (period = DEFAULT_COMPENSATION_PERIOD) => {
 
 export const validateProfileName = (value) => {
 	const text = String(value || '').trim().replace(/\s+/g, ' ');
+	if (!text) {
+		return { value: '', error: '' };
+	}
 	if (text.length < 2 || text.length > 100) {
 		return { value: text, error: PROFILE_NAME_ERROR };
 	}

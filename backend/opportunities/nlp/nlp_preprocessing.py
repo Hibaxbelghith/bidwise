@@ -12,7 +12,7 @@ import html
 import logging
 import re
 import unicodedata
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 from opportunities.utils.text_cleaning import clean_text as clean_text
 
@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 MIN_TEXT_LENGTH = 30
 MAX_TEXT_LENGTH = 900
 TARGET_TEXT_LENGTH = 380
+SEMANTIC_TEXT_MAX_LENGTH = 2200
+SEMANTIC_DESCRIPTION_MAX_LENGTH = 1450
 
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 URL_RE = re.compile(r"(https?://\S+|www\.\S+)", re.IGNORECASE)
@@ -45,6 +47,61 @@ BOILERPLATE_PATTERNS = [
     re.compile(r"\bapply now\b", re.IGNORECASE),
     re.compile(r"\bclick here\b", re.IGNORECASE),
 ]
+
+DESCRIPTION_SECTION_KEYWORDS = {
+    "missions": (
+        "mission",
+        "missions",
+        "responsabilites",
+        "responsabilités",
+        "responsibilities",
+        "tasks",
+        "taches",
+        "tâches",
+        "activites",
+        "activités",
+        "role",
+        "rôle",
+    ),
+    "profile": (
+        "profil",
+        "profile",
+        "requirements",
+        "requis",
+        "exigences",
+        "qualifications",
+        "formation",
+        "diplome",
+        "diplôme",
+        "experience",
+        "expérience",
+    ),
+    "skills": (
+        "competence",
+        "compétence",
+        "competences",
+        "compétences",
+        "skills",
+        "stack",
+        "technologies",
+        "outils",
+        "tools",
+        "langues",
+        "languages",
+    ),
+}
+
+DESCRIPTION_NOISE_KEYWORDS = (
+    "qui sommes-nous",
+    "pourquoi nous rejoindre",
+    "ce que nous offrons",
+    "avantages",
+    "benefits",
+    "postuler",
+    "envoyer votre cv",
+    "send your resume",
+    "about us",
+)
 
 TENDER_TYPE_PATTERNS = [
     (re.compile(r"\bavis\s+de\s+consultation\b"), "avis de consultation"),
@@ -202,6 +259,286 @@ def _clean_embedding_payload(text: str) -> str:
     cleaned = _dedupe_consecutive_words(cleaned)
     cleaned = _compact_long_text(cleaned)
     return _normalize_punctuation(cleaned)
+
+
+def _clean_semantic_embedding_payload(text: str, *, limit: int = SEMANTIC_TEXT_MAX_LENGTH) -> str:
+    if not text:
+        return ""
+    cleaned = TYPE_JOB_PREFIX_RE.sub(" ", text)
+    cleaned = TITLE_PREFIX_RE.sub(" ", cleaned)
+    cleaned = _remove_boilerplate(cleaned)
+    cleaned = _dedupe_consecutive_words(cleaned)
+    cleaned = _normalize_punctuation(cleaned)
+    cleaned = _dedupe_semantic_sentences(cleaned)
+    return _trim_to_boundary(cleaned, limit).strip()
+
+
+def _dedupe_semantic_sentences(text: str) -> str:
+    chunks = [chunk.strip() for chunk in re.split(r"(?<=[.!?;])\s+", text) if chunk.strip()]
+    if len(chunks) <= 1:
+        return text
+
+    kept = []
+    seen = set()
+    for chunk in chunks:
+        normalized = _normalize_for_matching(chunk)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        kept.append(chunk)
+    return " ".join(kept)
+
+
+def _coerce_string_list(value: Any, *, limit: int = 12) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        candidates = re.split(r"[,;|/]\s*|\n+", value)
+    elif isinstance(value, dict):
+        candidates = value.values()
+    elif isinstance(value, Iterable):
+        candidates = value
+    else:
+        candidates = [value]
+
+    items = []
+    seen = set()
+    for item in candidates:
+        if isinstance(item, dict):
+            text = (
+                item.get("preferred_label")
+                or item.get("label")
+                or item.get("name")
+                or item.get("skill")
+                or item.get("raw")
+                or item.get("value")
+                or ""
+            )
+        else:
+            text = str(item or "")
+        text = WHITESPACE_RE.sub(" ", text).strip(" -:;,.")
+        key = _normalize_for_matching(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        items.append(text)
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _join_values(values: Iterable[str]) -> str:
+    return ", ".join(value for value in values if value)
+
+
+def _get_extra_data(opportunity: Any) -> dict:
+    value = opportunity.get("extra_data") if isinstance(opportunity, dict) else getattr(opportunity, "extra_data", None)
+    return value if isinstance(value, dict) else {}
+
+
+def _get_source_name(opportunity: Any) -> str:
+    source = opportunity.get("source") if isinstance(opportunity, dict) else getattr(opportunity, "source", None)
+    if isinstance(source, dict):
+        return str(source.get("nom") or source.get("name") or "").strip()
+    if source is not None:
+        return str(getattr(source, "nom", "") or getattr(source, "name", "") or source).strip()
+    return _get_attr(opportunity, "source_name", "source")
+
+
+def _get_extra_attr(extra_data: dict, *names: str) -> str:
+    for name in names:
+        value = extra_data.get(name)
+        if value is not None and str(value).strip():
+            return str(value)
+    return ""
+
+
+def _build_experience_text(opportunity: Any, extra_data: dict) -> str:
+    llm_data = _get_llm_enrichment(extra_data)
+    llm_level = str(llm_data.get("experience_level") or "").strip()
+    llm_years = llm_data.get("years_experience")
+    llm_min = llm_data.get("years_experience_min")
+    llm_max = llm_data.get("years_experience_max")
+    if llm_level and llm_years is not None:
+        return f"{llm_level}, {llm_years} years"
+    if llm_level:
+        return llm_level
+    if llm_years is not None:
+        return f"{llm_years} years"
+    if llm_min is not None and llm_max is not None:
+        return f"{llm_min}-{llm_max} years" if llm_min != llm_max else f"{llm_min} years"
+    if llm_min is not None:
+        return f"{llm_min}+ years"
+    explicit = _get_extra_attr(extra_data, "experience_text", "experience", "experience_level")
+    if explicit:
+        return explicit
+    years = _get_attr(opportunity, "experience_years")
+    if years:
+        return f"{years} years"
+    minimum = _get_attr(opportunity, "experience_min")
+    maximum = _get_attr(opportunity, "experience_max")
+    if minimum and maximum:
+        return f"{minimum}-{maximum} years"
+    if minimum:
+        return f"{minimum}+ years"
+    return maximum
+
+
+def _get_llm_enrichment(extra_data: dict) -> dict:
+    value = extra_data.get("llm_enrichment")
+    return value if isinstance(value, dict) else {}
+
+
+def _llm_list(extra_data: dict, key: str, *, limit: int = 10) -> list[str]:
+    return _coerce_string_list(_get_llm_enrichment(extra_data).get(key), limit=limit)
+
+
+def _llm_value(extra_data: dict, key: str) -> str:
+    value = _get_llm_enrichment(extra_data).get(key)
+    return WHITESPACE_RE.sub(" ", str(value or "")).strip()
+
+
+def _score_description_chunk(chunk: str) -> int:
+    normalized = _normalize_for_matching(chunk)
+    if not normalized:
+        return -10
+    score = 0
+    word_count = len(normalized.split())
+    if word_count < 4:
+        score -= 2
+    elif word_count >= 8:
+        score += 1
+    for group in DESCRIPTION_SECTION_KEYWORDS.values():
+        if any(_normalize_for_matching(keyword) in normalized for keyword in group):
+            score += 4
+    if any(_normalize_for_matching(keyword) in normalized for keyword in DESCRIPTION_NOISE_KEYWORDS):
+        score -= 4
+    return score
+
+
+def _split_description_chunks(description: str) -> list[str]:
+    cleaned = _basic_pre_clean(description)
+    if not cleaned:
+        return []
+
+    # Source pages mix paragraphs, bullets, and headings. These separators keep
+    # missions/profile/skills blocks readable without needing source-specific parsers.
+    with_breaks = re.sub(
+        r"\b(Missions?|Responsabilit[eé]s?|Profil recherch[eé]|Profil|Comp[eé]tences?|"
+        r"Stack technique|Exigences?|Requirements?|Qualifications?|Formation|Exp[eé]rience|"
+        r"Votre mission|Vos missions|T[aâ]ches principales)\s*:",
+        r". \1: ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    chunks = [
+        _normalize_punctuation(chunk)
+        for chunk in re.split(r"(?:\.\s+|•|\u2022|\n+|\r+|\s+-\s+)", with_breaks)
+        if chunk and chunk.strip()
+    ]
+    return [chunk for chunk in chunks if len(_normalize_for_matching(chunk)) >= 12]
+
+
+def _select_description_signals(description: str, *, max_chars: int = SEMANTIC_DESCRIPTION_MAX_LENGTH) -> str:
+    chunks = _split_description_chunks(description)
+    if not chunks:
+        return ""
+
+    scored = []
+    seen = set()
+    for index, chunk in enumerate(chunks):
+        normalized = _normalize_for_matching(chunk)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        scored.append((_score_description_chunk(chunk), index, chunk))
+
+    strong = [item for item in scored if item[0] >= 1]
+    selected = strong or scored[:8]
+    selected = sorted(selected, key=lambda item: (-item[0], item[1]))[:14]
+    selected = sorted(selected, key=lambda item: item[1])
+
+    output = []
+    total = 0
+    for _, _, chunk in selected:
+        addition = chunk.strip(" -:;,.")
+        if not addition:
+            continue
+        next_total = total + len(addition) + 2
+        if output and next_total > max_chars:
+            break
+        output.append(addition)
+        total = next_total
+    return ". ".join(output)
+
+
+def _prepare_opportunity_semantic_text(opportunity: Any) -> str:
+    extra_data = _get_extra_data(opportunity)
+    title = _get_attr(opportunity, "titre", "title")
+    description = _get_attr(opportunity, "description")
+    organization = _get_attr(opportunity, "organisation_nom", "organization", "organisation", "company")
+    location = _get_attr(opportunity, "ville", "location", "city")
+    source_name = _get_source_name(opportunity)
+    opportunity_type = _get_attr(opportunity, "type_opportunite", "opportunity_type", "type")
+    sector = _get_extra_attr(extra_data, "company_sector", "sector", "secteur", "industry")
+    llm_role = _llm_value(extra_data, "canonical_role")
+    llm_roles = _llm_list(extra_data, "target_roles", limit=5)
+    llm_contracts = _llm_list(extra_data, "contract_types", limit=4)
+    llm_work_modes = _llm_list(extra_data, "work_modes", limit=4)
+    llm_locations = _llm_list(extra_data, "locations", limit=4)
+    llm_responsibilities = _llm_list(extra_data, "responsibilities", limit=6)
+    llm_requirements = _llm_list(extra_data, "requirements", limit=6)
+    llm_evidence = _llm_list(extra_data, "evidence", limit=6)
+    contract = _join_values([_get_attr(opportunity, "contract_type"), *llm_contracts])
+    work_mode = _join_values([_get_attr(opportunity, "normalized_work_mode", "availability"), *llm_work_modes])
+    availability = _get_attr(opportunity, "availability")
+    education = _get_attr(opportunity, "education_level") or _llm_value(extra_data, "education_level")
+    experience = _build_experience_text(opportunity, extra_data)
+    salary = _get_attr(opportunity, "salary") or _llm_value(extra_data, "salary")
+
+    skills = _coerce_string_list(_get_raw_attr(opportunity, "skills"), limit=14)
+    llm_skills = _llm_list(extra_data, "skills", limit=12)
+    llm_tools = _llm_list(extra_data, "tools", limit=10)
+    llm_soft_skills = _llm_list(extra_data, "soft_skills", limit=8)
+    llm_domains = _llm_list(extra_data, "domains", limit=6)
+    raw_skills = _coerce_string_list(
+        _get_raw_attr(opportunity, "raw_skills"),
+        limit=10,
+    )
+    normalized_skills = _coerce_string_list(
+        _get_raw_attr(opportunity, "normalized_skills"),
+        limit=10,
+    )
+    languages = _coerce_string_list(
+        _get_raw_attr(opportunity, "languages"),
+        limit=6,
+    )
+    description_signals = _select_description_signals(description)
+
+    lines = [
+        f"Opportunity type - {opportunity_type}" if opportunity_type else "",
+        f"Source - {source_name}" if source_name else "",
+        f"Role - {title}" if title else "",
+        f"Extracted role - {_join_values([llm_role, *llm_roles])}" if llm_role or llm_roles else "",
+        f"Organization - {organization}" if organization else "",
+        f"Sector - {sector}" if sector else "",
+        f"Location - {_join_values([location, *llm_locations])}" if location or llm_locations else "",
+        f"Contract - {contract}" if contract else "",
+        f"Work mode - {_join_values([work_mode, availability])}" if work_mode or availability else "",
+        f"Experience - {experience}" if experience else "",
+        f"Education - {education}" if education else "",
+        f"Salary - {salary}" if salary else "",
+        f"Skills and tools - {_join_values([*llm_skills, *llm_tools, *skills, *raw_skills, *normalized_skills, *llm_domains])}"
+        if llm_skills or llm_tools or skills or raw_skills or normalized_skills or llm_domains
+        else "",
+        f"Soft skills - {_join_values(llm_soft_skills)}" if llm_soft_skills else "",
+        f"Languages - {_join_values(languages)}" if languages else "",
+        f"Responsibilities - {_join_values(llm_responsibilities)}" if llm_responsibilities else "",
+        f"Requirements - {_join_values(llm_requirements)}" if llm_requirements else "",
+        f"LLM evidence - {_join_values(llm_evidence)}" if llm_evidence else "",
+        f"Description signals - {description_signals}" if description_signals else "",
+    ]
+    return ". ".join(line for line in lines if line).strip()
 
 
 def _normalize_org_candidate(value: str) -> str:
@@ -810,11 +1147,26 @@ def _get_attr(obj: Any, *names: str) -> str:
     return ""
 
 
+def _get_raw_attr(obj: Any, *names: str) -> Any:
+    for name in names:
+        if isinstance(obj, dict):
+            value = obj.get(name)
+        else:
+            value = getattr(obj, name, None)
+        if value is not None and value != "":
+            return value
+    return None
+
+
 def prepare_combined_text(opportunity: Any) -> str:
+    semantic_text = _prepare_opportunity_semantic_text(opportunity)
+    if semantic_text:
+        return _clean_semantic_embedding_payload(semantic_text)
+
     title = _get_attr(opportunity, "titre", "title")
     description = _get_attr(opportunity, "description")
     organization = _get_attr(opportunity, "organisation_nom", "organization", "organisation")
-    location = _get_attr(opportunity, "location")
+    location = _get_attr(opportunity, "ville", "location")
 
     combined = " ".join(part for part in [title, description, organization, location] if part).strip()
     prepared = prepare_text_for_nlp(combined)
