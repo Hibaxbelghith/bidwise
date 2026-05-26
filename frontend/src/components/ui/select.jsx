@@ -40,6 +40,9 @@ export const Select = ({ value, defaultValue, onValueChange, children }) => {
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
           triggerProps.className
         )}
+        id={triggerProps.id}
+        disabled={triggerProps.disabled}
+        aria-label={triggerProps['aria-label']}
         value={value}
         defaultValue={defaultValue}
         onChange={(event) => onValueChange?.(event.target.value)}

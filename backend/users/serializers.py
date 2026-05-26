@@ -8,6 +8,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
+from ai.business_families import CONTROLLED_FAMILIES, normalize_family
 from ai.embeddings import enqueue_profile_embedding_refresh
 from ai.esco_skill_storage import clean_skill_storage_list
 from ai.tasks import enqueue_profile_skill_normalization
@@ -24,6 +25,9 @@ from .profile_completion import calculate_profile_completion
 
 
 PROFILE_LIST_ITEM_MAX_LENGTH = 100
+MAX_PROFILE_LIST_ITEMS = 30
+MAX_PROFILE_TARGET_ROLES = 10
+MAX_PROFILE_BUSINESS_FAMILIES = 5
 LOCATION_ITEM_MAX_LENGTH = 100
 MAX_PREFERRED_LOCATIONS = 10
 CANONICAL_PROFILE_WORK_MODES = ("REMOTE", "HYBRID", "ON_SITE")
@@ -48,6 +52,55 @@ ALLOWED_RESUME_CONTENT_TYPES = {
     "text/plain",
 }
 TUNISIA_PHONE_PATTERN = re.compile(r"^\+216\d{8}$")
+UNSAFE_PROFILE_TEXT_PATTERN = re.compile(
+    r"(<[^>]*>)|[<>]|(?:javascript\s*:)|(?:data\s*:)",
+    flags=re.IGNORECASE,
+)
+
+PROFILE_BUSINESS_FAMILY_ALIASES = {
+    "it_support_network": "it_network_support",
+    "accounting_finance": "accounting_finance_audit",
+    "sales": "sales_business",
+    "marketing": "marketing_communication",
+    "hr": "hr_administration",
+    "administration": "hr_administration",
+    "quality_industry": "quality_industry_methods",
+    "design": "design_creative",
+    "legal": "legal_regulatory",
+    "ai": "data_ai",
+    "ia": "data_ai",
+    "bi": "data_ai",
+    "fintech": "accounting_finance_audit",
+    "finance": "accounting_finance_audit",
+    "banque": "accounting_finance_audit",
+    "banking": "accounting_finance_audit",
+    "assurance": "accounting_finance_audit",
+    "insurance": "accounting_finance_audit",
+    "marketing_digital": "marketing_communication",
+    "communication": "marketing_communication",
+    "rh": "hr_administration",
+    "recruitment": "hr_administration",
+    "recrutement": "hr_administration",
+    "support_it": "it_network_support",
+    "it_support": "it_network_support",
+    "network": "it_network_support",
+    "networks": "it_network_support",
+    "cybersecurity": "security_safety",
+    "cybersecurite": "security_safety",
+    "cybersécurité": "security_safety",
+    "logistics": "logistics_supply_chain",
+    "logistique": "logistics_supply_chain",
+    "industry": "quality_industry_methods",
+    "industrie": "quality_industry_methods",
+    "education": "education_training",
+    "enseignement": "education_training",
+    "training": "education_training",
+    "formation": "education_training",
+    "sante": "healthcare",
+    "santé": "healthcare",
+    "health": "healthcare",
+    "medical": "healthcare",
+}
 
 TUNISIAN_LOCATIONS = (
     "Tunis",
@@ -188,6 +241,81 @@ def _collapse_location_spacing(value):
 def _strip_accents(value):
     normalized = unicodedata.normalize("NFKD", value)
     return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _profile_term_key(value):
+    text = _strip_accents(str(value or "").strip()).casefold()
+    text = re.sub(r"[-\s]+", "_", text)
+    text = re.sub(r"[^a-z0-9_]+", "", text)
+    return re.sub(r"_+", "_", text).strip("_")
+
+
+def _normalize_safe_profile_text(value):
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    text = "".join(
+        char
+        for char in text
+        if unicodedata.category(char)[0] != "C"
+    )
+    text = re.sub(r"\s+", " ", text).strip()
+    if text and UNSAFE_PROFILE_TEXT_PATTERN.search(text):
+        raise serializers.ValidationError(
+            "Remove HTML, scripts, or unsafe markup from profile fields."
+        )
+    return text
+
+
+def _normalize_safe_profile_list(
+    value,
+    *,
+    max_items=MAX_PROFILE_LIST_ITEMS,
+    max_item_length=PROFILE_LIST_ITEM_MAX_LENGTH,
+):
+    cleaned = []
+    seen = set()
+    for item in _normalize_text_list(
+        value,
+        strict_items=True,
+        max_item_length=max_item_length,
+    ):
+        text = _normalize_safe_profile_text(item)
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+
+    if len(cleaned) > max_items:
+        raise serializers.ValidationError(f"Choose at most {max_items} items.")
+    return cleaned
+
+
+def _normalize_profile_business_families(value):
+    cleaned = []
+    seen = set()
+    raw_items = _normalize_safe_profile_list(
+        value,
+        max_items=MAX_PROFILE_BUSINESS_FAMILIES,
+        max_item_length=PROFILE_LIST_ITEM_MAX_LENGTH,
+    )
+    for item in raw_items:
+        key = _profile_term_key(item)
+        canonical = PROFILE_BUSINESS_FAMILY_ALIASES.get(key) or normalize_family(key)
+        if not canonical or canonical not in CONTROLLED_FAMILIES:
+            raise serializers.ValidationError(
+                "Select a valid sector from the approved business family list."
+            )
+        canonical = PROFILE_BUSINESS_FAMILY_ALIASES.get(canonical, canonical)
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        cleaned.append(canonical)
+
+    if not cleaned:
+        raise serializers.ValidationError("Choose at least one sector.")
+    return cleaned
 
 
 def _location_lookup_key(value):
@@ -538,6 +666,7 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         profile = self.context["profile"]
         uploaded_file = validated_data.get("file")
+        activate_resume = self.context.get("activate_resume", True)
         resume = ProfileResume.objects.create(
             profile=profile,
             file=uploaded_file,
@@ -552,7 +681,7 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
                 "content_type": getattr(uploaded_file, "content_type", ""),
                 "size": getattr(uploaded_file, "size", 0),
             },
-            is_active=True,
+            is_active=activate_resume,
         )
         resume.metadata = {
             **(resume.metadata or {}),
@@ -800,14 +929,13 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_competences(self, value):
-        return normalize_profile_terms(ProfileSuggestionType.SKILL, value)
+        return normalize_profile_terms(
+            ProfileSuggestionType.SKILL,
+            _normalize_safe_profile_list(value),
+        )
 
     def validate_domaines_interet(self, value):
-        return normalize_profile_terms(
-            ProfileSuggestionType.INTEREST,
-            _coerce_text_list(value),
-            preserve_unknown=True,
-        )
+        return _normalize_profile_business_families(value)
 
     def validate_opportunity_types(self, value):
         cleaned = []
@@ -828,7 +956,7 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
     def validate_target_roles(self, value):
         return normalize_profile_terms(
             ProfileSuggestionType.ROLE,
-            _coerce_text_list(value),
+            _normalize_safe_profile_list(value, max_items=MAX_PROFILE_TARGET_ROLES),
             preserve_unknown_roles=True,
         )
 

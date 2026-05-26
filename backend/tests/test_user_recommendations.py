@@ -8,6 +8,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from ai.esco_mapper import clear_esco_mapper_cache, map_role_to_esco, map_skill_to_esco
+from ai.business_families import profile_business_families
 from ai.models import ESCOOccupation
 from ai.embeddings import (
     MAX_RESUME_EMBEDDING_TEXT_CHARS,
@@ -123,6 +124,21 @@ class UserFeatureBuilderTests(SimpleTestCase):
         self.assertEqual(features["salary_currency"], "")
         self.assertEqual(features["salary_period"], "")
         self.assertNotIn("resume_text", features)
+
+    def test_profile_business_families_uses_canonical_profile_interests(self):
+        profile = SimpleNamespace(
+            competences=[],
+            domaines_interet=["it_network_support", "accounting_finance_audit"],
+            target_roles=[],
+            preferred_locations=[],
+        )
+
+        features = build_user_features(profile)
+
+        self.assertEqual(
+            profile_business_families(features),
+            {"it_network_support", "accounting_finance_audit"},
+        )
 
     def test_build_user_features_reads_llm_resume_business_family(self):
         profile = SimpleNamespace(

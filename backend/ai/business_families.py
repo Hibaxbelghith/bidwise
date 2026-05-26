@@ -344,6 +344,7 @@ def profile_business_families(features: dict[str, Any] | None) -> set[str]:
         return explicit_families
 
     values = []
+    explicit_interest_families = normalize_family_set(features.get("interests")) - {"other"}
     explicit_values = []
     for key in ("target_roles", "roles", "profile_skills"):
         explicit_values.extend(_clean_list(features.get(key)))
@@ -353,7 +354,7 @@ def profile_business_families(features: dict[str, Any] | None) -> set[str]:
     else:
         for key in ("skills", "interests"):
             values.extend(_clean_list(features.get(key)))
-    return families_from_text_values(values)
+    return explicit_interest_families | families_from_text_values(values)
 
 
 def opportunity_llm_business_families(

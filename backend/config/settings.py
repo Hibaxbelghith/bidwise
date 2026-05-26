@@ -326,7 +326,7 @@ OPPORTUNITY_PGVECTOR_DIMENSIONS = int(os.getenv("OPPORTUNITY_PGVECTOR_DIMENSIONS
 
 # CrossEncoder reranking. Disabled by default for deadline stability unless the
 # model is explicitly shipped in the local HuggingFace cache.
-CROSS_ENCODER_ENABLED = _env_flag("CROSS_ENCODER_ENABLED", False)
+CROSS_ENCODER_ENABLED = _env_flag("CROSS_ENCODER_ENABLED", True)
 CROSS_ENCODER_MODEL = os.getenv(
     "CROSS_ENCODER_MODEL",
     "cross-encoder/ms-marco-MiniLM-L-6-v2",

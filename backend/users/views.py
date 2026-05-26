@@ -5,7 +5,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes, throttle_classes
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser, IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -175,9 +175,17 @@ def interest_suggestions(request):
     return _profile_suggestion_response(request, ProfileSuggestionType.INTEREST)
 
 
-@api_view(['GET', 'POST', 'DELETE'])
+def _request_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+@api_view(['GET', 'POST', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
-@parser_classes([MultiPartParser, FormParser])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 def profile_resume(request):
     try:
         profil = request.user.profil
@@ -201,6 +209,22 @@ def profile_resume(request):
         return Response({"resume": serializer.data}, status=status.HTTP_200_OK)
 
     if request.method == 'DELETE':
+        resume_id = request.query_params.get("resume_id") or request.data.get("resume_id")
+        if resume_id:
+            resume = ProfileResume.objects.filter(profile=profil, pk=resume_id).first()
+            if not resume:
+                return Response({"detail": "Resume not found."}, status=status.HTTP_404_NOT_FOUND)
+            was_active = resume.is_active
+            if was_active:
+                resume.is_active = False
+                resume.save(update_fields=["is_active"])
+                transaction.on_commit(
+                    lambda profile_id=profil.pk: enqueue_profile_embedding_refresh(profile_id)
+                )
+            else:
+                resume.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
         if active_resume:
             active_resume.is_active = False
             active_resume.save(update_fields=["is_active"])
@@ -209,15 +233,45 @@ def profile_resume(request):
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    if request.method == 'PATCH':
+        resume_id = request.data.get("resume_id")
+        if not resume_id:
+            return Response({"resume_id": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            resume = (
+                ProfileResume.objects
+                .select_for_update()
+                .filter(profile=profil, pk=resume_id)
+                .first()
+            )
+            if not resume:
+                return Response({"detail": "Resume not found."}, status=status.HTTP_404_NOT_FOUND)
+            ProfileResume.objects.filter(profile=profil, is_active=True).exclude(pk=resume.pk).update(is_active=False)
+            if not resume.is_active:
+                resume.is_active = True
+                resume.save(update_fields=["is_active"])
+            transaction.on_commit(
+                lambda profile_id=profil.pk: enqueue_profile_embedding_refresh(profile_id)
+            )
+
+        output = ProfileResumeSerializer(resume, context={"request": request})
+        return Response({"resume": output.data}, status=status.HTTP_200_OK)
+
     serializer = ProfileResumeSerializer(
         data=request.data,
-        context={"request": request, "profile": profil},
+        context={
+            "request": request,
+            "profile": profil,
+            "activate_resume": _request_bool(request.data.get("activate"), default=True),
+        },
     )
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
-        ProfileResume.objects.filter(profile=profil, is_active=True).update(is_active=False)
+        if serializer.context["activate_resume"]:
+            ProfileResume.objects.filter(profile=profil, is_active=True).update(is_active=False)
         resume = serializer.save()
         transaction.on_commit(
             lambda resume_id=resume.pk: enqueue_profile_resume_parse(resume_id)

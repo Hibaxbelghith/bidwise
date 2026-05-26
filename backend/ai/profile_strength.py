@@ -46,10 +46,6 @@ def _as_list(value: Any) -> list[str]:
     return cleaned
 
 
-def _bool_profile_attr(profile: Any, name: str) -> bool:
-    return bool(getattr(profile, name, False)) if profile is not None else False
-
-
 def _level_for_score(score: int) -> str:
     if score <= PROFILE_STRENGTH_LOW_MAX:
         return "LOW"
@@ -75,8 +71,6 @@ def compute_profile_strength(profile: Any, features: dict[str, Any] | None) -> d
     employment_types = _as_list(features.get("employment_types"))
     resume_text = str(features.get("resume_text") or "").strip()
     has_experience = bool(features.get("experience_level")) or features.get("experience_years") is not None
-    onboarding_completed = _bool_profile_attr(profile, "onboarding_completed")
-
     signals = {
         "skills": bool(skills),
         "roles": bool(roles),
@@ -86,7 +80,6 @@ def compute_profile_strength(profile: Any, features: dict[str, Any] | None) -> d
         "work_modes": bool(work_modes),
         "employment_types": bool(employment_types),
         "experience": has_experience,
-        "onboarding": onboarding_completed,
     }
 
     score = 0
@@ -106,9 +99,6 @@ def compute_profile_strength(profile: Any, features: dict[str, Any] | None) -> d
         score += 5
     if has_experience:
         score += 5
-    if onboarding_completed:
-        score += 5
-
     score = max(0, min(100, int(score)))
     return ProfileStrength(
         score=score,

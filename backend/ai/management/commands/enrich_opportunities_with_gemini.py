@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import close_old_connections
 from django.db.models.functions import Length
 
 from ai.llm.opportunity_enrichment import (
@@ -101,10 +103,19 @@ class Command(BaseCommand):
         parser.add_argument("--no-apply-skills", action="store_true")
         parser.add_argument("--min-confidence", type=float, default=MIN_CONFIDENCE_TO_APPLY)
         parser.add_argument("--delay-seconds", type=float, default=12.0)
+        parser.add_argument(
+            "--workers",
+            type=int,
+            default=1,
+            help=(
+                "Number of concurrent LLM enrichment workers. Default: 1. "
+                "Use cautiously with Gemini quota/rate limits."
+            ),
+        )
         parser.add_argument("--json", action="store_true")
 
     def handle(self, *args, **options):
-        limit = max(1, min(int(options["limit"] or 2), 50))
+        limit = max(1, min(int(options["limit"] or 2), 2000))
         from_id = options.get("from_id")
         if from_id is not None and int(from_id) < 0:
             raise CommandError("--from-id must be >= 0")
@@ -121,7 +132,7 @@ class Command(BaseCommand):
                     raise CommandError("--ids must contain only comma-separated integer ids") from exc
             if not explicit_ids:
                 raise CommandError("--ids did not contain any valid opportunity id")
-            limit = min(len(explicit_ids), 50)
+            limit = min(len(explicit_ids), 2000)
 
         source_name = str(options.get("source") or "Keejob").strip()
         min_description_chars = max(0, int(options.get("min_description_chars") or 0))
@@ -184,10 +195,8 @@ class Command(BaseCommand):
         before_snapshot = _coverage_snapshot(queryset)
         results = []
         delay_seconds = max(0.0, float(options["delay_seconds"] or 0.0))
-        for index, opportunity in enumerate(candidates):
-            if index > 0 and delay_seconds:
-                time.sleep(delay_seconds)
-            if audit_only:
+        if audit_only:
+            for opportunity in candidates:
                 results.append(
                     {
                         "status": "audit" if bool(options["audit"]) else "dry_run",
@@ -200,34 +209,82 @@ class Command(BaseCommand):
                         "needs_enrichment": opportunity_needs_llm_enrichment(opportunity),
                     }
                 )
-                continue
+        else:
+            workers = max(1, min(int(options.get("workers") or 1), 8))
 
-            try:
-                result = enrich_opportunity_with_llm(
-                    opportunity.pk,
-                    force=bool(options["force"]),
-                    apply_skills=not bool(options["no_apply_skills"]),
-                    min_confidence=float(options["min_confidence"]),
-                )
-            except LLMProviderUnavailable as exc:
-                raise CommandError(str(exc)) from exc
-            except LLMRateLimitError as exc:
-                result = {
-                    "status": "rate_limited",
-                    "opportunity_id": opportunity.pk,
-                    "error": str(exc),
-                }
+            def run_enrichment(opportunity):
+                close_old_connections()
+                try:
+                    result = enrich_opportunity_with_llm(
+                        opportunity.pk,
+                        force=bool(options["force"]),
+                        apply_skills=not bool(options["no_apply_skills"]),
+                        min_confidence=float(options["min_confidence"]),
+                    )
+                except LLMProviderUnavailable:
+                    raise
+                except LLMRateLimitError as exc:
+                    result = {
+                        "status": "rate_limited",
+                        "opportunity_id": opportunity.pk,
+                        "error": str(exc),
+                    }
+                except LLMProviderError as exc:
+                    result = {
+                        "status": "failed",
+                        "opportunity_id": opportunity.pk,
+                        "error": str(exc),
+                    }
+                finally:
+                    close_old_connections()
                 result["title"] = opportunity.titre
-                results.append(result)
-                break
-            except LLMProviderError as exc:
-                result = {
-                    "status": "failed",
-                    "opportunity_id": opportunity.pk,
-                    "error": str(exc),
-                }
-            result["title"] = opportunity.titre
-            results.append(result)
+                return result
+
+            if workers == 1:
+                for index, opportunity in enumerate(candidates):
+                    if index > 0 and delay_seconds:
+                        time.sleep(delay_seconds)
+                    try:
+                        result = run_enrichment(opportunity)
+                    except LLMProviderUnavailable as exc:
+                        raise CommandError(str(exc)) from exc
+                    results.append(result)
+                    if result.get("status") == "rate_limited":
+                        break
+            else:
+                pending = {}
+                next_index = 0
+                stop_scheduling = False
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    while next_index < len(candidates) and len(pending) < workers:
+                        future = executor.submit(run_enrichment, candidates[next_index])
+                        pending[future] = candidates[next_index]
+                        next_index += 1
+
+                    while pending:
+                        done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                        for future in done:
+                            pending.pop(future, None)
+                            try:
+                                result = future.result()
+                            except LLMProviderUnavailable as exc:
+                                raise CommandError(str(exc)) from exc
+                            results.append(result)
+                            if result.get("status") == "rate_limited":
+                                stop_scheduling = True
+
+                        while not stop_scheduling and next_index < len(candidates) and len(pending) < workers:
+                            if next_index > 0 and delay_seconds:
+                                time.sleep(delay_seconds)
+                            future = executor.submit(run_enrichment, candidates[next_index])
+                            pending[future] = candidates[next_index]
+                            next_index += 1
+
+                        if stop_scheduling:
+                            for future in pending:
+                                future.cancel()
+                            pending = {}
+                            break
 
         after_snapshot = _coverage_snapshot(queryset)
         payload = {
@@ -235,6 +292,7 @@ class Command(BaseCommand):
                 "source": source_name,
                 "ids": explicit_ids,
                 "limit": limit,
+                "workers": max(1, min(int(options.get("workers") or 1), 8)),
                 "min_description_chars": min_description_chars,
                 "apply_skills": not bool(options["no_apply_skills"]),
                 "min_confidence": float(options["min_confidence"]),

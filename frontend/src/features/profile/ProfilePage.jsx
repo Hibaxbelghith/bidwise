@@ -12,6 +12,7 @@ import {
 } from '../../components/ui/select.jsx';
 import { Alert, AlertDescription } from '../../components/ui/alert.jsx';
 import { 
+	Mail,
 	ArrowLeft, 
 	CheckCircle2, 
 	Eye, 
@@ -20,19 +21,20 @@ import {
 	Heart, 
 	Settings, 
 	FileText,
-	ChevronRight
+	ChevronRight,
+	Plus
 } from 'lucide-react';
 import { Spinner } from '../../components/ui/spinner.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import LocationMultiSelect from './components/LocationMultiSelect.jsx';
+import BusinessFamilySelect from './components/BusinessFamilySelect.jsx';
 import ProfileAutocompleteInput from './components/ProfileAutocompleteInput.jsx';
 import PreferenceChipGroup from './components/PreferenceChipGroup.jsx';
 import ResumeSection from './components/ResumeSection.jsx';
 import {
 	EMPLOYMENT_TYPE_OPTIONS,
-	ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
-	OPPORTUNITY_TYPE_OPTIONS,
 	WORK_MODE_OPTIONS,
+	normalizeBusinessFamilyValues,
 	normalizeLocations,
 	normalizeOptionValues,
 	normalizeProfilePreferenceData,
@@ -43,18 +45,16 @@ import { buildProfileEditorState } from './profileEditorState.js';
 import {
 	DEFAULT_COMPENSATION_PERIOD,
 	validateSalaryRange,
-	validateOpportunityTypes,
 	validateProfileName,
 	validateYearsOfExperience,
 } from './profileValidation.js';
 
 const EXPERIENCE_OPTIONS = [
-	{ value: 'DEBUTANT', label: 'Débutant (0–1 an)' },
-	{ value: 'JUNIOR', label: 'Junior (1–3 ans)' },
-	{ value: 'CONFIRME', label: 'Confirmé (3–5 ans)' },
-	{ value: 'SENIOR', label: 'Senior (5+ ans)' },
+	{ value: 'DEBUTANT', label: 'Beginner (0-1 year)' },
+	{ value: 'JUNIOR', label: 'Junior (1-3 years)' },
+	{ value: 'CONFIRME', label: 'Intermediate (3-5 years)' },
+	{ value: 'SENIOR', label: 'Senior (5+ years)' },
 ];
-
 const NAV_ITEMS = [
 	{ id: 'personal', label: 'Personal Information', icon: User },
 	{ id: 'work', label: 'Job Preferences', icon: Briefcase },
@@ -69,7 +69,7 @@ const FIELD_SECTION_BY_ERROR_KEY = {
 	yearsOfExperience: 'personal',
 	preferredLocations: 'work',
 	salaryExpectation: 'work',
-	opportunityTypes: 'career',
+	interests: 'career',
 };
 
 const FIELD_ERROR_LABELS = {
@@ -78,16 +78,68 @@ const FIELD_ERROR_LABELS = {
 	yearsOfExperience: 'Years of experience',
 	preferredLocations: 'Desired work locations',
 	salaryExpectation: 'Expected salary range',
-	opportunityTypes: 'Opportunity types',
+	interests: 'Sectors',
 };
+
+const MAX_PREFERRED_LOCATIONS = 10;
+
+const PROFILE_COMPLETION_SUGGESTIONS = [
+	{ key: 'resume', label: 'Upload your resume (+15%)', weight: 15 },
+	{ key: 'skills', label: 'Add at least one skill', weight: 10 },
+	{ key: 'target_roles', label: 'Add a target role', weight: 10 },
+	{ key: 'interests', label: 'Choose at least one sector', weight: 10 },
+];
 
 const getFirstErrorKey = (errors) =>
 	Object.keys(FIELD_SECTION_BY_ERROR_KEY).find((key) => Boolean(errors[key]));
 
+const BACKEND_PROFILE_FIELD_ERROR_MAP = {
+	preferred_locations: 'preferredLocations',
+	domaines_interet: 'interests',
+	compensation_expectation: 'salaryExpectation',
+	compensation_min_expectation: 'salaryExpectation',
+	compensation_max_expectation: 'salaryExpectation',
+	annees_experience: 'yearsOfExperience',
+	prenom: 'firstName',
+	nom: 'lastName',
+};
+
+const parseBackendProfileError = (message = '') => {
+	const nextFieldErrors = {};
+	const cleanBackendMessage = (field, value) => {
+		if (field === 'preferredLocations' && /at most\s+\d+\s+preferred locations/i.test(value)) {
+			return `You can add up to ${MAX_PREFERRED_LOCATIONS} locations.`;
+		}
+		return value;
+	};
+
+	String(message)
+		.split(/(?=\b[a-z_]+:)/g)
+		.map((part) => part.trim())
+		.filter(Boolean)
+		.forEach((part) => {
+			const match = part.match(/^([a-z_]+):\s*(.+)$/);
+			if (!match) return;
+			const field = BACKEND_PROFILE_FIELD_ERROR_MAP[match[1]];
+			if (!field) return;
+			nextFieldErrors[field] = cleanBackendMessage(field, match[2].trim());
+		});
+
+	return nextFieldErrors;
+};
+
 const Profile = () => {
 	const { user, updateUserProfile, refreshUser } = useAuth();
 	const profile = user?.profil;
+	const accountEmail = user?.email || user?.username || '';
 	const profileCompletion = profile?.profile_completion || { score: 0, missing: [] };
+	const profileCompletionSuggestions = useMemo(() => {
+		const missing = new Set(Array.isArray(profileCompletion.missing) ? profileCompletion.missing : []);
+		return PROFILE_COMPLETION_SUGGESTIONS
+			.filter((suggestion) => missing.has(suggestion.key))
+			.sort((a, b) => b.weight - a.weight)
+			.slice(0, 3);
+	}, [profileCompletion.missing]);
 	const lastHydratedEditorStateRef = useRef('');
 	const preserveDraftOnResumeRefreshRef = useRef(false);
 	const fieldRefs = useRef({});
@@ -104,12 +156,10 @@ const Profile = () => {
 	const [skills, setSkills] = useState([]);
 	const [interests, setInterests] = useState([]);
 	const [targetRoles, setTargetRoles] = useState([]);
-	const [opportunityTypes, setOpportunityTypes] = useState([]);
 	const [preferredLocations, setPreferredLocations] = useState([]);
 	const [workModePreferences, setWorkModePreferences] = useState([]);
 	const [employmentTypes, setEmploymentTypes] = useState([]);
 	const [profileVisibility, setProfileVisibility] = useState(true);
-	const [onboardingCompleted, setOnboardingCompleted] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [showSuccess, setShowSuccess] = useState(false);
 	const [formError, setFormError] = useState('');
@@ -118,12 +168,8 @@ const Profile = () => {
 	const [activeSection, setActiveSection] = useState('personal');
 	
 	const skillsPayload = useMemo(() => normalizeSkillList(skills), [skills]);
-	const interestsPayload = useMemo(() => normalizeTextList(interests), [interests]);
+	const interestsPayload = useMemo(() => normalizeBusinessFamilyValues(interests), [interests]);
 	const targetRolesPayload = useMemo(() => normalizeTextList(targetRoles), [targetRoles]);
-	const opportunityTypesPayload = useMemo(
-		() => normalizeOptionValues(opportunityTypes, OPPORTUNITY_TYPE_OPTIONS),
-		[opportunityTypes]
-	);
 	const preferredLocationsPayload = useMemo(() => normalizeLocations(preferredLocations), [preferredLocations]);
 	const workModePreferencesPayload = useMemo(
 		() => normalizeOptionValues(workModePreferences, WORK_MODE_OPTIONS),
@@ -142,23 +188,10 @@ const Profile = () => {
 		[formData.salaryMinExpectation, formData.salaryMaxExpectation, formData.salaryPeriod]
 	);
 	const locationRequired = workModePreferencesPayload.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID');
-	const displayOpportunityTypeOptions = ONBOARDING_OPPORTUNITY_TYPE_OPTIONS.map((option) => ({
-		...option,
-		value: option.value,
-	}));
-	const displayOpportunityTypes = useMemo(() => {
-		const selected = new Set(opportunityTypesPayload);
-		return ONBOARDING_OPPORTUNITY_TYPE_OPTIONS
-			.filter((option) => option.values.every((value) => selected.has(value)))
-			.map((option) => option.value);
-	}, [opportunityTypesPayload]);
-	const handleOpportunityTypeChange = (values) => {
-		const selectedDisplayValues = new Set(values);
-		const nextBackendValues = ONBOARDING_OPPORTUNITY_TYPE_OPTIONS.flatMap((option) =>
-			selectedDisplayValues.has(option.value) ? option.values : []
-		);
-		setOpportunityTypes(Array.from(new Set(nextBackendValues)));
-		setFieldErrors((prev) => ({ ...prev, opportunityTypes: '' }));
+
+	const handleInterestsChange = (values) => {
+		setInterests(values);
+		setFieldErrors((prev) => ({ ...prev, interests: '' }));
 		setValidationSummary('');
 	};
 
@@ -187,12 +220,10 @@ const Profile = () => {
 			setSkills(nextEditorState.skills);
 			setInterests(nextEditorState.interests);
 			setTargetRoles(nextEditorState.targetRoles);
-			setOpportunityTypes(nextEditorState.opportunityTypes);
 			setPreferredLocations(nextEditorState.preferredLocations);
 			setWorkModePreferences(nextEditorState.workModePreferences);
 			setEmploymentTypes(nextEditorState.employmentTypes);
 			setProfileVisibility(nextEditorState.profileVisibility);
-			setOnboardingCompleted(nextEditorState.onboardingCompleted);
 		}
 
 		lastHydratedEditorStateRef.current = nextEditorStateKey;
@@ -265,17 +296,21 @@ const Profile = () => {
 		const firstNameValidation = validateProfileName(formData.firstName);
 		const lastNameValidation = validateProfileName(formData.lastName);
 		const yearsValidation = validateYearsOfExperience(formData.yearsOfExperience);
-		const opportunityTypesError = validateOpportunityTypes(opportunityTypesPayload, OPPORTUNITY_TYPE_OPTIONS);
 		const nextFieldErrors = {
 			firstName: firstNameValidation.error,
 			lastName: lastNameValidation.error,
 			yearsOfExperience: yearsValidation.error,
 			salaryExpectation: salaryValidation.error,
-			opportunityTypes: opportunityTypesError,
-			preferredLocations:
-				locationRequired && preferredLocationsPayload.length === 0
-					? 'Choose at least one location for on-site or hybrid work.'
+			interests:
+				interestsPayload.length === 0
+					? 'Choose at least one sector.'
 					: '',
+			preferredLocations:
+				preferredLocationsPayload.length > MAX_PREFERRED_LOCATIONS
+					? `Choose at most ${MAX_PREFERRED_LOCATIONS} preferred locations.`
+					: locationRequired && preferredLocationsPayload.length === 0
+						? 'Choose at least one location for on-site or hybrid work.'
+						: '',
 		};
 		const hasFieldErrors = Object.values(nextFieldErrors).some(Boolean);
 
@@ -294,7 +329,6 @@ const Profile = () => {
 			domaines_interet: interestsPayload,
 			niveau_experience: formData.experienceLevel || null,
 			annees_experience: yearsValidation.value,
-			opportunity_types: opportunityTypesPayload,
 			target_roles: targetRolesPayload,
 			preferred_locations: preferredLocationsPayload,
 			work_mode_preferences: workModePreferencesPayload,
@@ -305,7 +339,6 @@ const Profile = () => {
 			compensation_currency: 'TND',
 			compensation_period: DEFAULT_COMPENSATION_PERIOD,
 			profile_visibility: profileVisibility,
-			onboarding_completed: onboardingCompleted,
 		};
 
 		const result = await updateUserProfile(payload);
@@ -319,12 +352,18 @@ const Profile = () => {
 				JSON.stringify(normalizeProfilePreferenceData(persistedProfile))
 			);
 			setSkills(normalizeTextList(persistedProfile.competences));
-			setInterests(normalizeTextList(persistedProfile.domaines_interet));
+			setInterests(normalizeBusinessFamilyValues(persistedProfile.domaines_interet));
 			setTargetRoles(normalizeTextList(persistedProfile.target_roles));
 			setShowSuccess(true);
 			setTimeout(() => setShowSuccess(false), 3000);
 		} else if (result.error) {
-			setFormError(result.error);
+			const backendFieldErrors = parseBackendProfileError(result.error);
+			if (Object.values(backendFieldErrors).some(Boolean)) {
+				setFieldErrors(backendFieldErrors);
+				setValidationSummary('Please fix the highlighted fields before saving.');
+			} else {
+				setFormError(result.error);
+			}
 		}
 	};
 
@@ -377,6 +416,16 @@ const Profile = () => {
 								<p className="mt-3 text-xs text-neutral-500">
 									Complete your profile to get better recommendations
 								</p>
+								{profileCompletionSuggestions.length > 0 ? (
+									<ul className="mt-3 space-y-1.5">
+										{profileCompletionSuggestions.map((suggestion) => (
+											<li key={suggestion.key} className="flex items-center gap-1.5 text-xs text-neutral-600">
+												<Plus className="h-3 w-3 shrink-0 text-blue-600" aria-hidden="true" />
+												<span>{suggestion.label}</span>
+											</li>
+										))}
+									</ul>
+								) : null}
 							</div>
 
 							{/* Navigation */}
@@ -442,6 +491,20 @@ const Profile = () => {
 								</div>
 								
 								<div className="space-y-4">
+									<div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3">
+										<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+											<div>
+												
+												<div className="mt-1 flex items-center gap-3">
+													<Mail className="h-4 w-4 text-neutral-400" aria-hidden="true" />
+													<p className="break-all text-sm font-medium text-neutral-900">
+														{accountEmail || 'Email unavailable'}
+													</p>
+												</div>
+											</div>
+										</div>
+									</div>
+
 									<div className="grid gap-4 sm:grid-cols-2">
 										<div
 											ref={(node) => {
@@ -572,6 +635,7 @@ const Profile = () => {
 											value={preferredLocations}
 											onChange={handlePreferredLocationsChange}
 											placeholder={locationRequired ? 'Add a location' : 'Optional for remote roles'}
+											maxItems={MAX_PREFERRED_LOCATIONS}
 										/>
 										<p className="mt-2 text-xs text-neutral-500">
 											{locationRequired
@@ -632,7 +696,7 @@ const Profile = () => {
 									</div>
 
 									<div>
-										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Employment type</Label>
+										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Contract types</Label>
 										<PreferenceChipGroup
 											options={EMPLOYMENT_TYPE_OPTIONS}
 											value={employmentTypes}
@@ -646,7 +710,7 @@ const Profile = () => {
 							<section id="career" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
 									<h2 className="text-lg font-semibold text-neutral-900">Career Signals</h2>
-									<p className="text-sm text-neutral-500">Skills and sectors used to improve opportunity matching</p>
+									<p className="text-sm text-neutral-500">Skills and professional domains used to improve opportunity matching</p>
 								</div>
 
 								<div className="space-y-5">
@@ -661,32 +725,21 @@ const Profile = () => {
 										/>
 									</div>
 
-									<div>
-										<ProfileAutocompleteInput
-											id="interests"
-											label="Secteurs"
-											termType="interest"
-											value={interests}
-											onChange={setInterests}
-											maxItems={8}
-											placeholder="Finance, Banque, Marketing digital..."
-										/>
-									</div>
-
 									<div
 										ref={(node) => {
-											fieldRefs.current.opportunityTypes = node;
+											fieldRefs.current.interests = node;
 										}}
 									>
-										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Opportunity types</Label>
-										<PreferenceChipGroup
-											options={displayOpportunityTypeOptions}
-											value={displayOpportunityTypes}
-											onChange={handleOpportunityTypeChange}
+										<BusinessFamilySelect
+											id="interests"
+											label="Sectors"
+											value={interests}
+											onChange={handleInterestsChange}
+											maxItems={5}
 										/>
-										{fieldErrors.opportunityTypes ? (
-											<p className="mt-2 text-sm text-red-600" role="alert">
-												{fieldErrors.opportunityTypes}
+										{fieldErrors.interests ? (
+											<p id="interests-error" className="mt-2 text-sm text-red-600" role="alert">
+												{fieldErrors.interests}
 											</p>
 										) : null}
 									</div>
@@ -701,7 +754,6 @@ const Profile = () => {
 								</div>
 
 								<ResumeSection
-									profile={profile}
 									activeResume={profile?.active_resume}
 									onChanged={handleResumeChanged}
 								/>
@@ -728,18 +780,6 @@ const Profile = () => {
 										</span>
 									</label>
 
-									<label className="flex cursor-pointer items-start gap-3">
-										<input
-											type="checkbox"
-											checked={onboardingCompleted}
-											onChange={(e) => setOnboardingCompleted(e.target.checked)}
-											className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500"
-										/>
-										<span className="text-sm text-neutral-700">
-											<span className="font-medium">Profile ready for matching</span>
-											<span className="block text-xs text-neutral-500">Mark your profile as complete to receive personalized recommendations</span>
-										</span>
-									</label>
 								</div>
 							</section>
 

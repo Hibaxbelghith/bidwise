@@ -23,22 +23,33 @@ assert.equal(
   'Select at least one option.',
 );
 assert.equal(
-  getOnboardingStepError(4, { target_roles: [] }),
-  'Select at least one option.',
+  getOnboardingStepError(2, { competences: [] }),
+  'Add at least one skill.',
+);
+assert.equal(
+  getOnboardingStepError(3, { domaines_interet: [] }),
+  'Choose at least one sector.',
+);
+assert.equal(
+  getOnboardingStepError(6, { target_roles: [] }),
+  'Add at least one target role.',
 );
 assert.equal(
   findFirstIncompleteOnboardingStep({
     opportunity_types: ['JOB'],
     work_mode_preferences: ['REMOTE'],
+    competences: ['Python'],
+    domaines_interet: [],
     target_roles: [],
   }),
-  4,
+  3,
 );
 
 const deferredPayload = buildDeferredOnboardingPayload(
   {
     opportunity_types: ['JOB'],
     work_mode_preferences: ['REMOTE'],
+    domaines_interet: ['software_web'],
     target_roles: ['Backend Developer'],
   },
   2,
@@ -50,27 +61,32 @@ const completedPayload = buildCompletedOnboardingPayload(
   {
     opportunity_types: ['JOB'],
     work_mode_preferences: ['REMOTE'],
+    competences: ['Python'],
+    domaines_interet: ['software_web'],
     target_roles: ['Backend Developer'],
   },
-  5,
+  7,
 );
 assert.equal(completedPayload.onboarding_completed, true);
-assert.equal(completedPayload.last_onboarding_step, 5);
+assert.equal(completedPayload.last_onboarding_step, 7);
 
 const initialFromProfile = buildOnboardingInitialData({
   profile: {
     opportunity_types: ['JOB'],
     work_mode_preferences: ['HYBRID'],
+    domaines_interet: ['software_web'],
     target_roles: ['Frontend Developer'],
   },
   storedProfile: {
     opportunity_types: ['INTERNSHIP'],
     work_mode_preferences: ['REMOTE'],
+    domaines_interet: ['data_ai'],
     target_roles: ['Data Engineer'],
   },
 });
 assert.deepEqual(initialFromProfile.opportunity_types, ['JOB']);
 assert.deepEqual(initialFromProfile.work_mode_preferences, ['HYBRID']);
+assert.deepEqual(initialFromProfile.domaines_interet, ['software_web']);
 assert.deepEqual(initialFromProfile.target_roles, ['Frontend Developer']);
 
 const editorState = buildProfileEditorState({
@@ -91,11 +107,12 @@ const editorState = buildProfileEditorState({
     target_roles: ['Backend Developer'],
     opportunity_types: ['JOB'],
     work_mode_preferences: ['REMOTE'],
+    domaines_interet: ['software_web'],
   },
 });
 assert.equal(editorState.formData.firstName, 'Lina');
 assert.deepEqual(editorState.skills, ['Python']);
-assert.deepEqual(editorState.interests, []);
+assert.deepEqual(editorState.interests, ['software_web']);
 assert.deepEqual(editorState.targetRoles, ['Backend Developer']);
 assert.deepEqual(editorState.opportunityTypes, ['JOB']);
 assert.deepEqual(editorState.workModePreferences, ['REMOTE']);
@@ -104,15 +121,27 @@ const onboardingSource = readFileSync(
   resolve(root, 'src/features/onboarding/OnboardingPage.jsx'),
   'utf8',
 );
-assert.match(onboardingSource, /buildDeferredOnboardingPayload/);
-assert.match(onboardingSource, /Finish later/);
+assert.match(onboardingSource, /StepSectors/);
+assert.match(onboardingSource, /Choose at least one sector/);
+assert.match(onboardingSource, /What contract types are you open to/);
+assert.doesNotMatch(onboardingSource, /What type of work arrangement do you prefer/);
+assert.doesNotMatch(onboardingSource, /Saving…|Ã|â/);
+assert.match(onboardingSource, /Skip for now/);
+
+const profilePreferencesSource = readFileSync(
+  resolve(root, 'src/features/profile/profilePreferences.js'),
+  'utf8',
+);
+assert.match(profilePreferencesSource, /Internships and trainee programs/);
+assert.match(profilePreferencesSource, /Calls for proposals, funding, and R&D/);
+assert.doesNotMatch(profilePreferencesSource, /Stage et|Appels d'offres|financements|Ã|â/);
 
 const profileSource = readFileSync(
   resolve(root, 'src/features/profile/ProfilePage.jsx'),
   'utf8',
 );
-assert.match(profileSource, /draftDirtyRef/);
 assert.match(profileSource, /buildProfileEditorState/);
-assert.match(profileSource, /Resume uploads refresh the authenticated user/);
+assert.match(profileSource, /Sign-in email/);
+assert.match(profileSource, /Unique account ID/);
 
 console.log('Candidate flow validation checks passed');

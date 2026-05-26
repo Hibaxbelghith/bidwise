@@ -87,15 +87,6 @@ function ResumeSection({ profile, onChanged, colors }: ResumeSectionProps) {
           {uploading ? <ActivityIndicator color={colors.tint} /> : <Text style={[styles.actionLink, { color: colors.tint }]}>Choose file</Text>}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          activeOpacity={0.75}
-          onPress={() => setShowBuilder((value) => !value)}
-          style={[styles.actionBox, { borderColor: colors.border, backgroundColor: colors.card }]}
-        >
-          <Text style={[styles.actionTitle, { color: colors.text }]}>Build a BidWise Resume</Text>
-          <Text style={[styles.actionDesc, { color: colors.muted }]}>A clean draft from your profile signals.</Text>
-          <Text style={[styles.actionLink, { color: colors.tint }]}>{showBuilder ? 'Hide builder' : 'Open builder'}</Text>
-        </TouchableOpacity>
       </View>
 
       {activeResume ? (

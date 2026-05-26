@@ -33,6 +33,7 @@ const StepLocation = ({ data, onChange, error = '' }) => {
 				value={data.preferred_locations}
 				onChange={(locations) => onChange('preferred_locations', locations)}
 				placeholder={locationRequired ? 'Search Tunis, Sfax, Sousse...' : 'Optional for remote roles'}
+				maxItems={10}
 			/>
 			<p className="text-xs text-neutral-500">
 				{locationRequired

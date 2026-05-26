@@ -22,10 +22,13 @@ const LocationMultiSelect = ({
 	value,
 	onChange,
 	placeholder = 'Search or add a location',
+	maxItems = 10,
 }) => {
 	const selected = normalizeLocations(value);
 	const [query, setQuery] = useState('');
+	const [limitError, setLimitError] = useState('');
 	const trimmedQuery = query.trim();
+	const isAtLimit = selected.length >= maxItems;
 
 	const suggestions = useMemo(() => {
 		const selectedKeys = new Set(selected.map(locationKey));
@@ -38,6 +41,10 @@ const LocationMultiSelect = ({
 	}, [selected, trimmedQuery]);
 
 	const addLocation = (location) => {
+		if (isAtLimit) {
+			setLimitError(`You can add up to ${maxItems} locations.`);
+			return;
+		}
 		const cleaned = normalizeLocationLabel(location);
 		if (!cleaned) return;
 
@@ -45,10 +52,12 @@ const LocationMultiSelect = ({
 		if (!exists) {
 			onChange([...selected, cleaned]);
 		}
+		setLimitError('');
 		setQuery('');
 	};
 
 	const removeLocation = (location) => {
+		setLimitError('');
 		onChange(selected.filter((item) => item !== location));
 	};
 
@@ -81,12 +90,22 @@ const LocationMultiSelect = ({
 					type="button"
 					variant="outline"
 					onClick={() => addLocation(trimmedQuery)}
-					disabled={!trimmedQuery}
+					disabled={!trimmedQuery || isAtLimit}
 					aria-label="Add location"
 				>
 					<Plus className="h-4 w-4" aria-hidden="true" />
 				</Button>
 			</div>
+
+			<p className="text-xs text-neutral-500">
+				{selected.length}/{maxItems} locations selected
+			</p>
+
+			{isAtLimit || limitError ? (
+				<p className="text-sm text-amber-700" role={limitError ? 'alert' : undefined}>
+					{limitError || `Maximum ${maxItems} locations reached. Remove one to add another.`}
+				</p>
+			) : null}
 
 			{suggestions.length > 0 ? (
 				<div className="flex flex-wrap gap-2">
@@ -95,6 +114,7 @@ const LocationMultiSelect = ({
 							key={location}
 							type="button"
 							onClick={() => addLocation(location)}
+							disabled={isAtLimit}
 							className="rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 transition hover:border-blue-300 hover:text-blue-700"
 						>
 							{location}

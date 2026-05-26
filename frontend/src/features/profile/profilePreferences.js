@@ -29,23 +29,137 @@ export const OPPORTUNITY_TYPE_OPTIONS = [
 	{ value: 'FUNDING', label: 'Funding' },
 ];
 
+export const BUSINESS_FAMILY_OPTIONS = [
+	{ value: 'software_web', label: 'Software Web', group: 'Technology' },
+	{ value: 'backend', label: 'Backend Engineering', group: 'Technology' },
+	{ value: 'frontend', label: 'Frontend Engineering', group: 'Technology' },
+	{ value: 'fullstack', label: 'Full Stack Engineering', group: 'Technology' },
+	{ value: 'data_ai', label: 'Data / AI / BI', group: 'Technology' },
+	{ value: 'it_network_support', label: 'IT Support / Networks', group: 'Technology' },
+	{ value: 'security_safety', label: 'Security / HSE / Safety', group: 'Technology' },
+	{ value: 'accounting_finance_audit', label: 'Accounting / Finance / Audit', group: 'Business' },
+	{ value: 'sales_business', label: 'Sales / Business Development', group: 'Business' },
+	{ value: 'marketing_communication', label: 'Marketing / Communication', group: 'Business' },
+	{ value: 'hr_administration', label: 'HR / Administration', group: 'Business' },
+	{ value: 'customer_support', label: 'Customer Support', group: 'Business' },
+	{ value: 'quality_industry_methods', label: 'Quality / Industry Methods', group: 'Operations' },
+	{ value: 'engineering_construction', label: 'Engineering / Construction', group: 'Operations' },
+	{ value: 'logistics_supply_chain', label: 'Logistics / Supply Chain', group: 'Operations' },
+	{ value: 'design_creative', label: 'Design / Creative', group: 'Creative' },
+	{ value: 'legal_regulatory', label: 'Legal / Compliance', group: 'Regulated Services' },
+	{ value: 'healthcare', label: 'Healthcare', group: 'Regulated Services' },
+	{ value: 'education_training', label: 'Education / Training', group: 'Regulated Services' },
+	{ value: 'other', label: 'Other', group: 'Other' },
+];
+
+const BUSINESS_FAMILY_LEGACY_ALIASES = new Map([
+	['ai', 'data_ai'],
+	['ia', 'data_ai'],
+	['bi', 'data_ai'],
+	['fintech', 'accounting_finance_audit'],
+	['finance', 'accounting_finance_audit'],
+	['banque', 'accounting_finance_audit'],
+	['banking', 'accounting_finance_audit'],
+	['assurance', 'accounting_finance_audit'],
+	['insurance', 'accounting_finance_audit'],
+	['health', 'healthcare'],
+	['healthcare', 'healthcare'],
+	['sante', 'healthcare'],
+	['medical', 'healthcare'],
+	['ecommerce', 'sales_business'],
+	['e commerce', 'sales_business'],
+	['e-commerce', 'sales_business'],
+	['saas', 'software_web'],
+	['marketing', 'marketing_communication'],
+	['marketing digital', 'marketing_communication'],
+	['communication', 'marketing_communication'],
+	['rh', 'hr_administration'],
+	['hr', 'hr_administration'],
+	['recruitment', 'hr_administration'],
+	['recrutement', 'hr_administration'],
+	['education', 'education_training'],
+	['enseignement', 'education_training'],
+	['training', 'education_training'],
+	['formation', 'education_training'],
+	['tourism', 'sales_business'],
+	['tourisme', 'sales_business'],
+	['cybersecurity', 'security_safety'],
+	['cybersecurite', 'security_safety'],
+	['logistics', 'logistics_supply_chain'],
+	['logistique', 'logistics_supply_chain'],
+	['industry', 'quality_industry_methods'],
+	['industrie', 'quality_industry_methods'],
+	['telecom', 'it_network_support'],
+	['telecommunications', 'it_network_support'],
+	['support it', 'it_network_support'],
+	['it support', 'it_network_support'],
+	['network', 'it_network_support'],
+	['networks', 'it_network_support'],
+	['it_support_network', 'it_network_support'],
+	['accounting_finance', 'accounting_finance_audit'],
+	['sales', 'sales_business'],
+	['marketing', 'marketing_communication'],
+	['hr', 'hr_administration'],
+	['administration', 'hr_administration'],
+	['quality_industry', 'quality_industry_methods'],
+	['design', 'design_creative'],
+	['legal', 'legal_regulatory'],
+]);
+
+const BUSINESS_FAMILY_VALUES = new Set(BUSINESS_FAMILY_OPTIONS.map((option) => option.value));
+const BUSINESS_FAMILY_LABELS = new Map(BUSINESS_FAMILY_OPTIONS.map((option) => [option.value, option.label]));
+
+export const getBusinessFamilyLabel = (value) => BUSINESS_FAMILY_LABELS.get(value) || String(value || '');
+
+export const formatBusinessFamilyLabels = (value) =>
+	normalizeBusinessFamilyValues(value)
+		.map(getBusinessFamilyLabel)
+		.filter(Boolean);
+
+export const normalizeBusinessFamilyValues = (value) => {
+	const seen = new Set();
+	return normalizeTextList(value)
+		.map((item) => item.trim())
+		.map((item) => {
+			const key = item
+				.normalize('NFD')
+				.replace(/[\u0300-\u036f]/g, '')
+				.toLocaleLowerCase()
+				.replace(/[-\s]+/g, '_');
+			const legacyKey = item
+				.normalize('NFD')
+				.replace(/[\u0300-\u036f]/g, '')
+				.toLocaleLowerCase()
+				.replace(/[_-]+/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim();
+			return BUSINESS_FAMILY_LEGACY_ALIASES.get(legacyKey)
+				|| (BUSINESS_FAMILY_VALUES.has(key) ? key : '');
+		})
+		.filter((item) => {
+			if (!item || seen.has(item)) return false;
+			seen.add(item);
+			return true;
+		});
+};
+
 export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
 	{
 		value: 'JOB',
 		label: 'Jobs',
-		description: ' : Full-time, part-time, contract, SIVP',
+		description: 'Full-time, part-time, contract, SIVP',
 		values: ['JOB'],
 	},
 	{
 		value: 'INTERNSHIP',
 		label: 'Internships',
-		description: ' : Stage et programmes trainee',
+		description: 'Internships and trainee programs',
 		values: ['INTERNSHIP'],
 	},
 	{
 		value: 'PROJECTS',
 		label: 'Projects',
-		description: " : Appels d'offres, financements, R&D",
+		description: 'Calls for proposals, funding, and R&D',
 		values: ['RESEARCH', 'FUNDING'],
 	},
 ];
@@ -56,18 +170,18 @@ export const TUNISIAN_LOCATION_OPTIONS = [
 	'Sfax',
 	'Sousse',
 	'Kairouan',
-	'Métouia',
+	'Metouia',
 	'Kebili',
 	'Sukrah',
-	'Gabès',
+	'Gabes',
 	'Ariana',
 	'Sakiet ed Daier',
 	'Gafsa',
 	'Msaken',
 	'Medenine',
-	'Béja',
+	'Beja',
 	'Kasserine',
-	'Radès',
+	'Rades',
 	'Hammamet',
 	'Tataouine',
 	'Monastir',
@@ -91,7 +205,7 @@ export const TUNISIAN_LOCATION_OPTIONS = [
 	'Midoun',
 	'Menzel Bourguiba',
 	'Manouba',
-	'Kélibia',
+	'Kelibia',
 	'Rass el Djebel',
 	'Oued Lill',
 	'Moknine',
@@ -104,7 +218,7 @@ export const TUNISIAN_LOCATION_OPTIONS = [
 	'Bizerte',
 	'Jendouba',
 	'La Goulette',
-	'Jedeïda',
+	'Jedeida',
 	'Soliman',
 	'Hammam Sousse',
 	'Sbiba',
@@ -116,7 +230,7 @@ export const TUNISIAN_LOCATION_OPTIONS = [
 	'Tozeur',
 	'Beni Khiar',
 	'Dar Chabanne',
-	'Aïne Draham',
+	'Aine Draham',
 	'Bou Salem',
 	'Ez Zahra',
 	'Kalaa Srira',
@@ -204,7 +318,7 @@ export const normalizeProfilePreferenceData = (data = {}) => ({
 	),
 	target_roles: normalizeTextList(data.target_roles),
 	competences: normalizeSkillList(data.competences),
-	domaines_interet: normalizeTextList(data.domaines_interet),
+	domaines_interet: normalizeBusinessFamilyValues(data.domaines_interet),
 	profile_visibility: data.profile_visibility ?? true,
 });
 

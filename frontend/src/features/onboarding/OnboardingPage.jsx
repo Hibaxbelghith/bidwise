@@ -8,6 +8,7 @@ import { Spinner } from '../../components/ui/spinner.jsx';
 import StepOpportunityIntent from './steps/StepOpportunityIntent.jsx';
 import StepLocation from './steps/StepLocation.jsx';
 import StepSkills from './steps/StepSkills.jsx';
+import StepSectors from './steps/StepSectors.jsx';
 import StepSalary from './steps/StepSalary.jsx';
 import StepEmploymentType from './steps/StepEmploymentType.jsx';
 import StepTargetRoles from './steps/StepTargetRoles.jsx';
@@ -24,7 +25,6 @@ import {
 	isOrganizationProfileComplete,
 } from '../organization/organizationFlow.js';
 
-const TOTAL_STEPS = 7;
 const STORAGE_KEY = 'bidwise_onboarding';
 const USER_PROFILE_STORAGE_KEY = 'bidwise_user_profile';
 
@@ -32,11 +32,14 @@ const STEPS = [
 	StepOpportunityIntent,
 	StepLocation,
 	StepSkills,
+	StepSectors,
 	StepSalary,
 	StepEmploymentType,
 	StepTargetRoles,
 	StepVisibility,
 ];
+
+const TOTAL_STEPS = STEPS.length;
 
 const STEP_META = [
 	{
@@ -53,12 +56,16 @@ const STEP_META = [
 		subtitle: 'Skills power your AI match score.',
 	},
 	{
+		title: 'Choose your sectors',
+		subtitle: 'Select the professional domains that best describe your profile.',
+	},
+	{
 		title: 'Expected salary range',
 		subtitle: 'Share an optional TND/month range so matches are less brittle.',
 	},
 	{
-		title: 'What type of work arrangement do you prefer?',
-		subtitle: 'You can select multiple options.',
+		title: 'What contract types are you open to?',
+		subtitle: 'Select the employment contracts you would consider.',
 	},
 	{
 		title: 'What roles are you targeting?',
@@ -83,6 +90,7 @@ const initialData = {
 	employment_types: [],
 	target_roles: [],
 	competences: [],
+	domaines_interet: [],
 	profile_visibility: true,
 };
 
@@ -110,10 +118,14 @@ const getStepValidationError = (step, data) => {
 	}
 
 	if (step === 2 && (!Array.isArray(data.competences) || data.competences.length === 0)) {
-		return 'Skills power your AI match score.';
+		return 'Add at least one skill.';
 	}
 
-	if (step === 3) {
+	if (step === 3 && (!Array.isArray(data.domaines_interet) || data.domaines_interet.length === 0)) {
+		return 'Choose at least one sector.';
+	}
+
+	if (step === 4) {
 		return validateSalaryRange(
 			data.compensation_min_expectation,
 			data.compensation_max_expectation,
@@ -121,15 +133,15 @@ const getStepValidationError = (step, data) => {
 		).error;
 	}
 
-	if (step === 5 && (!Array.isArray(data.target_roles) || data.target_roles.length === 0)) {
-		return 'Add at least one target role to guide your recommendations.';
+	if (step === 6 && (!Array.isArray(data.target_roles) || data.target_roles.length === 0)) {
+		return 'Add at least one target role.';
 	}
 
 	return '';
 };
 
 const findFirstIncompleteRequiredStep = (data) => {
-	for (const step of [0, 1, 2, 3, 5]) {
+	for (const step of [0, 1, 2, 3, 4, 6]) {
 		const error = getStepValidationError(step, data);
 		if (error) {
 			return { step, error };
@@ -153,7 +165,7 @@ function loadSavedState() {
 			};
 		}
 	} catch {
-		/* corrupted storage — ignore */
+		/* corrupted storage - ignore */
 	}
 	return null;
 }
@@ -170,7 +182,7 @@ const Onboarding = () => {
 	const [submissionError, setSubmissionError] = useState(null);
 	const headingRef = useRef(null);
 
-	// Already onboarded → redirect to opportunities
+	// Already onboarded - redirect to opportunities
 	useEffect(() => {
 		if (loading) return;
 		if (isOrganizationAccount(user)) {
@@ -387,7 +399,7 @@ const Onboarding = () => {
 								{isSubmitting ? (
 									<>
 										   <Spinner size={18} className="mr-2" />
-										Saving…
+										Saving...
 									</>
 								) : isLastStep ? (
 									<>

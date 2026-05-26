@@ -5,6 +5,30 @@
 import api from '../../lib/api';
 import { saveTokens, removeTokens, getRefreshToken } from '../../lib/tokenManager';
 
+const formatApiError = (error, fallbackMessage) => {
+  const data = error.response?.data;
+
+  if (!data) return fallbackMessage;
+  if (typeof data === 'string') return data;
+  if (data.detail) return data.detail;
+  if (data.error) return data.error;
+
+  if (typeof data === 'object') {
+    const fieldMessages = Object.entries(data)
+      .map(([field, value]) => {
+        const message = Array.isArray(value) ? value.join(' ') : String(value || '');
+        return message ? `${field}: ${message}` : '';
+      })
+      .filter(Boolean);
+
+    if (fieldMessages.length > 0) {
+      return fieldMessages.join(' ');
+    }
+  }
+
+  return fallbackMessage;
+};
+
 // ── Passwordless OTP ──────────────────────────────────────
 
 /**
@@ -129,8 +153,7 @@ export const updateProfile = async (profileData) => {
     const response = await api.put('/profile/me/', profileData);
     return response.data;
   } catch (error) {
-    const errorMessage = error.response?.data?.detail || 
-                        'Erreur lors de la mise à jour du profil';
+    const errorMessage = formatApiError(error, 'Could not update your profile.');
     throw new Error(errorMessage);
   }
 };

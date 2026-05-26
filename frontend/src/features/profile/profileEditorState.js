@@ -5,6 +5,7 @@ import {
   EMPLOYMENT_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
   WORK_MODE_OPTIONS,
+  normalizeBusinessFamilyValues,
   normalizeLocations,
   normalizeOptionValues,
   normalizeProfilePreferenceData,
@@ -18,7 +19,7 @@ export const buildProfileEditorState = ({
 } = {}) => {
   const onboarding = storedProfile || {};
   const backendSkills = normalizeTextList(profile?.competences);
-  const backendInterests = normalizeTextList(profile?.domaines_interet);
+  const backendInterests = normalizeBusinessFamilyValues(profile?.domaines_interet);
   const backendTargetRoles = normalizeTextList(profile?.target_roles);
   const onboardingTargetRoles = Array.isArray(onboarding?.target_roles)
     ? onboarding.target_roles.filter(Boolean)
@@ -63,7 +64,9 @@ export const buildProfileEditorState = ({
         || DEFAULT_COMPENSATION_PERIOD,
     },
     skills: backendSkills,
-    interests: backendInterests,
+    interests: backendInterests.length
+      ? backendInterests
+      : onboardingPreferences.domaines_interet,
     targetRoles: backendTargetRoles.length ? backendTargetRoles : onboardingTargetRoles,
     opportunityTypes: backendOpportunityTypes.length
       ? backendOpportunityTypes
@@ -79,6 +82,5 @@ export const buildProfileEditorState = ({
       : onboardingPreferences.employment_types,
     profileVisibility:
       profile?.profile_visibility ?? onboardingPreferences.profile_visibility,
-    onboardingCompleted: Boolean(profile?.onboarding_completed),
   };
 };

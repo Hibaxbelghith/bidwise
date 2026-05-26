@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
 	Download,
 	Eye,
@@ -7,7 +7,6 @@ import {
 	RefreshCw,
 	Trash2,
 	Upload,
-	Wand2,
 	X,
 } from 'lucide-react';
 
@@ -156,24 +155,15 @@ const ModalShell = ({ title, children, onClose }) => (
 	</div>
 );
 
-const ResumeSection = ({ profile, activeResume, onChanged }) => {
+const ResumeSection = ({ activeResume, onChanged }) => {
 	const fileInputRef = useRef(null);
 	const [isUploading, setIsUploading] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
+	const [isConfirming, setIsConfirming] = useState(false);
 	const [error, setError] = useState('');
-	const [showBuilder, setShowBuilder] = useState(false);
 	const [previewResume, setPreviewResume] = useState(null);
+	const [pendingResume, setPendingResume] = useState(null);
 	const [menuOpen, setMenuOpen] = useState(false);
-
-	const builderSections = useMemo(() => {
-		const name = [profile?.prenom, profile?.nom].filter(Boolean).join(' ');
-		return [
-			{ label: 'Identity', value: name || 'Add your name in Basic Information.' },
-			{ label: 'Target roles', value: (profile?.target_roles || []).join(', ') || 'Add target roles.' },
-			{ label: 'Skills', value: (profile?.competences || []).join(', ') || 'Add skills.' },
-			{ label: 'Sectors', value: (profile?.domaines_interet || []).join(', ') || 'Add sectors.' },
-		];
-	}, [profile]);
 
 	const openFilePicker = () => {
 		setMenuOpen(false);
@@ -189,15 +179,21 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 
 		setError('');
 		setIsUploading(true);
+		const previousPendingResume = pendingResume;
+		setPendingResume(null);
 		const formData = new FormData();
 		formData.append('file', file);
+		formData.append('activate', 'false');
 
 		try {
+			if (previousPendingResume?.id) {
+				await api.delete(`/profile/resume/?resume_id=${encodeURIComponent(previousPendingResume.id)}`);
+			}
 			const response = await api.post('/profile/resume/', formData, {
 				headers: { 'Content-Type': 'multipart/form-data' },
 			});
 			const uploadedResume = response.data?.resume || null;
-			await onChanged?.();
+			setPendingResume(uploadedResume);
 			setPreviewResume(uploadedResume);
 		} catch (err) {
 			setError(err.response?.data?.file?.[0] || err.response?.data?.detail || 'Resume upload failed.');
@@ -206,6 +202,46 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 			if (fileInputRef.current) {
 				fileInputRef.current.value = '';
 			}
+		}
+	};
+
+	const confirmPendingResume = async () => {
+		if (!pendingResume?.id) {
+			setPreviewResume(null);
+			return;
+		}
+
+		setError('');
+		setIsConfirming(true);
+		try {
+			await api.patch('/profile/resume/', { resume_id: pendingResume.id });
+			setPendingResume(null);
+			setPreviewResume(null);
+			await onChanged?.();
+		} catch (err) {
+			setError(err.response?.data?.detail || 'Could not activate the resume.');
+		} finally {
+			setIsConfirming(false);
+		}
+	};
+
+	const cancelPendingResume = async () => {
+		const resumeToCancel = pendingResume;
+		setPendingResume(null);
+		setPreviewResume(null);
+		if (!resumeToCancel?.id) {
+			return;
+		}
+
+		setError('');
+		setIsDeleting(true);
+		try {
+			await api.delete(`/profile/resume/?resume_id=${encodeURIComponent(resumeToCancel.id)}`);
+		} catch (err) {
+			setError(err.response?.data?.detail || 'Could not cancel the resume upload.');
+			await onChanged?.();
+		} finally {
+			setIsDeleting(false);
 		}
 	};
 
@@ -231,7 +267,15 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 		}
 	};
 
-	const displayedResume = previewResume || activeResume;
+	const displayedResume = activeResume;
+	const previewIsPending = Boolean(pendingResume?.id && previewResume?.id === pendingResume.id);
+	const closePreview = () => {
+		if (previewIsPending) {
+			cancelPendingResume();
+			return;
+		}
+		setPreviewResume(null);
+	};
 
 	return (
 		<div className="space-y-4">
@@ -251,7 +295,7 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 			) : null}
 
 			{previewResume ? (
-				<ModalShell title="Resume preview" onClose={() => setPreviewResume(null)}>
+				<ModalShell title="Resume preview" onClose={closePreview}>
 					<div className="space-y-4">
 						<div className="flex items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3">
 							<FileText className="h-5 w-5 text-neutral-500" aria-hidden="true" />
@@ -259,15 +303,25 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 						</div>
 						<ResumePreviewFrame resume={previewResume} />
 						<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-							<Button type="button" variant="outline" onClick={deleteResume} disabled={isDeleting}>
-								{isDeleting ? <Spinner size={16} className="mr-2" /> : <Trash2 className="mr-2 h-4 w-4" />}
-								Remove resume
-							</Button>
-							<Button type="button" variant="outline" onClick={openFilePicker}>
-								<RefreshCw className="mr-2 h-4 w-4" />
-								Upload another resume
-							</Button>
-							<Button type="button" className="bg-neutral-950 text-white hover:bg-neutral-800" onClick={() => setPreviewResume(null)}>
+							{!previewIsPending ? (
+								<>
+									<Button type="button" variant="outline" onClick={deleteResume} disabled={isDeleting}>
+										{isDeleting ? <Spinner size={16} className="mr-2" /> : <Trash2 className="mr-2 h-4 w-4" />}
+										Remove resume
+									</Button>
+									<Button type="button" variant="outline" onClick={openFilePicker}>
+										<RefreshCw className="mr-2 h-4 w-4" />
+										Upload another resume
+									</Button>
+								</>
+							) : null}
+							<Button
+								type="button"
+								className="bg-neutral-950 text-white hover:bg-neutral-800"
+								onClick={previewIsPending ? confirmPendingResume : () => setPreviewResume(null)}
+								disabled={isDeleting || isConfirming}
+							>
+								{isConfirming ? <Spinner size={16} className="mr-2" /> : null}
 								Looks good
 							</Button>
 						</div>
@@ -282,7 +336,7 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 			) : null}
 
 			<div className="grid gap-3 sm:grid-cols-2">
-				<div className="rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm">
+				<div className={`rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm ${displayedResume ? '' : 'sm:col-span-2'}`}>
 					<div className="flex items-start gap-3">
 						<Upload className="mt-0.5 h-5 w-5 text-neutral-500" aria-hidden="true" />
 						<div className="min-w-0 flex-1 space-y-3">
@@ -298,88 +352,66 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 					</div>
 				</div>
 
-				<div className="rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm">
-					<div className="flex items-start gap-3">
-						<Wand2 className="mt-0.5 h-5 w-5 text-neutral-500" aria-hidden="true" />
-						<div className="min-w-0 flex-1 space-y-3">
-							<div>
-								<p className="font-medium text-neutral-900">Build a BidWise Resume</p>
-								<p className="text-sm text-neutral-500">A structured resume draft from your profile signals.</p>
+				{displayedResume ? (
+					<div className="relative flex flex-col gap-3 rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm sm:flex-row sm:items-center sm:justify-between">
+						<div className="flex min-w-0 items-center gap-3">
+							<span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-neutral-700">
+								<FileText className="h-5 w-5" aria-hidden="true" />
+							</span>
+							<div className="min-w-0">
+								<p className="font-medium text-neutral-950">Active resume attached</p>
+								<p className="truncate text-sm text-neutral-600">{getResumeFileName(displayedResume)}</p>
 							</div>
-							<Button type="button" variant="outline" onClick={() => setShowBuilder((value) => !value)}>
-								{showBuilder ? 'Hide builder' : 'Open builder'}
+						</div>
+						<div className="flex items-center gap-2">
+							<Button type="button" variant="outline" onClick={() => setPreviewResume(displayedResume)}>
+								<Eye className="mr-2 h-4 w-4" />
+								Preview
 							</Button>
+							<div className="relative">
+								<Button
+									type="button"
+									variant="outline"
+									size="icon"
+									onClick={() => setMenuOpen((value) => !value)}
+									aria-label="Resume actions"
+								>
+									<MoreVertical className="h-4 w-4" />
+								</Button>
+								{menuOpen ? (
+									<div className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg">
+										<button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50" onClick={() => { setPreviewResume(displayedResume); setMenuOpen(false); }}>
+											<Eye className="h-4 w-4" /> Preview
+										</button>
+										{getResumeUrl(displayedResume) ? (
+											<a
+												className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50"
+												href={getResumeUrl(displayedResume)}
+												target="_blank"
+												rel="noreferrer"
+											>
+												<Download className="h-4 w-4" /> Download
+											</a>
+										) : null}
+										<button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50" onClick={openFilePicker}>
+											<RefreshCw className="h-4 w-4" /> Replace file
+										</button>
+										<button
+											type="button"
+											className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+											onClick={deleteResume}
+											disabled={isDeleting}
+										>
+											<Trash2 className="h-4 w-4" /> Delete
+										</button>
+									</div>
+								) : null}
+							</div>
 						</div>
 					</div>
-				</div>
+				) : null}
 			</div>
 
-			{displayedResume ? (
-				<div className="relative flex flex-col gap-3 rounded-md border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm sm:flex-row sm:items-center sm:justify-between">
-					<div className="flex min-w-0 items-center gap-3">
-						<span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-neutral-700">
-							<FileText className="h-5 w-5" aria-hidden="true" />
-						</span>
-						<div className="min-w-0">
-							<p className="font-medium text-neutral-950">Active resume attached</p>
-							<p className="truncate text-sm text-neutral-600">{getResumeFileName(displayedResume)}</p>
-						</div>
-					</div>
-					<div className="flex items-center gap-2">
-						<Button type="button" variant="outline" onClick={() => setPreviewResume(displayedResume)}>
-							<Eye className="mr-2 h-4 w-4" />
-							Preview
-						</Button>
-						<div className="relative">
-							<Button
-								type="button"
-								variant="outline"
-								size="icon"
-								onClick={() => setMenuOpen((value) => !value)}
-								aria-label="Resume actions"
-							>
-								<MoreVertical className="h-4 w-4" />
-							</Button>
-							{menuOpen ? (
-								<div className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg">
-									<button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50" onClick={() => { setPreviewResume(displayedResume); setMenuOpen(false); }}>
-										<Eye className="h-4 w-4" /> Preview
-									</button>
-									{getResumeUrl(displayedResume) ? (
-										<a
-											className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50"
-											href={getResumeUrl(displayedResume)}
-											target="_blank"
-											rel="noreferrer"
-										>
-											<Download className="h-4 w-4" /> Download
-										</a>
-									) : null}
-									<button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50" onClick={openFilePicker}>
-										<RefreshCw className="h-4 w-4" /> Replace file
-									</button>
-									<button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50" onClick={deleteResume} disabled={isDeleting}>
-										<Trash2 className="h-4 w-4" /> Delete
-									</button>
-								</div>
-							) : null}
-						</div>
-					</div>
-				</div>
-			) : null}
-
-			{showBuilder ? (
-				<div className="rounded-md border border-neutral-200 bg-neutral-50 p-4">
-					<div className="grid gap-3 sm:grid-cols-2">
-						{builderSections.map((section) => (
-							<div key={section.label}>
-								<p className="text-xs font-semibold uppercase text-neutral-500">{section.label}</p>
-								<p className="mt-1 text-sm text-neutral-800">{section.value}</p>
-							</div>
-						))}
-					</div>
-				</div>
-			) : null}
 		</div>
 	);
 };

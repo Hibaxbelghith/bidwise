@@ -4,7 +4,7 @@ import {
   validateSalaryRange,
 } from '../profile/profileValidation.js';
 
-export const ONBOARDING_TOTAL_STEPS = 7;
+export const ONBOARDING_TOTAL_STEPS = 8;
 export const ONBOARDING_STORAGE_KEY = 'bidwise_onboarding';
 export const USER_PROFILE_STORAGE_KEY = 'bidwise_user_profile';
 
@@ -20,6 +20,7 @@ export const ONBOARDING_INITIAL_DATA = {
   employment_types: [],
   target_roles: [],
   competences: [],
+  domaines_interet: [],
   profile_visibility: true,
 };
 
@@ -49,6 +50,7 @@ const buildProfilePreferenceSnapshot = (profile = {}) =>
     employment_types: profile?.employment_types,
     target_roles: profile?.target_roles,
     competences: profile?.competences,
+    domaines_interet: profile?.domaines_interet,
     profile_visibility: profile?.profile_visibility,
   });
 
@@ -87,6 +89,7 @@ export const buildOnboardingInitialData = ({
     employment_types: pickList(profileSnapshot.employment_types, storedSnapshot.employment_types),
     target_roles: pickList(profileSnapshot.target_roles, storedSnapshot.target_roles),
     competences: pickList(profileSnapshot.competences, storedSnapshot.competences),
+    domaines_interet: pickList(profileSnapshot.domaines_interet, storedSnapshot.domaines_interet),
     profile_visibility:
       profile?.profile_visibility ?? storedSnapshot.profile_visibility ?? true,
   };
@@ -113,11 +116,15 @@ export const getOnboardingStepError = (step, data) => {
 
   if (step === 2) {
     if (!normalized.competences.length) {
-      return 'Skills power your AI match score.';
+      return 'Add at least one skill.';
     }
   }
 
-  if (step === 3) {
+  if (step === 3 && normalized.domaines_interet.length === 0) {
+    return 'Choose at least one sector.';
+  }
+
+  if (step === 4) {
     const salaryValidation = validateSalaryRange(
       normalized.compensation_min_expectation,
       normalized.compensation_max_expectation,
@@ -126,8 +133,8 @@ export const getOnboardingStepError = (step, data) => {
     return salaryValidation.error || '';
   }
 
-  if (step === 5 && normalized.target_roles.length === 0) {
-    return 'Select at least one option.';
+  if (step === 6 && normalized.target_roles.length === 0) {
+    return 'Add at least one target role.';
   }
 
   return '';

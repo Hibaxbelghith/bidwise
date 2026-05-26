@@ -740,16 +740,49 @@ class ProfilUpdateSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("preferred_location", serializer.errors)
 
-    def test_profile_sectors_preserve_user_entered_terms(self):
+    def test_profile_sectors_normalize_legacy_terms_to_business_families(self):
         serializer = ProfilUpdateSerializer(
             self.profil,
-            data={"domaines_interet": ["sante", "React", "Backend Developer"]},
+            data={"domaines_interet": ["sante", "Marketing digital", "it_support_network"]},
             partial=True,
         )
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
         instance = serializer.save()
-        self.assertEqual(instance.domaines_interet, ["sante", "React", "Backend Developer"])
+        self.assertEqual(
+            instance.domaines_interet,
+            ["healthcare", "marketing_communication", "it_network_support"],
+        )
+
+    def test_profile_sectors_reject_empty_payload(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"domaines_interet": []},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("domaines_interet", serializer.errors)
+
+    def test_profile_sectors_reject_unknown_terms(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"domaines_interet": ["Backend Developer"]},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("domaines_interet", serializer.errors)
+
+    def test_profile_text_fields_reject_unsafe_markup(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={"competences": ["Python", "<script>alert(1)</script>"]},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("competences", serializer.errors)
 
     def test_profile_update_preserves_user_entered_skill_terms(self):
         serializer = ProfilUpdateSerializer(
@@ -762,16 +795,19 @@ class ProfilUpdateSerializerTests(TestCase):
         instance = serializer.save()
         self.assertEqual(instance.competences, ["Laravel", "Angular", "Finance"])
 
-    def test_profile_update_preserves_user_entered_interest_terms(self):
+    def test_profile_update_accepts_canonical_business_families(self):
         serializer = ProfilUpdateSerializer(
             self.profil,
-            data={"domaines_interet": ["Finance", "Banque", "Marketing digital"]},
+            data={"domaines_interet": ["accounting_finance_audit", "marketing_communication"]},
             partial=True,
         )
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
         instance = serializer.save()
-        self.assertEqual(instance.domaines_interet, ["Finance", "Banque", "Marketing digital"])
+        self.assertEqual(
+            instance.domaines_interet,
+            ["accounting_finance_audit", "marketing_communication"],
+        )
 
     def test_salary_validation_is_tunisia_monthly_safe(self):
         serializer = ProfilUpdateSerializer(
@@ -1044,7 +1080,7 @@ class ProfileDetailViewTests(APITestCase):
         self.user.profil.refresh_from_db()
         self.assertEqual(self.user.profil.competences, ["Python", "Django"])
 
-    def test_put_profile_preserves_user_entered_free_terms_in_api_response(self):
+    def test_put_profile_normalizes_sectors_to_business_families_in_api_response(self):
         response = self.client.put(
             self.url,
             {
@@ -1059,7 +1095,7 @@ class ProfileDetailViewTests(APITestCase):
         self.assertEqual(self.user.profil.competences, ["Laravel", "Angular", "Finance"])
         self.assertEqual(
             self.user.profil.domaines_interet,
-            ["Finance", "Banque", "Marketing digital"],
+            ["accounting_finance_audit", "marketing_communication"],
         )
         self.assertEqual(
             response.data["profil"]["competences"],
@@ -1067,7 +1103,7 @@ class ProfileDetailViewTests(APITestCase):
         )
         self.assertEqual(
             response.data["profil"]["domaines_interet"],
-            ["Finance", "Banque", "Marketing digital"],
+            ["accounting_finance_audit", "marketing_communication"],
         )
 
     def test_put_onboarding_fields(self):
@@ -1119,6 +1155,69 @@ class ProfileDetailViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(ProfileResume.objects.filter(profile=self.user.profil, is_active=True).count(), 1)
         self.assertEqual(ProfileResume.objects.filter(profile=self.user.profil).count(), 2)
+
+    def test_resume_draft_upload_does_not_replace_active_until_confirmed(self):
+        first = SimpleUploadedFile(
+            "resume.pdf",
+            b"%PDF-1.4 active",
+            content_type="application/pdf",
+        )
+        response = self.client.post("/api/profile/resume/", {"file": first}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        active_resume_id = response.data["resume"]["id"]
+
+        draft = SimpleUploadedFile(
+            "draft.pdf",
+            b"%PDF-1.4 draft",
+            content_type="application/pdf",
+        )
+        response = self.client.post(
+            "/api/profile/resume/",
+            {"file": draft, "activate": "false"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        draft_resume_id = response.data["resume"]["id"]
+        self.assertFalse(response.data["resume"]["is_active"])
+        self.assertTrue(ProfileResume.objects.get(pk=active_resume_id).is_active)
+        self.assertFalse(ProfileResume.objects.get(pk=draft_resume_id).is_active)
+
+        response = self.client.patch(
+            "/api/profile/resume/",
+            {"resume_id": draft_resume_id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(ProfileResume.objects.get(pk=active_resume_id).is_active)
+        self.assertTrue(ProfileResume.objects.get(pk=draft_resume_id).is_active)
+
+    def test_resume_draft_upload_can_be_cancelled_without_touching_active_resume(self):
+        first = SimpleUploadedFile(
+            "resume.pdf",
+            b"%PDF-1.4 active",
+            content_type="application/pdf",
+        )
+        response = self.client.post("/api/profile/resume/", {"file": first}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        active_resume_id = response.data["resume"]["id"]
+
+        draft = SimpleUploadedFile(
+            "draft.pdf",
+            b"%PDF-1.4 draft",
+            content_type="application/pdf",
+        )
+        response = self.client.post(
+            "/api/profile/resume/",
+            {"file": draft, "activate": "false"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        draft_resume_id = response.data["resume"]["id"]
+
+        response = self.client.delete(f"/api/profile/resume/?resume_id={draft_resume_id}")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(ProfileResume.objects.get(pk=active_resume_id).is_active)
+        self.assertFalse(ProfileResume.objects.filter(pk=draft_resume_id).exists())
 
     def test_resume_upload_rejects_bad_type(self):
         upload = SimpleUploadedFile(
