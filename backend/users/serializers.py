@@ -59,6 +59,11 @@ UNSAFE_PROFILE_TEXT_PATTERN = re.compile(
 
 PROFILE_BUSINESS_FAMILY_ALIASES = {
     "it_support_network": "it_network_support",
+    "devops": "devops_cloud_infrastructure",
+    "dev_ops": "devops_cloud_infrastructure",
+    "cloud": "devops_cloud_infrastructure",
+    "cloud_infrastructure": "devops_cloud_infrastructure",
+    "infrastructure_cloud": "devops_cloud_infrastructure",
     "accounting_finance": "accounting_finance_audit",
     "sales": "sales_business",
     "marketing": "marketing_communication",
@@ -598,6 +603,7 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
     file = serializers.FileField(write_only=True, required=False)
     file_url = serializers.SerializerMethodField()
     parsed_text_available = serializers.SerializerMethodField()
+    profile_suggestions = serializers.SerializerMethodField()
 
     class Meta:
         model = ProfileResume
@@ -617,6 +623,9 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             "semantic_resume_confidence",
             "semantic_resume_updated_at",
             "semantic_resume_version",
+            "semantic_resume_metadata",
+            "extracted_skills",
+            "profile_suggestions",
         ]
         read_only_fields = [
             "id",
@@ -632,6 +641,9 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             "semantic_resume_confidence",
             "semantic_resume_updated_at",
             "semantic_resume_version",
+            "semantic_resume_metadata",
+            "extracted_skills",
+            "profile_suggestions",
         ]
 
     def get_file_url(self, obj):
@@ -645,6 +657,18 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
 
     def get_parsed_text_available(self, obj):
         return bool(getattr(obj, "parsed_text", ""))
+
+    def get_profile_suggestions(self, obj):
+        metadata = getattr(obj, "semantic_resume_metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            return {}
+        if metadata.get("profile_suggestions_applied_at"):
+            return {}
+        enrichment = metadata.get("llm_enrichment") or {}
+        if not isinstance(enrichment, dict):
+            return {}
+        suggestions = enrichment.get("profile_suggestions") or {}
+        return suggestions if isinstance(suggestions, dict) else {}
 
     def validate_file(self, value):
         if not value:

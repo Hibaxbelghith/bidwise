@@ -32,26 +32,6 @@ class SkillCandidate:
 
 
 @dataclass(frozen=True)
-class RejectedSkillCandidate:
-    text: str
-    source: str
-    reason: str
-    confidence: float = 0.0
-    normalized_key: str = ""
-    token_count: int = 0
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "text": self.text,
-            "source": self.source,
-            "reason": self.reason,
-            "confidence": round(float(self.confidence or 0.0), 4),
-            "normalized_key": self.normalized_key,
-            "token_count": int(self.token_count or 0),
-        }
-
-
-@dataclass(frozen=True)
 class ResumeSemanticSignals:
     skills: list[str] = field(default_factory=list)
     domains: list[str] = field(default_factory=list)
@@ -64,8 +44,6 @@ class ResumeSemanticSignals:
     semantic_confidence: float = 0.0
     llm_enrichment: dict[str, Any] = field(default_factory=dict)
     raw_candidates: list[SkillCandidate] = field(default_factory=list)
-    rejected_candidates: list[RejectedSkillCandidate] = field(default_factory=list)
-    mapped_candidates: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def has_structured_signal(self) -> bool:
@@ -89,7 +67,5 @@ class ResumeSemanticSignals:
             "semantic_confidence": round(float(self.semantic_confidence or 0.0), 4),
             "llm_enrichment": self.llm_enrichment,
             "raw_candidates": [candidate.as_dict() for candidate in self.raw_candidates],
-            "rejected_candidates": [candidate.as_dict() for candidate in self.rejected_candidates],
-            "mapped_candidates": self.mapped_candidates,
             "warnings": self.warnings,
         }

@@ -23,7 +23,8 @@ from users.resume_parsing.exceptions import (
     UnsupportedResumeFormat,
 )
 from users.resume_processing import build_resume_text_embedding_source
-from users.resume_semantic.service import process_profile_resume_semantics
+from users.resume_semantic.models import SEMANTIC_STATUS_FAILED, SEMANTIC_STATUS_PROCESSING
+from users.resume_semantic.service import clear_resume_semantics, process_profile_resume_semantics
 
 
 logger = logging.getLogger(__name__)
@@ -188,8 +189,8 @@ def enqueue_profile_resume_parse(resume_id):
 @shared_task(
     name="users.parse_profile_resume",
     max_retries=0,
-    soft_time_limit=30,
-    time_limit=45,
+    soft_time_limit=getattr(settings, "PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS", 150),
+    time_limit=getattr(settings, "PROFILE_RESUME_TASK_TIME_LIMIT_SECONDS", 180),
 )
 def parse_profile_resume(resume_id):
     if not getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
@@ -217,6 +218,8 @@ def parse_profile_resume(resume_id):
     ProfileResume.objects.filter(pk=resume_id).update(
         parsing_status=ProfileResume.ParsingStatus.PROCESSING,
         parsing_error="",
+        semantic_resume_status=SEMANTIC_STATUS_PROCESSING,
+        semantic_resume_error="",
     )
 
     parsed_text = ""
@@ -299,13 +302,48 @@ def parse_profile_resume(resume_id):
     semantic_result = None
     if status == ProfileResume.ParsingStatus.SUCCEEDED:
         try:
-            semantic_result = process_profile_resume_semantics(locked_resume)
-        except Exception:
+            semantic_result = process_profile_resume_semantics(
+                locked_resume,
+                use_model=bool(getattr(settings, "PROFILE_RESUME_REALTIME_USE_MODEL", False)),
+                allow_semantic_mapping=bool(
+                    getattr(settings, "PROFILE_RESUME_REALTIME_ALLOW_SEMANTIC_MAPPING", False)
+                ),
+                use_llm=bool(getattr(settings, "PROFILE_RESUME_REALTIME_USE_LLM", False)),
+                normalize_skills=bool(getattr(settings, "PROFILE_RESUME_REALTIME_NORMALIZE_SKILLS", False)),
+                structured_llm_enabled=bool(
+                    getattr(settings, "PROFILE_RESUME_STRUCTURED_LLM_ENABLED", False)
+                ),
+                structured_llm_fallback_enabled=bool(
+                    getattr(settings, "PROFILE_RESUME_STRUCTURED_LLM_FALLBACK_ENABLED", True)
+                ),
+            )
+        except Exception as exc:
             logger.exception(
                 "resume semantic enrichment crashed resume_id=%s",
                 resume_id,
                 extra={"resume_id": resume_id, "reason": "semantic_unexpected_failure"},
             )
+            clear_resume_semantics(
+                locked_resume,
+                status=SEMANTIC_STATUS_FAILED,
+                error=_safe_error_message(exc),
+            )
+            semantic_result = {
+                "status": SEMANTIC_STATUS_FAILED,
+                "resume_id": resume_id,
+                "error": _safe_error_message(exc),
+            }
+    else:
+        clear_resume_semantics(
+            locked_resume,
+            status=SEMANTIC_STATUS_FAILED,
+            error=error or f"Resume parsing ended with status {status}.",
+        )
+        semantic_result = {
+            "status": SEMANTIC_STATUS_FAILED,
+            "resume_id": resume_id,
+            "error": error or f"Resume parsing ended with status {status}.",
+        }
 
     if should_refresh_embedding:
         enqueue_profile_embedding_refresh(profile_id)

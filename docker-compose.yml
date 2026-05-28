@@ -28,7 +28,28 @@ services:
       context: ./backend
       dockerfile: ../docker/backend/Dockerfile
     container_name: bidwise_celery_worker
-    command: celery -A config worker -l info --concurrency=1 --prefetch-multiplier=1
+    command: celery -A config worker -l info -Q celery --concurrency=1 --prefetch-multiplier=1
+    volumes:
+      - ./backend:/app
+      - ./.cache/huggingface:/home/appuser/.cache/huggingface
+    environment:
+      HF_HOME: /home/appuser/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /home/appuser/.cache/huggingface/sentence_transformers
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_profile:
+    image: bidwise-backend:latest
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: bidwise_celery_profile
+    command: celery -A config worker -l info -Q profile_resume --concurrency=1 --prefetch-multiplier=1
     volumes:
       - ./backend:/app
       - ./.cache/huggingface:/home/appuser/.cache/huggingface
@@ -85,6 +106,8 @@ services:
       redis:
         condition: service_healthy
       celery_worker:
+        condition: service_started
+      celery_profile:
         condition: service_started
 
   db:

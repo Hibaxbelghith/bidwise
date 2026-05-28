@@ -15,6 +15,7 @@ from opportunities.models import Opportunite, StatutOpportunite, TypeOpportunite
 DEFAULT_WEAK_BENCHMARK_FAMILIES = {
     "backend",
     "data_ai",
+    "devops_cloud_infrastructure",
     "hr",
     "it_network_support",
     "it_support_network",

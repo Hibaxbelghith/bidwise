@@ -58,8 +58,8 @@ const EXPERIENCE_OPTIONS = [
 const NAV_ITEMS = [
 	{ id: 'personal', label: 'Personal Information', icon: User },
 	{ id: 'work', label: 'Job Preferences', icon: Briefcase },
-	{ id: 'career', label: 'Career Signals', icon: Heart },
 	{ id: 'resume', label: 'Resume & CV', icon: FileText },
+	{ id: 'career', label: 'Career Signals', icon: Heart },
 	{ id: 'settings', label: 'Account Settings', icon: Settings },
 ];
 
@@ -230,8 +230,9 @@ const Profile = () => {
 		preserveDraftOnResumeRefreshRef.current = false;
 	}, [profile, user]);
 
-	const handleResumeChanged = async () => {
-		preserveDraftOnResumeRefreshRef.current = true;
+	const handleResumeChanged = async (options = {}) => {
+		const preserveDraft = options?.preserveDraft !== false;
+		preserveDraftOnResumeRefreshRef.current = preserveDraft;
 		const result = await refreshUser();
 		if (!result?.success) {
 			preserveDraftOnResumeRefreshRef.current = false;
@@ -706,7 +707,21 @@ const Profile = () => {
 								</div>
 							</section>
 
-							{/* Section 3: Career Signals */}
+							{/* Section 3: Resume */}
+							<section id="resume" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+								<div className="border-b border-neutral-200 pb-3 mb-5">
+									<h2 className="text-lg font-semibold text-neutral-900">Resume & CV</h2>
+									<p className="text-sm text-neutral-500">Upload your resume</p>
+								</div>
+
+								<ResumeSection
+									profile={profile}
+									activeResume={profile?.active_resume}
+									onChanged={handleResumeChanged}
+								/>
+							</section>
+
+							{/* Section 4: Career Signals */}
 							<section id="career" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
 									<h2 className="text-lg font-semibold text-neutral-900">Career Signals</h2>
@@ -744,19 +759,6 @@ const Profile = () => {
 										) : null}
 									</div>
 								</div>
-							</section>
-
-							{/* Section 4: Resume */}
-							<section id="resume" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-								<div className="border-b border-neutral-200 pb-3 mb-5">
-									<h2 className="text-lg font-semibold text-neutral-900">Resume & CV</h2>
-									<p className="text-sm text-neutral-500">Upload your resume</p>
-								</div>
-
-								<ResumeSection
-									activeResume={profile?.active_resume}
-									onChanged={handleResumeChanged}
-								/>
 							</section>
 
 							{/* Section 5: Account Settings */}

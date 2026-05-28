@@ -14,7 +14,7 @@ MAX_LLM_INPUT_CHARS = 6500
 MAX_CONTEXT_SECTION_CHARS = 2800
 
 CONTROLLED_FAMILY_PROMPT = """
-software_web, data_ai, it_network_support, accounting_finance_audit,
+software_web, data_ai, devops_cloud_infrastructure, it_network_support, accounting_finance_audit,
 sales_business, marketing_communication, hr_administration,
 quality_industry_methods, engineering_construction, legal_regulatory,
 healthcare, education_training, logistics_supply_chain, design_creative,
@@ -28,8 +28,9 @@ administration, education_training, legal, other
 """.strip()
 
 FAMILY_DECISION_PROMPT = """
-- software_web: software products, web/mobile apps, frontend, backend, fullstack, QA automation, DevOps.
+- software_web: software products, web/mobile apps, frontend, backend, fullstack, QA automation.
 - data_ai: BI, analytics, AI, machine learning, data engineering, data science.
+- devops_cloud_infrastructure: DevOps, cloud infrastructure, CI/CD, containers, Kubernetes, Docker, Terraform, infrastructure as code, monitoring and deployment automation.
 - it_network_support: helpdesk, user support, systems, networks, Microsoft 365, Active Directory, cybersecurity, hardware/software installation.
 - accounting_finance_audit: accounting, audit, tax, payroll, banking or finance operations.
 - sales_business: sales, business development, key accounts, commercial offers and negotiations.
@@ -245,6 +246,7 @@ Rules:
 - The selected family must explain the actual work environment and responsibilities, not just a single ambiguous word in the title.
 - Use engineering_construction only for construction/infrastructure/site/civil engineering work. Do not use it for generic production, factory operations, QHSE, maintenance, oil/gas filling, or agro-food production; use quality_industry_methods for those.
 - Do not use engineering_construction for operating room, clinical, nursing, pharmacy, anesthesia, or patient-care roles; use healthcare for those.
+- Use devops_cloud_infrastructure for DevOps, cloud infrastructure, CI/CD, Docker, Kubernetes, Terraform, IaC, deployment automation and monitoring roles.
 - Use it_network_support for helpdesk, support IT, Microsoft 365, Active Directory, Windows systems, network devices, cybersecurity, hardware/software installation, and user account administration, even when the description mentions maintenance.
 - Use fullstack/backend/frontend/data_ai only for real software/data roles, not for engineering, construction, hydraulic, architecture, or office roles.
 - If no controlled family clearly fits, use ["other"] instead of guessing.

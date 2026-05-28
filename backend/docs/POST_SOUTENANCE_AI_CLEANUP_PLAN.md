@@ -19,6 +19,13 @@ Ce fichier sert de pense-bete pour retrouver rapidement les elements legacy, les
 - Activer CrossEncoder proprement avec `local_files_only=True` et fallback explicite si le modele est absent.
 - Centraliser la taxonomie des familles dans `backend/ai/business_families.py` comme source unique.
 - Ajouter un README court pour `backend/ai/recommendation_benchmark/`.
+- Supprimer definitivement du pipeline CV/profil les outils lourds desactives avant soutenance, apres benchmark de non-regression:
+  - `LLM CV enrichment` en temps reel.
+  - `BAAI/bge-m3` semantic mapping pour CV/profil.
+  - `jjzha/escoxlmr_skill_extraction` pour extraction CV.
+  - normalisation ESCO profonde des skills CV.
+  - usage des `normalized_resume_skills` dans `build_user_features`.
+  Garder uniquement parsing CV, extraction lexicale locale, detection langues, fusion `build_user_features` et refresh embedding profil.
 
 ## Jour 2-3
 

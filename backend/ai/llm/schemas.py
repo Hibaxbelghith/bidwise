@@ -3,41 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ai.business_families import CONTROLLED_FAMILIES
+
 
 MAX_LIST_ITEMS = 20
 MAX_LABEL_CHARS = 80
 ALLOWED_EXPERIENCE_LEVELS = {"DEBUTANT", "JUNIOR", "CONFIRME", "SENIOR"}
-ALLOWED_FAMILIES = {
-    "software_web",
-    "it_network_support",
-    "accounting_finance_audit",
-    "sales_business",
-    "marketing_communication",
-    "hr_administration",
-    "quality_industry_methods",
-    "legal_regulatory",
-    "healthcare",
-    "logistics_supply_chain",
-    "design_creative",
-    "customer_support",
-    "security_safety",
-    "backend",
-    "frontend",
-    "fullstack",
-    "data_ai",
-    "accounting_finance",
-    "marketing",
-    "sales",
-    "hr",
-    "design",
-    "it_support_network",
-    "quality_industry",
-    "engineering_construction",
-    "administration",
-    "education_training",
-    "legal",
-    "other",
-}
+ALLOWED_FAMILIES = set(CONTROLLED_FAMILIES)
 
 
 LLM_EXTRACTION_SCHEMA: dict[str, Any] = {

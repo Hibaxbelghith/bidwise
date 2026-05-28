@@ -1,3 +1,6 @@
+from django.conf import settings
+
+
 def _clean_list(value):
     if value is None:
         return []
@@ -189,8 +192,13 @@ def build_user_features(profile):
     normalized_profile_skills = _clean_normalized_skill_entries(
         getattr(profile, "normalized_skills", []),
     )
-    normalized_resume_skills = _clean_normalized_skill_entries(
-        getattr(active_resume, "extracted_normalized_skills", []),
+    use_resume_normalized_skills = bool(
+        getattr(settings, "PROFILE_FEATURES_USE_RESUME_NORMALIZED_SKILLS", False)
+    )
+    normalized_resume_skills = (
+        _clean_normalized_skill_entries(getattr(active_resume, "extracted_normalized_skills", []))
+        if use_resume_normalized_skills
+        else []
     )
     normalized_skills = _merge_normalized_skill_entries(
         normalized_profile_skills,

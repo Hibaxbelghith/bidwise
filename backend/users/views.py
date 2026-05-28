@@ -3,6 +3,7 @@ import logging
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes, throttle_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -183,6 +184,83 @@ def _request_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+PROFILE_SUGGESTION_LIST_FIELDS = {
+    "competences",
+    "domaines_interet",
+    "target_roles",
+    "preferred_locations",
+    "employment_types",
+    "work_mode_preferences",
+}
+PROFILE_SUGGESTION_SCALAR_FIELDS = {
+    "niveau_experience",
+    "annees_experience",
+}
+PROFILE_SUGGESTION_ALLOWED_FIELDS = PROFILE_SUGGESTION_LIST_FIELDS | PROFILE_SUGGESTION_SCALAR_FIELDS
+
+
+def _clean_suggestion_list(value):
+    if isinstance(value, str):
+        raw_items = [value]
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = value
+    else:
+        raw_items = []
+    output = []
+    seen = set()
+    for item in raw_items:
+        text = " ".join(str(item or "").strip().split())
+        key = text.casefold()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        output.append(text)
+    return output
+
+
+def _merge_unique_profile_values(current, suggested):
+    output = []
+    seen = set()
+    for item in [*_clean_suggestion_list(current), *_clean_suggestion_list(suggested)]:
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(item)
+    return output
+
+
+def _selected_resume_suggestions_payload(profile, suggestions, selected):
+    if not isinstance(suggestions, dict):
+        suggestions = {}
+    if not isinstance(selected, dict):
+        selected = {}
+
+    payload = {}
+    for field in PROFILE_SUGGESTION_LIST_FIELDS:
+        selected_values = selected.get(field)
+        if selected_values is True:
+            selected_values = suggestions.get(field, [])
+        if field == "employment_types":
+            expanded_values = []
+            for value in _clean_suggestion_list(selected_values):
+                expanded_values.extend(part.strip() for part in value.replace("|", "/").split("/"))
+            selected_values = expanded_values
+        values = _clean_suggestion_list(selected_values)
+        if values:
+            payload[field] = _merge_unique_profile_values(getattr(profile, field, []), values)
+
+    for field in PROFILE_SUGGESTION_SCALAR_FIELDS:
+        if field not in selected:
+            continue
+        value = selected.get(field)
+        if value is True:
+            value = suggestions.get(field)
+        if value not in (None, ""):
+            payload[field] = value
+    return payload
+
+
 @api_view(['GET', 'POST', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
@@ -279,6 +357,86 @@ def profile_resume(request):
 
     output = ProfileResumeSerializer(resume, context={"request": request})
     return Response({"resume": output.data}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
+@parser_classes([JSONParser])
+def apply_resume_profile_suggestions(request):
+    try:
+        profil = request.user.profil
+    except Profil.DoesNotExist:
+        return Response(
+            {"error": "Profil non trouvÃƒÂ©"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    resume_id = request.data.get("resume_id")
+    selected = request.data.get("selected") or {}
+    if not resume_id:
+        return Response({"resume_id": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(selected, dict):
+        return Response({"selected": ["Expected an object of selected suggestions."]}, status=status.HTTP_400_BAD_REQUEST)
+
+    unknown_fields = sorted(set(selected) - PROFILE_SUGGESTION_ALLOWED_FIELDS)
+    if unknown_fields:
+        return Response(
+            {"selected": [f"Unsupported suggestion fields: {', '.join(unknown_fields)}."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        resume = (
+            ProfileResume.objects
+            .select_for_update()
+            .filter(profile=profil, pk=resume_id, is_active=True)
+            .first()
+        )
+        if not resume:
+            return Response({"detail": "Active resume not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(resume.semantic_resume_status or "").upper() != "SUCCEEDED":
+            return Response(
+                {"detail": "Resume analysis is not completed yet."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        metadata = resume.semantic_resume_metadata if isinstance(resume.semantic_resume_metadata, dict) else {}
+        enrichment = metadata.get("llm_enrichment") if isinstance(metadata, dict) else {}
+        suggestions = enrichment.get("profile_suggestions") if isinstance(enrichment, dict) else {}
+        payload = _selected_resume_suggestions_payload(profil, suggestions, selected)
+        if not payload:
+            return Response(
+                {"selected": ["Select at least one resume suggestion to apply."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = ProfilUpdateSerializer(profil, data=payload, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        saved_profile = serializer.save()
+        metadata = dict(metadata)
+        metadata["profile_suggestions_applied_at"] = timezone.now().isoformat()
+        metadata["profile_suggestions_applied_fields"] = sorted(payload)
+        resume.semantic_resume_metadata = metadata
+        resume.save(update_fields=["semantic_resume_metadata"])
+        transaction.on_commit(
+            lambda profile_id=saved_profile.pk: enqueue_profile_embedding_refresh(profile_id)
+        )
+
+    request.user.profil = saved_profile
+    user_serializer = UtilisateurSerializer(request.user)
+    output_resume = ProfileResumeSerializer(resume, context={"request": request})
+    return Response(
+        {
+            "user": user_serializer.data,
+            "profile": user_serializer.data.get("profil"),
+            "resume": output_resume.data,
+            "applied_fields": sorted(payload),
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 # ══════════════════════════════════════════════════════════

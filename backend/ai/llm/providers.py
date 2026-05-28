@@ -160,6 +160,7 @@ class OllamaProvider:
     timeout_seconds: float
     temperature: float
     max_output_tokens: int
+    keep_alive: str = ""
 
     provider_name: str = "ollama"
 
@@ -180,6 +181,8 @@ class OllamaProvider:
                 "num_predict": self.max_output_tokens,
             },
         }
+        if self.keep_alive:
+            payload["keep_alive"] = self.keep_alive
         if schema:
             payload["format"] = schema
         else:
@@ -325,6 +328,7 @@ def _ollama_provider() -> OllamaProvider:
         timeout_seconds=float(getattr(settings, "OLLAMA_TIMEOUT_SECONDS", 45.0)),
         temperature=float(getattr(settings, "OLLAMA_TEMPERATURE", 0.0)),
         max_output_tokens=int(getattr(settings, "OLLAMA_MAX_OUTPUT_TOKENS", 1200)),
+        keep_alive=str(getattr(settings, "OLLAMA_KEEP_ALIVE", "") or "").strip(),
     )
 
 
