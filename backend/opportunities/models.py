@@ -321,12 +321,12 @@ class Opportunite(models.Model):
     raw_skills = models.JSONField(
         blank=True,
         default=list,
-        help_text="Legacy opportunity skill strings captured before ESCO normalization.",
+        help_text="Opportunity skill strings captured for recommendation features.",
     )
     normalized_skills = models.JSONField(
         blank=True,
         default=list,
-        help_text="Structured ESCO normalization results stored in parallel with legacy skills.",
+        help_text="Reserved structured skill metadata. Kept empty by the current JobBERT/LLM pipeline.",
     )
     skills_normalization_hash = models.CharField(max_length=64, blank=True, default="")
     skills_normalization_updated_at = models.DateTimeField(null=True, blank=True)
@@ -368,6 +368,14 @@ class Opportunite(models.Model):
     date_limite = models.DateField(null=True, blank=True)
     source_item_url = models.URLField(max_length=1000, null=True, blank=True)
     external_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    content_fingerprint = models.CharField(max_length=16, null=True, blank=True, db_index=True)
+    duplicate_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="duplicate_versions",
+    )
 
     organisation = models.ForeignKey(
         Utilisateur,

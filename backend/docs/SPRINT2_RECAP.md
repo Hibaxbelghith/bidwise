@@ -167,12 +167,62 @@ Key implementation details:
 - `generate_embeddings_task` processes a configured limit and requeues itself only if it made progress.
 - `monitor_opportunity_pipeline_task` runs health checks and recovery.
 
+### Celery queues and LLM opportunity enrichment
+
+The scraping pipeline and the LLM enrichment backfill are intentionally isolated in separate Celery queues.
+
+```text
+celery_worker
+  queue: celery
+  role: scraping dispatch, source collection, raw materialization, embeddings, monitoring
+
+celery_enrichment
+  queue: opportunity_enrichment
+  role: slow offline LLM backfill for opportunity skills and job metadata
+
+celery_profile
+  queue: profile_resume
+  role: resume parsing and profile embedding tasks
+```
+
+Why this matters:
+
+- Local LLM/Ollama calls can be slow and unpredictable.
+- Scraping must stay responsive even when LLM enrichment is running.
+- The enrichment worker uses `--concurrency=1` and `--prefetch-multiplier=1` so one slow local model call does not reserve a large backlog.
+- `CELERY_TASK_ROUTES` sends `ai.enrich_opportunity_llm_backfill` and `ai.enrich_opportunity_with_llm` to `opportunity_enrichment`, not to the default scraping queue.
+
+The periodic LLM backfill is configured through:
+
+- `OPPORTUNITY_LLM_BACKFILL_ENABLED`
+- `OPPORTUNITY_LLM_BACKFILL_SOURCE`
+- `OPPORTUNITY_LLM_BACKFILL_LIMIT`
+- `OPPORTUNITY_LLM_BACKFILL_MIN_DESCRIPTION_CHARS`
+- `OPPORTUNITY_LLM_BACKFILL_DELAY_SECONDS`
+- `OPPORTUNITY_LLM_BACKFILL_WORKERS`
+- `OPPORTUNITY_LLM_BACKFILL_LOCK_SECONDS`
+- `OPPORTUNITY_LLM_BACKFILL_CRON_MINUTE`
+
+The backfill command name is still `enrich_opportunities_with_gemini` for backward compatibility, but the runtime provider can be local Ollama. The task runs only as an offline batch; recommendations do not call the LLM at request time.
+
+Candidate selection is guarded:
+
+- only active job opportunities are selected;
+- non-job sources such as `MarchesPublics` are excluded;
+- already rich skill sets are skipped unless force mode is used;
+- weak or generic skill lists from rich descriptions are eligible for LLM cleanup;
+- a Redis cache lock prevents overlapping LLM backfill runs.
+
 ### Celery Beat
 
-`CELERY_BEAT_SCHEDULE` dispatches two periodic jobs every 15 minutes:
+`CELERY_BEAT_SCHEDULE` dispatches two pipeline jobs every 15 minutes:
 
 - `opportunities.collect_opportunities`
 - `opportunities.monitor_pipeline`
+
+It can also dispatch the offline LLM backfill on a separate cadence:
+
+- `ai.enrich_opportunity_llm_backfill`
 
 This makes scheduling external to request handling. The API and frontend read system state; they do not drive scraping.
 
@@ -220,6 +270,8 @@ This design reduces external load while still protecting freshness.
 | --- | --- | --- | --- |
 | `opportunities/pipeline.py` | Source scheduler/orchestrator: source registry, aliases, priority, source config, adaptive scheduler state, scraper construction, collection result building | Called by the CLI command and Celery dispatch to choose due sources and launch collection; not used for raw-to-canonical processing | due/stale/retry/running-stale decisions, EMA-smoothed metrics, adaptive score, hard failure cooldown, source priority ordering, source aliases, stale running cleanup before synchronous relaunch, fallback when no source is due |
 | `opportunities/tasks.py` | Production Celery orchestration | Beat calls `collect_opportunities_pipeline`; it dispatches `collect_source_task`; source task schedules materialization; materialization schedules embeddings; monitor task evaluates health | Redis locks, `PipelineRun` persistence, retry after source exception, failed-page threshold, bounded batches, self-requeue, no-progress embedding alert, DB connection cleanup |
+| `ai/tasks.py` | Asynchronous AI maintenance tasks | Runs profile skill storage tasks and the offline opportunity LLM backfill through the `opportunity_enrichment` queue | Redis cache lock, configurable batch size, minimum description length guard, DB connection cleanup, no request-time LLM calls |
+| `ai/management/commands/enrich_opportunities_with_gemini.py` | Offline opportunity enrichment command | Called manually or by `ai.enrich_opportunity_llm_backfill`; provider can be local Ollama despite the legacy command name | active job-only selection, non-job source exclusion, weak/generic skill detection, dry-run audit mode, configurable delay and workers |
 | `opportunities/monitoring.py` | Observability, anomaly detection, alerting, recovery | Called by source observation, monitor task, and admin dashboard | structured logs, Redis/cache alert state, Discord alerts, threshold/cooldown anti-spam, recovery notifications, stuck-run detection, failed-streak detection, duration anomalies, embedding backlog detection, automatic stuck recovery |
 | `opportunities/scraping/pipeline.py` | Raw ingestion boundary | Called by `run_source_collection` after a scraper yields records | shadow storage, source upsert, URL and record-id identity, payload hash, content fingerprint, requeue on impactful raw changes, max empty pages, max failed pages, page-level stats |
 | `opportunities/scraping/sources/*` | Source-specific adapters for Keejob, EmploiTunisie, LinkedIn, MarchesPublics | Each scraper returns raw records or raw pages to the shared scraping pipeline | HTTP retry adapters, random request delays, pagination caps, max records, duplicate skipping, 403 block detection, detail-page enrichment, listing fallback for MarchesPublics, fail-safe LinkedIn scraper, structured field extraction |

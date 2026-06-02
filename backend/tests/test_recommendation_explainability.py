@@ -56,6 +56,41 @@ class RecommendationExplainabilityTests(SimpleTestCase):
 
         self.assertIn("Remote work preference aligned", explanation["reasons"])
 
+    def test_contract_gap_uses_canonical_contract_types(self):
+        opportunity = SimpleNamespace(
+            titre="Technicien Support",
+            skills=[],
+            contract_type="CDD",
+            normalized_contract_types=["CDD"],
+            type_opportunite="EMPLOI",
+            semantic_score=0.0,
+        )
+
+        explanation = build_recommendation_explanation(
+            {"employment_types": ["CDI", "CDD"]},
+            opportunity,
+        )
+
+        self.assertIn("Cdd contract aligned", explanation["reasons"])
+        self.assertNotIn("Contract type may differ from your preference", explanation["gaps"])
+
+    def test_missing_contract_data_does_not_create_false_gap(self):
+        opportunity = SimpleNamespace(
+            titre="Customer Support Specialist",
+            skills=[],
+            contract_type="",
+            normalized_contract_types=[],
+            type_opportunite="",
+            semantic_score=0.0,
+        )
+
+        explanation = build_recommendation_explanation(
+            {"employment_types": ["CDI", "CDD"]},
+            opportunity,
+        )
+
+        self.assertNotIn("Contract type may differ from your preference", explanation["gaps"])
+
     def test_industry_alignment_reason(self):
         opportunity = SimpleNamespace(
             titre="Backend Developer",

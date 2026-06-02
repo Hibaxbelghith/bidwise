@@ -1,6 +1,3 @@
-from django.conf import settings
-
-
 def _clean_list(value):
     if value is None:
         return []
@@ -55,43 +52,6 @@ def _merge_unique(*values):
     return merged
 
 
-def _clean_normalized_skill_entries(value):
-    if not isinstance(value, list):
-        return []
-
-    cleaned = []
-    seen = set()
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        uri = str(item.get("esco_uri") or "").strip()
-        raw_skill = str(item.get("raw_skill") or "").strip().casefold()
-        match_type = str(item.get("match_type") or "").strip().lower()
-        key = (uri, raw_skill, match_type)
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned.append(dict(item))
-    return cleaned
-
-
-def _merge_normalized_skill_entries(*values):
-    merged = []
-    seen = set()
-    for value in values:
-        for item in _clean_normalized_skill_entries(value):
-            key = (
-                str(item.get("esco_uri") or "").strip(),
-                str(item.get("raw_skill") or "").strip().casefold(),
-                str(item.get("match_type") or "").strip().lower(),
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(item)
-    return merged
-
-
 def _get_active_resume_parsed_text(profile):
     active_resume = _get_active_resume(profile)
     return _clean_text(getattr(active_resume, "parsed_text", "")) if active_resume else ""
@@ -110,7 +70,6 @@ def _get_active_resume(profile):
                 "profile_id",
                 "parsed_text",
                 "extracted_skills",
-                "extracted_normalized_skills",
                 "extracted_domains",
                 "extracted_tools",
                 "extracted_languages",
@@ -189,22 +148,6 @@ def build_user_features(profile):
         semantic_resume["skills"],
         semantic_resume["tools"],
     )
-    normalized_profile_skills = _clean_normalized_skill_entries(
-        getattr(profile, "normalized_skills", []),
-    )
-    use_resume_normalized_skills = bool(
-        getattr(settings, "PROFILE_FEATURES_USE_RESUME_NORMALIZED_SKILLS", False)
-    )
-    normalized_resume_skills = (
-        _clean_normalized_skill_entries(getattr(active_resume, "extracted_normalized_skills", []))
-        if use_resume_normalized_skills
-        else []
-    )
-    normalized_skills = _merge_normalized_skill_entries(
-        normalized_profile_skills,
-        normalized_resume_skills,
-    )
-
     features = {
         "profile_skills": _clean_list(getattr(profile, "competences", [])),
         "semantic_resume_skills": semantic_resume["skills"],
@@ -243,12 +186,6 @@ def build_user_features(profile):
         "salary_currency": _clean_text(getattr(profile, "compensation_currency", "")),
         "salary_period": _clean_text(getattr(profile, "compensation_period", "")),
     }
-    if normalized_profile_skills:
-        features["normalized_profile_skills"] = normalized_profile_skills
-    if normalized_resume_skills:
-        features["normalized_resume_skills"] = normalized_resume_skills
-    if normalized_skills:
-        features["normalized_skills"] = normalized_skills
     resume_text = _clean_text(getattr(active_resume, "parsed_text", "")) if active_resume else ""
     if resume_text:
         features["resume_text"] = resume_text

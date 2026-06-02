@@ -21,6 +21,8 @@ DEFAULT_IVFFLAT_MAX_PROBES = 20
 
 RECOMMENDATION_CANDIDATE_FIELDS = (
     "id",
+    "source",
+    "source_item_url",
     "titre",
     "description",
     "organisation_nom",

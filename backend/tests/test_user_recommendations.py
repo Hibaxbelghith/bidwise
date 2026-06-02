@@ -7,9 +7,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from ai.esco_mapper import clear_esco_mapper_cache, map_role_to_esco, map_skill_to_esco
 from ai.business_families import profile_business_families
-from ai.models import ESCOOccupation
 from ai.embeddings import (
     MAX_RESUME_EMBEDDING_TEXT_CHARS,
     build_user_embedding,
@@ -896,172 +894,107 @@ class RecommendationRankingTests(SimpleTestCase):
         self.assertEqual(get_score_label(0.0, is_fallback=True), "Recent")
 
 
-class ESCOMapperCacheTests(TestCase):
-    @classmethod
-    def setUpTestData(cls):
-        ESCOOccupation.objects.bulk_create(
-            [
-                ESCOOccupation(
-                    uri="esco:frontend_developer",
-                    preferred_label="Frontend Developer",
-                    family="frontend_engineering",
-                    isco_group="2512",
-                    alternate_labels=["UI Engineer", "Frontend Engineer"],
-                    related_skills=["react", "typescript", "javascript"],
-                ),
-                ESCOOccupation(
-                    uri="esco:data_scientist",
-                    preferred_label="Data Scientist",
-                    family="data_ai",
-                    isco_group="2521",
-                    alternate_labels=["ML Engineer", "AI Engineer"],
-                    related_skills=["machine learning", "tensorflow", "pandas"],
-                ),
-            ]
-        )
-
-    def setUp(self):
-        clear_esco_mapper_cache()
-
-    def tearDown(self):
-        clear_esco_mapper_cache()
-
-    def test_map_role_to_esco_is_case_insensitive_and_cached(self):
-        with CaptureQueriesContext(connection) as first_lookup:
-            occupation = map_role_to_esco("ui engineer")
-
-        self.assertEqual(occupation.preferred_label, "Frontend Developer")
-        self.assertEqual(len(first_lookup), 1)
-
-        with CaptureQueriesContext(connection) as second_lookup:
-            occupation = map_role_to_esco("UI ENGINEER")
-
-        self.assertEqual(occupation.preferred_label, "Frontend Developer")
-        self.assertEqual(len(second_lookup), 0)
-
-    def test_map_skill_to_esco_is_cached(self):
-        with CaptureQueriesContext(connection) as first_lookup:
-            payload = map_skill_to_esco("TypeScript")
-
-        self.assertEqual(payload["family"], "frontend_engineering")
-        self.assertEqual(payload["occupation"], "Frontend Developer")
-        self.assertEqual(len(first_lookup), 1)
-
-        with CaptureQueriesContext(connection) as second_lookup:
-            payload = map_skill_to_esco("typescript")
-
-        self.assertEqual(payload["family"], "frontend_engineering")
-        self.assertEqual(len(second_lookup), 0)
-
-    def test_empty_dataset_returns_none_without_crashing(self):
-        ESCOOccupation.objects.all().delete()
-        clear_esco_mapper_cache()
-
-        self.assertIsNone(map_role_to_esco("Frontend Developer"))
-        self.assertIsNone(map_skill_to_esco("react"))
-
-
-class ESCORecommendationBonusTests(TestCase):
-    @classmethod
-    def setUpTestData(cls):
-        ESCOOccupation.objects.bulk_create(
-            [
-                ESCOOccupation(
-                    uri="esco:frontend_developer",
-                    preferred_label="Frontend Developer",
-                    family="frontend_engineering",
-                    isco_group="2512",
-                    alternate_labels=["UI Engineer", "Front-End Engineer", "Frontend Engineer"],
-                    related_skills=["react", "typescript", "javascript", "tailwind"],
-                ),
-                ESCOOccupation(
-                    uri="esco:backend_developer",
-                    preferred_label="Backend Developer",
-                    family="backend_engineering",
-                    isco_group="2512",
-                    alternate_labels=["API Developer", "Server-side Developer"],
-                    related_skills=["python", "django", "postgresql", "api"],
-                ),
-                ESCOOccupation(
-                    uri="esco:data_scientist",
-                    preferred_label="Data Scientist",
-                    family="data_ai",
-                    isco_group="2521",
-                    alternate_labels=["ML Engineer", "AI Engineer"],
-                    related_skills=["tensorflow", "pandas", "nlp", "machine learning"],
-                ),
-            ]
-        )
-
-    def setUp(self):
-        clear_esco_mapper_cache()
-
-    def tearDown(self):
-        clear_esco_mapper_cache()
+class RecommendationRankingTests(TestCase):
 
     @staticmethod
     def _vector_with_similarity(similarity):
         return [float(similarity), max(0.0, 1.0 - float(similarity) ** 2) ** 0.5]
 
-    def test_ui_engineer_gains_small_frontend_family_bonus(self):
-        opportunity = SimpleNamespace(
+    def test_rank_opportunities_prefers_enriched_duplicate_result(self):
+        empty_duplicate = SimpleNamespace(
             id=1,
-            titre="Senior UI Engineer",
+            titre="Auditeurs comptable",
+            organisation_nom="RAYON CONSULT",
+            ville="Tunis",
+            type_opportunite="EMPLOI",
             skills=[],
-            embedding_vector=self._vector_with_similarity(0.62),
+            description="Short audit role",
+            embedding_vector=[1.0, 0.0],
+            date_publication=date(2026, 1, 3),
+        )
+        enriched_duplicate = SimpleNamespace(
+            id=2,
+            titre="Auditeurs comptable",
+            organisation_nom="RAYON CONSULT",
+            ville="Tunis",
+            type_opportunite="EMPLOI",
+            skills=["Audit légal", "Excel"],
+            description="Detailed audit role " * 80,
+            extra_data={"llm_enrichment": {"skills_source": "llm"}},
+            embedding_vector=[0.99, 0.01],
             date_publication=date(2026, 1, 1),
         )
-        features = {
-            "roles": ["Frontend Developer"],
-            "target_roles": ["Frontend Developer"],
-            "skills": [],
-        }
 
-        ranked = rank_opportunities([1.0, 0.0], [opportunity], features=features)
+        ranked = rank_opportunities([1.0, 0.0], [empty_duplicate, enriched_duplicate])
 
-        self.assertAlmostEqual(ranked[0].semantic_score, 0.62, places=4)
-        self.assertAlmostEqual(ranked[0].business_score, 0.03, places=4)
-        self.assertAlmostEqual(ranked[0].match_score, 0.47, places=4)
-        self.assertEqual(ranked[0].reason, [])
+        self.assertEqual([item.id for item in ranked], [2])
+        self.assertTrue(getattr(empty_duplicate, "duplicate_suppressed", False))
 
-    def test_ml_engineer_gains_small_data_ai_family_bonus(self):
-        opportunity = SimpleNamespace(
+    def test_rank_opportunities_keeps_same_title_when_source_urls_differ(self):
+        first_posting = SimpleNamespace(
             id=1,
-            titre="Principal ML Engineer",
+            source_item_url="https://www.keejob.com/offres-emploi/239399/auditeurs-comptable",
+            titre="Auditeurs comptable",
+            organisation_nom="RAYON CONSULT",
+            ville="Tunis",
+            type_opportunite="EMPLOI",
             skills=[],
-            embedding_vector=self._vector_with_similarity(0.63),
+            description="Audit role one",
+            embedding_vector=[1.0, 0.0],
+            date_publication=date(2026, 1, 3),
+        )
+        second_posting = SimpleNamespace(
+            id=2,
+            source_item_url="https://www.keejob.com/offres-emploi/240916/auditeurs-comptable",
+            titre="Auditeurs comptable",
+            organisation_nom="RAYON CONSULT",
+            ville="Tunis",
+            type_opportunite="EMPLOI",
+            skills=["Audit légal", "Excel"],
+            description="Audit role two",
+            embedding_vector=[0.99, 0.01],
             date_publication=date(2026, 1, 1),
         )
-        features = {
-            "roles": ["Data Scientist"],
-            "target_roles": ["Data Scientist"],
-            "skills": [],
-        }
 
-        ranked = rank_opportunities([1.0, 0.0], [opportunity], features=features)
+        ranked = rank_opportunities([1.0, 0.0], [first_posting, second_posting])
 
-        self.assertAlmostEqual(ranked[0].business_score, 0.03, places=4)
-        self.assertAlmostEqual(ranked[0].match_score, 0.477, places=4)
+        self.assertEqual({item.id for item in ranked}, {1, 2})
+        self.assertFalse(getattr(first_posting, "duplicate_suppressed", False))
+        self.assertFalse(getattr(second_posting, "duplicate_suppressed", False))
 
-    def test_frontend_profile_gets_no_esco_bonus_for_seo_webmaster_role(self):
-        opportunity = SimpleNamespace(
+    def test_rank_opportunities_dedupes_same_source_republication_with_new_url(self):
+        older_posting = SimpleNamespace(
             id=1,
-            titre="SEO Webmaster",
-            skills=["SEO", "Google Analytics"],
-            embedding_vector=self._vector_with_similarity(0.72),
+            source_id=7,
+            source_item_url="https://www.keejob.com/offres-emploi/239399/auditeurs-comptable",
+            titre="Auditeurs comptable",
+            organisation_nom="RAYON CONSULT",
+            ville="Tunis",
+            type_opportunite="EMPLOI",
+            skills=[],
+            description="Short audit role",
+            embedding_vector=[1.0, 0.0],
+            date_publication=date(2026, 1, 3),
+        )
+        enriched_republication = SimpleNamespace(
+            id=2,
+            source_id=7,
+            source_item_url="https://www.keejob.com/offres-emploi/240916/auditeurs-comptable",
+            titre="Auditeurs comptable",
+            organisation_nom="RAYON CONSULT",
+            ville="Tunis",
+            type_opportunite="EMPLOI",
+            skills=["Audit légal", "Excel"],
+            description="Detailed audit role " * 80,
+            extra_data={"llm_enrichment": {"skills_source": "llm"}},
+            embedding_vector=[0.99, 0.01],
             date_publication=date(2026, 1, 1),
         )
-        features = {
-            "roles": ["Frontend Developer"],
-            "target_roles": ["Frontend Developer"],
-            "skills": ["React", "TypeScript"],
-        }
 
-        ranked = rank_opportunities([1.0, 0.0], [opportunity], features=features)
+        ranked = rank_opportunities([1.0, 0.0], [older_posting, enriched_republication])
 
-        self.assertAlmostEqual(ranked[0].semantic_score, 0.72, places=4)
-        self.assertAlmostEqual(ranked[0].business_score, 0.0, places=4)
-        self.assertAlmostEqual(ranked[0].match_score, 0.504, places=4)
+        self.assertEqual([item.id for item in ranked], [2])
+        self.assertTrue(getattr(older_posting, "duplicate_suppressed", False))
 
     def test_exact_backend_matches_keep_existing_business_score(self):
         opportunity = SimpleNamespace(
@@ -1083,6 +1016,103 @@ class ESCORecommendationBonusTests(TestCase):
         self.assertAlmostEqual(ranked[0].match_score, 0.417, places=4)
         self.assertIn("Python", ranked[0].reason)
         self.assertIn("Backend Developer", ranked[0].reason)
+
+    @patch("ai.recommendation_service._build_role_semantic_scores", return_value={1: 0.68})
+    @patch("ai.recommendation_service.build_precomputed_jobbert_scores", return_value={1: 0.65})
+    def test_jobbert_and_title_skill_evidence_lift_backend_django_out_of_skill_only_cap(
+        self,
+        jobbert_scores_mock,
+        role_scores_mock,
+    ):
+        opportunity = SimpleNamespace(
+            id=1,
+            titre="Poste #22 : Développeur(se) Python (Django)",
+            skills=["python", "django", "react"],
+            embedding_vector=[],
+            date_publication=date(2026, 1, 1),
+            ville="Sfax",
+        )
+        features = {
+            "_jobbert_profile_vector": [1.0, 0.0],
+            "roles": ["Backend Developer"],
+            "target_roles": ["Backend Developer"],
+            "skills": ["Python", "Django", "REST API", "PostgreSQL", "Docker", "Git"],
+            "profile_skills": ["Python", "Django", "REST API", "PostgreSQL", "Docker", "Git"],
+            "preferred_locations": ["Sfax"],
+            "work_modes": ["ON_SITE", "HYBRID", "REMOTE"],
+        }
+
+        ranked = rank_opportunities([], [opportunity], features=features, mode="partial")
+
+        self.assertEqual(jobbert_scores_mock.call_count, 1)
+        self.assertEqual(role_scores_mock.call_count, 1)
+        self.assertAlmostEqual(ranked[0].recommendation_debug["role_semantic_score"], 0.68)
+        self.assertEqual(ranked[0].recommendation_debug["skill_only_explicit_role_score_cap"], 0.0)
+        self.assertTrue(ranked[0].recommendation_debug["ai_metier_evidence"])
+        self.assertIn("Strong semantic job match", ranked[0].reason)
+
+    @patch("ai.recommendation_service._build_role_semantic_scores", return_value={1: 0.69})
+    @patch("ai.recommendation_service.build_precomputed_jobbert_scores", return_value={1: 0.60})
+    def test_back_end_title_is_treated_as_backend_role(self, jobbert_scores_mock, role_scores_mock):
+        opportunity = SimpleNamespace(
+            id=1,
+            titre="Back End Developer",
+            skills=["backend", "aws", "sql", "node", "docker"],
+            embedding_vector=[],
+            date_publication=date(2026, 1, 1),
+            ville="Sousse",
+        )
+        features = {
+            "_jobbert_profile_vector": [1.0, 0.0],
+            "roles": ["Backend Developer"],
+            "target_roles": ["Backend Developer"],
+            "skills": ["Python", "Django", "REST API", "PostgreSQL", "Docker", "Git"],
+            "profile_skills": ["Python", "Django", "REST API", "PostgreSQL", "Docker", "Git"],
+            "preferred_locations": ["Sousse"],
+            "work_modes": ["ON_SITE", "HYBRID", "REMOTE"],
+        }
+
+        ranked = rank_opportunities([], [opportunity], features=features, mode="partial")
+
+        self.assertEqual(jobbert_scores_mock.call_count, 1)
+        self.assertEqual(role_scores_mock.call_count, 1)
+        self.assertAlmostEqual(ranked[0].recommendation_debug["role_semantic_score"], 0.69)
+        self.assertEqual(ranked[0].recommendation_debug["skill_only_explicit_role_score_cap"], 0.0)
+        self.assertTrue(ranked[0].recommendation_debug["ai_metier_evidence"])
+
+    @patch("ai.recommendation_service._build_role_semantic_scores", return_value={1: 0.35})
+    @patch("ai.recommendation_service.build_precomputed_jobbert_scores", return_value={1: 0.65})
+    def test_python_docker_ai_role_stays_capped_without_backend_title_evidence(
+        self,
+        jobbert_scores_mock,
+        role_scores_mock,
+    ):
+        opportunity = SimpleNamespace(
+            id=1,
+            titre="Ingénieur IA Générative Confirmé",
+            skills=["python", "docker", "devops", "aws"],
+            embedding_vector=[],
+            date_publication=date(2026, 1, 1),
+            ville="Tunis",
+        )
+        features = {
+            "_jobbert_profile_vector": [1.0, 0.0],
+            "roles": ["Backend Developer"],
+            "target_roles": ["Backend Developer"],
+            "skills": ["Python", "Django", "REST API", "PostgreSQL", "Docker", "Git"],
+            "profile_skills": ["Python", "Django", "REST API", "PostgreSQL", "Docker", "Git"],
+            "preferred_locations": ["Tunis"],
+            "work_modes": ["ON_SITE", "HYBRID", "REMOTE"],
+        }
+
+        ranked = rank_opportunities([], [opportunity], features=features, mode="partial")
+
+        self.assertEqual(jobbert_scores_mock.call_count, 1)
+        self.assertEqual(role_scores_mock.call_count, 1)
+        self.assertAlmostEqual(ranked[0].recommendation_debug["role_semantic_score"], 0.35)
+        self.assertLessEqual(ranked[0].match_score, 0.54)
+        self.assertEqual(ranked[0].recommendation_debug["skill_only_explicit_role_score_cap"], 0.54)
+        self.assertFalse(ranked[0].recommendation_debug["ai_metier_evidence"])
 
     def test_support_it_role_does_not_match_customer_support_title(self):
         customer_support = SimpleNamespace(
@@ -1162,31 +1192,3 @@ class ESCORecommendationBonusTests(TestCase):
         self.assertEqual(jobbert_scores_mock.call_count, 1)
         self.assertAlmostEqual(ranked[0].recommendation_debug["jobbert_score"], 0.68, places=4)
         self.assertIn("Strong semantic job match", ranked[0].reason)
-
-    def test_esco_bonus_stays_small_near_semantic_threshold(self):
-        features = {
-            "roles": ["Frontend Developer"],
-            "target_roles": ["Frontend Developer"],
-            "skills": [],
-        }
-        mapped_alias = SimpleNamespace(
-            id=1,
-            titre="UI Engineer",
-            skills=[],
-            embedding_vector=self._vector_with_similarity(0.60),
-            date_publication=date(2026, 1, 1),
-        )
-        unmapped_title = SimpleNamespace(
-            id=2,
-            titre="Product Analyst",
-            skills=[],
-            embedding_vector=self._vector_with_similarity(0.60),
-            date_publication=date(2026, 1, 1),
-        )
-
-        mapped_ranked = rank_opportunities([1.0, 0.0], [mapped_alias], features=features)
-        baseline_ranked = rank_opportunities([1.0, 0.0], [unmapped_title], features=features)
-
-        self.assertAlmostEqual(mapped_ranked[0].business_score, 0.03, places=4)
-        self.assertAlmostEqual(baseline_ranked[0].business_score, 0.0, places=4)
-        self.assertLess(mapped_ranked[0].match_score - baseline_ranked[0].match_score, 0.05)

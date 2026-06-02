@@ -2,8 +2,8 @@ import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
-  getOpportunityById,
   listOpportunityRecommendations,
+  normalizeOpportunity,
 } from '../services/opportunitiesService.js';
 import { mergeRecommendationIntoOpportunity } from '../utils/recommendationUtils.js';
 
@@ -14,22 +14,11 @@ const RECOMMENDATION_GC_TIME_MS = 10 * 60 * 1000;
 const emptyRecommendations = [];
 const emptyOpportunities = [];
 
-const loadRecommendationDetails = async ({ recommendations, detailLimit }) => {
-  const detailRecommendations = recommendations.slice(
-    0,
-    Math.max(1, Number(detailLimit) || recommendations.length),
-  );
-  const settled = await Promise.allSettled(
-    detailRecommendations.map((recommendation) => getOpportunityById(recommendation.id)),
+const loadRecommendationDetails = async ({ recommendations }) =>
+  recommendations.map((recommendation) =>
+    mergeRecommendationIntoOpportunity(normalizeOpportunity(recommendation), recommendation),
   );
 
-  return settled
-    .map((result, index) => {
-      if (result.status !== 'fulfilled' || !result.value) return null;
-      return mergeRecommendationIntoOpportunity(result.value, detailRecommendations[index]);
-    })
-    .filter(Boolean);
-};
 
 const recommendationToPreviewOpportunity = (recommendation) => {
   if (!recommendation?.id) return null;
@@ -49,7 +38,6 @@ export const useOpportunityRecommendations = ({
   enabled = true,
   includeDetails = false,
   limit = DEFAULT_RECOMMENDATION_LIMIT,
-  detailLimit = limit,
   cacheKey = 'default',
 } = {}) => {
   const recommendationsQueryKey = useMemo(
@@ -70,8 +58,8 @@ export const useOpportunityRecommendations = ({
 
   const recommendations = recommendationsQuery.data || emptyRecommendations;
   const detailsQuery = useQuery({
-    queryKey: ['opportunity-recommendation-details', cacheKey, detailLimit, recommendations.map((item) => item.id).join(',')],
-    queryFn: () => loadRecommendationDetails({ recommendations, detailLimit }),
+    queryKey: ['opportunity-recommendation-details', cacheKey, recommendations.map((item) => item.id).join(',')],
+    queryFn: () => loadRecommendationDetails({ recommendations }),
     enabled: enabled && includeDetails && recommendations.length > 0,
     staleTime: RECOMMENDATION_STALE_TIME_MS,
     gcTime: RECOMMENDATION_GC_TIME_MS,

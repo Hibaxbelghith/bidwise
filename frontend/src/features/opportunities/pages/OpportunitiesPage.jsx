@@ -137,7 +137,6 @@ const OpportunitiesPage = () => {
     enabled: forYouEnabled,
     includeDetails: true,
     limit: 50,
-    detailLimit: 15,
     cacheKey: recommendationCacheKey,
   });
   const { refetch: refetchRecommendations } = recommendationsState;

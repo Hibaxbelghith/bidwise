@@ -77,12 +77,12 @@ class Profil(models.Model):
     raw_skills = models.JSONField(
         default=list,
         blank=True,
-        help_text="User-entered skill strings preserved before ESCO normalization.",
+        help_text="User-entered skill strings preserved for recommendation features.",
     )
     normalized_skills = models.JSONField(
         default=list,
         blank=True,
-        help_text="Structured ESCO normalization results stored alongside legacy profile skills.",
+        help_text="Reserved structured skill metadata. Kept empty by the current JobBERT/LLM pipeline.",
     )
     skills_normalization_hash = models.CharField(max_length=64, blank=True, default="")
     skills_normalization_updated_at = models.DateTimeField(null=True, blank=True)
@@ -370,12 +370,12 @@ class ProfileResume(models.Model):
     extracted_raw_skills = models.JSONField(
         blank=True,
         default=list,
-        help_text="Raw semantic skill mentions extracted from the resume before ESCO normalization.",
+        help_text="Raw semantic skill mentions extracted from the resume.",
     )
     extracted_normalized_skills = models.JSONField(
         blank=True,
         default=list,
-        help_text="Structured ESCO normalization results for extracted resume skill mentions.",
+        help_text="Reserved structured skill metadata. Kept empty by the current Qwen extraction pipeline.",
     )
     extracted_skills_normalization_hash = models.CharField(max_length=64, blank=True, default="")
     extracted_skills_normalization_updated_at = models.DateTimeField(null=True, blank=True)

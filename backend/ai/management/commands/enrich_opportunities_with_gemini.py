@@ -5,16 +5,18 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Q
 from django.db import close_old_connections
 from django.db.models.functions import Length
 
+from ai.enrichment_roi import NON_JOB_SOURCE_NAMES
 from ai.llm.opportunity_enrichment import (
     MIN_CONFIDENCE_TO_APPLY,
     enrich_opportunity_with_llm,
     opportunity_needs_llm_enrichment,
 )
 from ai.llm.providers import LLMProviderError, LLMProviderUnavailable, LLMRateLimitError
-from opportunities.models import Opportunite, StatutOpportunite
+from opportunities.models import Opportunite, StatutOpportunite, TypeOpportunite
 
 
 def _normalized_skill_key(value):
@@ -140,7 +142,11 @@ class Command(BaseCommand):
         audit_only = bool(options["dry_run"]) or bool(options["audit"])
 
         queryset = (
-            Opportunite.objects.filter(statut=StatutOpportunite.ACTIVE)
+            Opportunite.objects.filter(
+                statut=StatutOpportunite.ACTIVE,
+                type_opportunite=TypeOpportunite.EMPLOI,
+            )
+            .select_related("source")
             .annotate(description_length=Length("description"))
             .only(
                 "id",
@@ -157,9 +163,15 @@ class Command(BaseCommand):
                 "skills_normalization_updated_at",
                 "skills_normalization_error",
                 "extra_data",
+                "source__nom",
+                "type_opportunite",
             )
             .order_by("-date_publication", "-id")
         )
+        non_job_source_filter = Q(source__nom__iexact="BidWise Recommendation Benchmark")
+        for source_key in NON_JOB_SOURCE_NAMES:
+            non_job_source_filter |= Q(source__nom__iexact=source_key)
+        queryset = queryset.exclude(non_job_source_filter)
         if source_name and source_name.casefold() != "all":
             queryset = queryset.filter(source__nom__iexact=source_name)
         if explicit_ids:

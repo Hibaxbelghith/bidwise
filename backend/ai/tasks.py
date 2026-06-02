@@ -1,22 +1,70 @@
 import logging
+import hashlib
+import re
+from dataclasses import dataclass
 
 from celery import shared_task
+from django.conf import settings
+from django.core.cache import cache
+from django.core.management import call_command
 from django.db import close_old_connections, connection, transaction
 from django.utils import timezone
 
-from ai.esco_skill_storage import (
-    SkillNormalizationStoragePayload,
-    build_skill_normalization_payload,
-    build_skill_storage_hash,
-    clean_skill_storage_list,
-    safe_normalization_error,
-    summarize_normalized_skill_entries,
-)
 from opportunities.models import Opportunite
 from users.models import Profil
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SkillNormalizationStoragePayload:
+    raw_skills: list[str]
+    normalized_skills: list[dict[str, object]]
+    content_hash: str
+
+
+def clean_skill_storage_list(values) -> list[str]:
+    if isinstance(values, str):
+        raw_items = [values]
+    elif isinstance(values, (list, tuple, set)):
+        raw_items = list(values)
+    else:
+        raw_items = []
+
+    cleaned = []
+    seen = set()
+    for item in raw_items:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        text = re.sub(r"\s+", " ", text)[:100]
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+        if len(cleaned) >= 30:
+            break
+    return cleaned
+
+
+def build_skill_storage_hash(raw_skills) -> str:
+    normalized = "\n".join(clean_skill_storage_list(raw_skills))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def build_skill_normalization_payload(raw_skills) -> SkillNormalizationStoragePayload:
+    cleaned = clean_skill_storage_list(raw_skills)
+    return SkillNormalizationStoragePayload(
+        raw_skills=cleaned,
+        normalized_skills=[],
+        content_hash=build_skill_storage_hash(cleaned),
+    )
+
+
+def safe_normalization_error(exc: Exception) -> str:
+    return str(exc or exc.__class__.__name__)[:500]
 
 
 def _resolve_profile_raw_skills(profile) -> list[str]:
@@ -187,16 +235,13 @@ def normalize_profile_skills_storage(profile_id, *, force=False):
         )
         locked_profile.save(update_fields=update_fields)
 
-    summary = summarize_normalized_skill_entries(payload.normalized_skills)
     return {
         "status": "updated",
         "profile_id": profile_id,
         "raw_skills_count": len(payload.raw_skills),
         "normalized_skills_count": len(payload.normalized_skills),
-        "matched_count": summary.matched_entries,
-        "unmatched_count": summary.unmatched_entries,
-        "official_matches": summary.official_matches,
-        "legacy_matches": summary.legacy_matches,
+        "matched_count": 0,
+        "unmatched_count": len(payload.raw_skills),
         "error": error,
     }
 
@@ -274,18 +319,17 @@ def normalize_opportunity_skills_storage(opportunity_id, *, force=False):
             payload=persisted_payload,
             error=error,
         )
+        if update_fields and "date_modification" not in update_fields:
+            update_fields.append("date_modification")
         locked_opportunity.save(update_fields=update_fields)
 
-    summary = summarize_normalized_skill_entries(payload.normalized_skills)
     return {
         "status": "updated",
         "opportunity_id": opportunity_id,
         "raw_skills_count": len(payload.raw_skills),
         "normalized_skills_count": len(payload.normalized_skills),
-        "matched_count": summary.matched_entries,
-        "unmatched_count": summary.unmatched_entries,
-        "official_matches": summary.official_matches,
-        "legacy_matches": summary.legacy_matches,
+        "matched_count": 0,
+        "unmatched_count": len(payload.raw_skills),
         "error": error,
     }
 
@@ -304,3 +348,51 @@ def enrich_opportunity_with_llm_task(opportunity_id, *, force=False, apply_skill
         force=bool(force),
         apply_skills=bool(apply_skills),
     )
+
+
+@shared_task(
+    name="ai.enrich_opportunity_llm_backfill",
+    max_retries=0,
+)
+def enrich_opportunity_llm_backfill_task():
+    """Progressively enrich scraped opportunities with weak structured skills."""
+    if not getattr(settings, "OPPORTUNITY_LLM_BACKFILL_ENABLED", True):
+        return {"status": "skipped", "reason": "disabled"}
+
+    lock_key = "ai:opportunity_llm_backfill:lock"
+    lock_timeout = int(getattr(settings, "OPPORTUNITY_LLM_BACKFILL_LOCK_SECONDS", 60 * 30))
+    if not cache.add(lock_key, timezone.now().isoformat(), timeout=lock_timeout):
+        return {"status": "skipped", "reason": "locked"}
+
+    source = str(getattr(settings, "OPPORTUNITY_LLM_BACKFILL_SOURCE", "all") or "all").strip()
+    limit = max(1, int(getattr(settings, "OPPORTUNITY_LLM_BACKFILL_LIMIT", 10) or 10))
+    min_description_chars = max(
+        0,
+        int(getattr(settings, "OPPORTUNITY_LLM_BACKFILL_MIN_DESCRIPTION_CHARS", 1000) or 1000),
+    )
+    delay_seconds = max(
+        0.0,
+        float(getattr(settings, "OPPORTUNITY_LLM_BACKFILL_DELAY_SECONDS", 2.0) or 0.0),
+    )
+    workers = max(1, int(getattr(settings, "OPPORTUNITY_LLM_BACKFILL_WORKERS", 1) or 1))
+
+    try:
+        call_command(
+            "enrich_opportunities_with_gemini",
+            source=source,
+            weak_skills_only=True,
+            min_description_chars=min_description_chars,
+            limit=limit,
+            delay_seconds=delay_seconds,
+            workers=workers,
+        )
+        return {
+            "status": "completed",
+            "source": source,
+            "limit": limit,
+            "min_description_chars": min_description_chars,
+            "workers": workers,
+        }
+    finally:
+        cache.delete(lock_key)
+        close_old_connections()

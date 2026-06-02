@@ -123,7 +123,7 @@ const RecommendationInsightPanel = ({
 
       {viewModel.hasGaps ? (
         <div className="flex flex-col gap-2 border-t border-neutral-100 pt-3 sm:flex-row sm:items-center">
-          <p className="text-xs font-semibold uppercase text-neutral-600">Review before applying</p>
+          <p className="text-xs font-semibold uppercase text-neutral-600">{viewModel.reviewLabel}</p>
           <div className="flex flex-wrap gap-2">
             {viewModel.gaps.map((gap) => (
               <span

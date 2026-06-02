@@ -17,6 +17,7 @@ import django
 
 django.setup()
 
+from django.conf import settings  # noqa: E402
 from opportunities.scraping.sources import linkedin as linkedin_module  # noqa: E402
 from opportunities.scraping.sources.linkedin import (  # noqa: E402
     DESCRIPTION_QUALITY_DETAIL,
@@ -187,6 +188,21 @@ def test_collect_command_exposes_linkedin_search_options():
     assert options.location == "tunisia"
     assert options.max_pages == 5
     assert options.fetch_details is True
+
+
+def test_linkedin_pipeline_uses_configured_detail_fetch_by_default(monkeypatch):
+    monkeypatch.setattr(settings, "SCRAPER_CONFIG", {
+        "linkedin": {
+            "max_pages": 3,
+            "fetch_details": True,
+        }
+    })
+
+    from opportunities.pipeline import resolve_source_collection
+
+    collection = resolve_source_collection("linkedin")
+
+    assert collection["scraper_kwargs"]["fetch_details"] is True
 
 
 def test_scrape_linkedin_jobs_caps_pagination_to_safe_offset(monkeypatch):

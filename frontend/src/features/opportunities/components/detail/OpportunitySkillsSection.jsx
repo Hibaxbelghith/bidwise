@@ -7,10 +7,18 @@ const OpportunitySkillsSection = ({
   hiddenSkillsCount,
   showAllSkills,
   onToggleSkills,
+  skillsDetectedByAi = false,
 }) => (
   <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
     <div className="mb-3 flex items-center justify-between gap-2">
-      <h2 className="text-lg font-semibold text-neutral-900">Skills</h2>
+      <h2 className="flex items-center gap-2 text-lg font-semibold text-neutral-900">
+        Skills
+        {skillsDetectedByAi && (
+  <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-600">
+    ✦ AI
+  </span>
+)}
+      </h2>
       {skills.length > visibleSkills.length ? (
         <Button variant="ghost" size="sm" onClick={onToggleSkills}>
           {showAllSkills ? 'Show less' : `+${hiddenSkillsCount} more`}

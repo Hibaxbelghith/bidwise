@@ -415,6 +415,10 @@ CELERY_TASK_ROUTES = {
     # worker in docker-compose.yml.
     "users.parse_profile_resume": {"queue": "profile_resume"},
     "users.generate_profile_embedding": {"queue": "profile_resume"},
+    # LLM opportunity backfills can be slow with local Ollama. Keep them off the
+    # main scraping/materialization queue so source collection stays responsive.
+    "ai.enrich_opportunity_llm_backfill": {"queue": "opportunity_enrichment"},
+    "ai.enrich_opportunity_with_llm": {"queue": "opportunity_enrichment"},
 }
 PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS = int(
     os.getenv("PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS", "150")
@@ -450,6 +454,16 @@ PROFILE_FEATURES_USE_RESUME_NORMALIZED_SKILLS = _env_flag(
     "PROFILE_FEATURES_USE_RESUME_NORMALIZED_SKILLS",
     False,
 )
+OPPORTUNITY_LLM_BACKFILL_ENABLED = _env_flag("OPPORTUNITY_LLM_BACKFILL_ENABLED", True)
+OPPORTUNITY_LLM_BACKFILL_SOURCE = os.getenv("OPPORTUNITY_LLM_BACKFILL_SOURCE", "all").strip()
+OPPORTUNITY_LLM_BACKFILL_LIMIT = int(os.getenv("OPPORTUNITY_LLM_BACKFILL_LIMIT", "5"))
+OPPORTUNITY_LLM_BACKFILL_MIN_DESCRIPTION_CHARS = int(
+    os.getenv("OPPORTUNITY_LLM_BACKFILL_MIN_DESCRIPTION_CHARS", "1000")
+)
+OPPORTUNITY_LLM_BACKFILL_DELAY_SECONDS = float(os.getenv("OPPORTUNITY_LLM_BACKFILL_DELAY_SECONDS", "2.0"))
+OPPORTUNITY_LLM_BACKFILL_WORKERS = int(os.getenv("OPPORTUNITY_LLM_BACKFILL_WORKERS", "1"))
+OPPORTUNITY_LLM_BACKFILL_LOCK_SECONDS = int(os.getenv("OPPORTUNITY_LLM_BACKFILL_LOCK_SECONDS", str(60 * 30)))
+OPPORTUNITY_LLM_BACKFILL_CRON_MINUTE = os.getenv("OPPORTUNITY_LLM_BACKFILL_CRON_MINUTE", "7,37")
 CELERY_BEAT_SCHEDULER = os.getenv(
     "CELERY_BEAT_SCHEDULER",
     "celery.beat:PersistentScheduler",
@@ -464,6 +478,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
     },
 }
+if OPPORTUNITY_LLM_BACKFILL_ENABLED:
+    CELERY_BEAT_SCHEDULE["enrich-opportunity-llm-backfill"] = {
+        "task": "ai.enrich_opportunity_llm_backfill",
+        "schedule": crontab(minute=OPPORTUNITY_LLM_BACKFILL_CRON_MINUTE),
+    }
 
 OPPORTUNITY_SCHEDULER_BEAT_INTERVAL_SECONDS = int(
     os.getenv("OPPORTUNITY_SCHEDULER_BEAT_INTERVAL_SECONDS", str(15 * 60))
@@ -521,7 +540,13 @@ SOURCE_CONFIG = {
 }
 OPPORTUNITY_SOURCE_CONFIG = SOURCE_CONFIG
 SCRAPER_CONFIG = {
-    "linkedin": {"delay": (1, 2), "max_pages": 100, "max_empty_pages": 2, "max_failures": 3},
+    "linkedin": {
+        "delay": (1, 2),
+        "max_pages": 100,
+        "max_empty_pages": 2,
+        "max_failures": 3,
+        "fetch_details": os.getenv("LINKEDIN_FETCH_DETAILS", "1").lower() in {"1", "true", "yes", "on"},
+    },
     "keejob": {"delay": (0.5, 1.5), "max_pages": 1000, "max_empty_pages": 2},
     "marches_publics": {"delay": (1, 2), "max_pages": 1000, "max_empty_pages": 2},
     "emploi_tn": {"delay": (3, 6), "max_pages": 1000, "max_empty_pages": 2},

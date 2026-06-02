@@ -64,6 +64,27 @@ services:
       redis:
         condition: service_healthy
 
+  celery_enrichment:
+    image: bidwise-backend:latest
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: bidwise_celery_enrichment
+    command: celery -A config worker -l info -Q opportunity_enrichment --concurrency=1 --prefetch-multiplier=1
+    volumes:
+      - ./backend:/app
+      - ./.cache/huggingface:/home/appuser/.cache/huggingface
+    environment:
+      HF_HOME: /home/appuser/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /home/appuser/.cache/huggingface/sentence_transformers
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   celery_beat:
     image: bidwise-backend:latest
     build:
@@ -108,6 +129,8 @@ services:
       celery_worker:
         condition: service_started
       celery_profile:
+        condition: service_started
+      celery_enrichment:
         condition: service_started
 
   db:

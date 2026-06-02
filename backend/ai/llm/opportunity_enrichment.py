@@ -7,13 +7,12 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from ai.esco_skill_storage import (
+from ai.tasks import (
     SkillNormalizationStoragePayload,
     build_skill_normalization_payload,
     build_skill_storage_hash,
     clean_skill_storage_list,
     safe_normalization_error,
-    summarize_normalized_skill_entries,
 )
 from opportunities.models import Opportunite
 
@@ -29,6 +28,21 @@ LLM_OPPORTUNITY_ENRICHMENT_VERSION = "gemini-opportunity-enrichment-v2"
 MIN_CONFIDENCE_TO_APPLY = 0.75
 MAX_APPLIED_SKILLS = 18
 LLM_CANONICAL_EXTRACTION_SOURCES = {"gemini", "ollama", "fallback"}
+LOW_SIGNAL_SKILL_KEYS = {
+    "administration",
+    "administrative",
+    "analyse",
+    "analysis",
+    "coordination",
+    "delivery",
+    "employee",
+    "hygiene",
+    "integration",
+    "management",
+    "platform",
+    "quality",
+    "reporting",
+}
 
 
 def _normalize_key(value: Any) -> str:
@@ -48,7 +62,10 @@ def _content_hash(opportunity: Opportunite) -> str:
 
 def opportunity_needs_llm_enrichment(opportunity: Opportunite) -> bool:
     skills = clean_skill_storage_list(getattr(opportunity, "skills", []))
-    return len(skills) <= 1
+    if len(skills) <= 1:
+        return True
+    skill_keys = {_normalize_key(skill) for skill in skills}
+    return len(skill_keys) <= 5 and skill_keys.issubset(LOW_SIGNAL_SKILL_KEYS)
 
 
 def _source_text_for_validation(opportunity: Opportunite) -> str:
@@ -184,17 +201,15 @@ def _should_apply_extracted_skills(
     return _extraction_quality_score(result, extracted_skills) >= 4
 
 
-def _has_actionable_skill_support(result: LLMExtractionResult, summary) -> bool:
+def _has_actionable_skill_support(result: LLMExtractionResult, extracted_skills: list[str]) -> bool:
     """Avoid replacing skills with soft-trait-only labels.
 
     The LLM enrichment itself is still stored and used by JobBERT. This gate
     only decides whether the public/opportunity skill list should be replaced.
     """
-    if summary.official_matches + summary.legacy_matches >= 2:
+    if len(extracted_skills) >= 2:
         return True
-    if summary.official_matches + summary.legacy_matches >= 1 and (
-        result.tools or result.domains
-    ):
+    if len(extracted_skills) >= 1 and (result.tools or result.domains):
         return True
     if result.tools and (result.domains or result.responsibilities):
         return True
@@ -253,7 +268,7 @@ def _normalize_applied_skills(applied_skills: list[str]) -> tuple[SkillNormaliza
     try:
         return build_skill_normalization_payload(applied_skills), ""
     except Exception as exc:  # noqa: BLE001 - LLM enrichment must fail soft
-        logger.exception("LLM opportunity ESCO normalization failed")
+        logger.exception("LLM opportunity skill storage failed")
         return (
             SkillNormalizationStoragePayload(
                 raw_skills=applied_skills,
@@ -332,11 +347,9 @@ def enrich_opportunity_with_llm(
 
     normalization_payload = None
     normalization_error = ""
-    normalization_summary = summarize_normalized_skill_entries([])
     if should_apply:
         normalization_payload, normalization_error = _normalize_applied_skills(extracted_skills)
-        normalization_summary = summarize_normalized_skill_entries(normalization_payload.normalized_skills)
-        if not _has_actionable_skill_support(result, normalization_summary):
+        if not _has_actionable_skill_support(result, normalization_payload.raw_skills):
             should_apply = False
             replaced_previous_skills = False
             normalization_payload = None
@@ -347,7 +360,7 @@ def enrich_opportunity_with_llm(
         if not isinstance(locked_extra_data, dict):
             locked_extra_data = {}
 
-        update_fields = ["extra_data"]
+        update_fields = ["extra_data", "date_modification"]
         locked_extra_data = {
             **locked_extra_data,
             "llm_enrichment": _build_llm_metadata(
@@ -421,7 +434,5 @@ def enrich_opportunity_with_llm(
         "responsibilities": result.responsibilities,
         "requirements": result.requirements,
         "normalized_skills_count": len(normalization_payload.normalized_skills) if normalization_payload else 0,
-        "official_matches": normalization_summary.official_matches,
-        "legacy_matches": normalization_summary.legacy_matches,
         "normalization_error": normalization_error,
     }

@@ -165,6 +165,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
               visibleSkills={viewModel.visibleSkills}
               hiddenSkillsCount={viewModel.hiddenSkillsCount}
               showAllSkills={showAllSkills}
+              skillsDetectedByAi={viewModel.skillsDetectedByAi}
               onToggleSkills={() => setShowAllSkills((previous) => !previous)}
             />
           ) : null}

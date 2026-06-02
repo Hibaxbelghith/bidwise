@@ -355,7 +355,7 @@ class ProfileAutocompleteIndexTests(TestCase):
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
         profile = serializer.save()
-        self.assertEqual(profile.domaines_interet, ["HEALTHCARE", "ECOMMERCE"])
+        self.assertEqual(profile.domaines_interet, ["healthcare", "sales_business"])
 
     def test_profile_serializer_filters_polluted_target_roles(self):
         serializer = ProfilUpdateSerializer(
@@ -413,7 +413,7 @@ class ProfileAutocompleteIndexTests(TestCase):
         self.assertIn("dry_run: True", out.getvalue())
         self.assertIn("changed: 1", out.getvalue())
 
-    def test_profile_term_normalization_canonicalizes_skill_aliases(self):
+    def test_profile_term_normalization_canonicalizes_known_skill_labels(self):
         normalized = normalize_profile_terms(
             ProfileSuggestionType.SKILL,
             ["css", "js", "py", "react.js", "nodejs"],

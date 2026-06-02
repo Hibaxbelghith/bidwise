@@ -52,15 +52,6 @@ const getRecommendationPayload = (opportunity) => {
   return hasRecommendationSignal ? payload : null;
 };
 
-const isBenchmarkSource = (opportunity) => {
-  const sourceName = String(opportunity?.source?.nom || '').trim().toLowerCase();
-  const sourceUrl = String(opportunity?.source_item_url || '').trim().toLowerCase();
-  return (
-    sourceName.includes('bidwise recommendation benchmark') ||
-    sourceUrl.includes('benchmark.bidwise.local')
-  );
-};
-
 export const buildOpportunityDetailViewModel = (opportunity) => {
   if (!opportunity) return null;
 
@@ -70,7 +61,6 @@ export const buildOpportunityDetailViewModel = (opportunity) => {
   const projectDocuments = getProjectDocuments(opportunity);
   const descriptionText = buildDescriptionText(opportunity);
   const isProject = opportunity.type_opportunite === 'PROJET';
-  const hideSource = isBenchmarkSource(opportunity);
 
   return {
     id: opportunity.id,
@@ -79,8 +69,8 @@ export const buildOpportunityDetailViewModel = (opportunity) => {
     statusLabel: getOpportunityStatusLabel(opportunity.statut),
     statusBadgeVariant: opportunity?.statut === 'ACTIVE' ? 'default' : 'outline',
     organizationLabel: formatOrganizationLabel(opportunity),
-    sourceName: hideSource ? '' : String(opportunity.source?.nom || '').trim(),
-    sourceUrl: hideSource ? '' : String(opportunity.source_item_url || '').trim(),
+    sourceName: String(opportunity.source?.nom || '').trim(),
+    sourceUrl: String(opportunity.source_item_url || '').trim(),
     publishedDateLabel: formatDate(opportunity.date_publication),
     deadlineDateLabel: opportunity.date_limite ? formatDate(opportunity.date_limite) : '',
     descriptionMarkup: buildDescriptionMarkup(opportunity),
@@ -109,6 +99,7 @@ export const buildOpportunityDetailViewModel = (opportunity) => {
     primaryActionLabel: isProject ? 'Open source' : 'Apply',
     companyLogo: getCompanyLogoAsset(opportunity),
     skills: getSkills(opportunity),
+    skillsDetectedByAi: extraData?.llm_enrichment?.skills_source === 'llm',
     languagesLabel: getLanguagePreview(opportunity, 3).join(', '),
   };
 };

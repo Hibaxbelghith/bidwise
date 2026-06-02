@@ -68,13 +68,14 @@ def apply_llm_hierarchy_validation_to_ranked(
     profile_strength: dict[str, Any] | None = None,
     top_n: int | None = None,
     min_score: float | None = None,
+    cache_only: bool = False,
 ) -> dict[str, int]:
     if not recommendation_llm_hierarchy_enabled():
-        return {"eligible": 0, "validated": 0, "errors": 0}
+        return {"eligible": 0, "validated": 0, "errors": 0, "cache_misses": 0}
 
     effective_top_n = recommendation_llm_top_n() if top_n is None else max(1, int(top_n))
     effective_min_score = recommendation_llm_min_score() if min_score is None else min_score
-    stats = {"eligible": 0, "validated": 0, "errors": 0}
+    stats = {"eligible": 0, "validated": 0, "errors": 0, "cache_misses": 0}
 
     for opportunity in list(ranked)[:effective_top_n]:
         evidence = build_recommendation_evidence(features, opportunity, profile_strength)
@@ -91,10 +92,14 @@ def apply_llm_hierarchy_validation_to_ranked(
             result = _validate_hierarchy_with_cache(
                 profile_text=profile_text,
                 opportunity=opportunity,
+                cache_only=cache_only,
             )
         except (LLMProviderUnavailable, LLMTransientProviderError, LLMProviderError) as exc:
             stats["errors"] += 1
             _record_llm_error(opportunity, exc)
+            continue
+        if result is None:
+            stats["cache_misses"] += 1
             continue
 
         _apply_llm_hierarchy_result(opportunity, result, features=features)
@@ -112,7 +117,8 @@ def _validate_hierarchy_with_cache(
     *,
     profile_text: str,
     opportunity,
-) -> LLMHierarchyValidation:
+    cache_only: bool = False,
+) -> LLMHierarchyValidation | None:
     debug = getattr(opportunity, "recommendation_debug", {}) or {}
     validation = debug.get("hierarchy_validation", {}) if isinstance(debug, dict) else {}
     opportunity_skills = _opportunity_skills(opportunity)
@@ -131,6 +137,9 @@ def _validate_hierarchy_with_cache(
     if cached is not None:
         _record_cache_hit(opportunity)
         return cached
+    if cache_only:
+        _record_cache_miss(opportunity)
+        return None
 
     result = validate_hierarchy_with_llm(
         profile_text=profile_text,
@@ -274,6 +283,14 @@ def _record_cache_hit(opportunity) -> None:
     debug = getattr(opportunity, "recommendation_debug", {}) or {}
     if isinstance(debug, dict):
         debug["llm_hierarchy_cache_hit"] = True
+        setattr(opportunity, "recommendation_debug", debug)
+
+
+def _record_cache_miss(opportunity) -> None:
+    debug = getattr(opportunity, "recommendation_debug", {}) or {}
+    if isinstance(debug, dict):
+        debug["llm_hierarchy_cache_hit"] = False
+        debug["llm_hierarchy_cache_only_miss"] = True
         setattr(opportunity, "recommendation_debug", debug)
 
 

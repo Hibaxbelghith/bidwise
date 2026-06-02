@@ -211,7 +211,11 @@ def _build_scraper_kwargs(source_key, scraper_cls, options):
         "min_delay": options.get("min_delay") if options.get("min_delay") is not None else default_min_delay,
         "max_delay": options.get("max_delay") if options.get("max_delay") is not None else default_max_delay,
         "stage_only": options.get("stage_only"),
-        "fetch_details": options.get("fetch_details"),
+        "fetch_details": (
+            options.get("fetch_details")
+            if options.get("fetch_details") is not None
+            else source_config.get("fetch_details")
+        ),
     }
     init_signature = inspect.signature(scraper_cls.__init__)
     return {

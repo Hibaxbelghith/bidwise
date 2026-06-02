@@ -159,6 +159,7 @@ const OpportunityDetailPage = () => {
                 visibleSkills={viewModel.visibleSkills}
                 hiddenSkillsCount={viewModel.hiddenSkillsCount}
                 showAllSkills={detailPage.showAllSkills}
+                skillsDetectedByAi={viewModel.skillsDetectedByAi}
                 onToggleSkills={detailPage.toggleSkills}
               />
             ) : null}

@@ -235,6 +235,70 @@ class RecommendationQualityGateTests(TestCase):
         self.assertEqual(bucket, BUCKET_STRONG_MATCH)
         self.assertIn("Strong role", reason)
 
+    def test_bucket_promotes_jobbert_title_match_without_structured_skills(self):
+        opportunity = self.create_opportunity(
+            "Procurement Specialist",
+            0.59,
+            skills=[],
+            match_score=0.63,
+            semantic_score=0.59,
+        )
+        features = {
+            "target_roles": ["Procurement Specialist"],
+            "roles": ["Procurement Specialist"],
+            "skills": ["Vendor negotiation", "Supplier management"],
+            "profile_skills": ["Vendor negotiation", "Supplier management"],
+            "experience_level": "CONFIRME",
+            "locations": ["Tunis"],
+        }
+        evidence = build_recommendation_evidence(features, opportunity)
+
+        bucket, reason = classify_recommendation_bucket(
+            features=features,
+            opportunity=opportunity,
+            evidence=evidence,
+        )
+
+        self.assertEqual(bucket, BUCKET_STRONG_MATCH)
+        self.assertIn("semantic title match", reason)
+
+    def test_bucket_does_not_promote_semantic_title_match_with_family_mismatch(self):
+        opportunity = self.create_opportunity(
+            "DevOps Engineer",
+            0.59,
+            skills=[],
+            match_score=0.63,
+            semantic_score=0.59,
+            extra_data={
+                "llm_enrichment": {
+                    "confidence": 1.0,
+                    "family_confidence": 1.0,
+                    "business_families": ["accounting_finance_audit"],
+                }
+            },
+        )
+        features = {
+            "target_roles": ["DevOps Engineer"],
+            "roles": ["DevOps Engineer"],
+            "skills": ["Docker", "Kubernetes", "Terraform"],
+            "profile_skills": ["Docker", "Kubernetes", "Terraform"],
+            "profile_business_families": ["devops_cloud_infrastructure"],
+            "profile_family_confidence": 1.0,
+            "experience_level": "CONFIRME",
+            "locations": ["Tunis"],
+        }
+        evidence = build_recommendation_evidence(features, opportunity)
+
+        bucket, reason = classify_recommendation_bucket(
+            features=features,
+            opportunity=opportunity,
+            evidence=evidence,
+        )
+
+        self.assertTrue(evidence["llm_family_mismatch"])
+        self.assertEqual(bucket, BUCKET_RELATED_REVIEW)
+        self.assertIn("needs review", reason)
+
     def test_bucket_keeps_confirmed_accountant_in_review_despite_skill_evidence(self):
         opportunity = self.create_opportunity(
             "Comptable Confirmé - Tunis",
@@ -272,6 +336,179 @@ class RecommendationQualityGateTests(TestCase):
 
         self.assertEqual(bucket, BUCKET_RELATED_REVIEW)
         self.assertIn("hierarchy gap", reason.lower())
+
+    def test_bucket_allows_compatible_confirmed_backend_when_role_and_semantic_are_strong(self):
+        opportunity = self.create_opportunity(
+            "Back End Developer",
+            0.60,
+            skills=["Docker"],
+            match_score=0.86,
+            semantic_score=0.60,
+            recommendation_debug={
+                "ai_metier_evidence": True,
+                "role_semantic_score": 0.69,
+                "hierarchy_validation": {
+                    "hierarchy_issue": "none",
+                    "needs_llm": True,
+                    "seniority_gap": 1,
+                    "qualification_gap": 0,
+                    "responsibility_gap": 0,
+                    "score_multiplier": 1.0,
+                    "is_compatible": True,
+                    "reason": "Slight hierarchy gap; keep as reviewable",
+                }
+            },
+        )
+        features = {
+            "target_roles": ["Backend Developer"],
+            "roles": ["Backend Developer"],
+            "skills": ["Python", "Django", "Docker"],
+            "profile_skills": ["Python", "Django", "Docker"],
+            "experience_level": "JUNIOR",
+            "locations": ["Sousse"],
+        }
+        evidence = build_recommendation_evidence(features, opportunity)
+
+        bucket, reason = classify_recommendation_bucket(
+            features=features,
+            opportunity=opportunity,
+            evidence=evidence,
+        )
+
+        self.assertEqual(bucket, BUCKET_STRONG_MATCH)
+        self.assertIn("Strong role", reason)
+
+    def test_role_semantic_only_without_skills_needs_stronger_confirmation(self):
+        opportunity = self.create_opportunity(
+            "Platform Engineer",
+            0.61,
+            description=(
+                "Build and maintain internal platform services with observability, deployment, "
+                "and developer tooling responsibilities."
+            ),
+            skills=[],
+            match_score=0.66,
+            semantic_score=0.61,
+            recommendation_debug={
+                "ai_metier_evidence": True,
+                "role_semantic_score": 0.70,
+                "hierarchy_validation": {
+                    "hierarchy_issue": "none",
+                    "needs_llm": False,
+                    "seniority_gap": 0,
+                    "qualification_gap": 0,
+                    "responsibility_gap": 0,
+                    "score_multiplier": 1.0,
+                    "is_compatible": True,
+                    "reason": "",
+                },
+            },
+        )
+        features = {
+            "target_roles": ["Backend Developer"],
+            "roles": ["Backend Developer"],
+            "skills": ["Python", "Django", "Docker"],
+            "profile_skills": ["Python", "Django", "Docker"],
+            "experience_level": "JUNIOR",
+        }
+        evidence = build_recommendation_evidence(features, opportunity)
+
+        bucket, reason = classify_recommendation_bucket(
+            features=features,
+            opportunity=opportunity,
+            evidence=evidence,
+        )
+
+        self.assertEqual(bucket, BUCKET_RELATED_REVIEW)
+        self.assertIn("stronger semantic confirmation", reason)
+
+    def test_skill_only_accounting_office_manager_stays_related_without_role_alignment(self):
+        opportunity = self.create_opportunity(
+            "Gestionnaire de Bureau (H/F) - Tunis",
+            0.64,
+            description=(
+                "Gestion administrative et financiere, facturation clients et fournisseurs, "
+                "suivi des reglements et documents comptables."
+            ),
+            skills=["Comptabilité", "Facturation", "Gestion administrative"],
+            match_score=0.75,
+            semantic_score=0.64,
+            recommendation_debug={
+                "ai_metier_evidence": True,
+                "role_semantic_score": 0.41,
+                "hierarchy_validation": {
+                    "hierarchy_issue": "none",
+                    "needs_llm": False,
+                    "seniority_gap": 0,
+                    "qualification_gap": 0,
+                    "responsibility_gap": 0,
+                    "score_multiplier": 1.0,
+                    "is_compatible": True,
+                    "reason": "",
+                },
+            },
+        )
+        features = {
+            "target_roles": ["Comptable"],
+            "roles": ["Comptable"],
+            "skills": ["Excel", "Audit", "Comptabilité", "Déclarations fiscales"],
+            "profile_skills": ["Excel", "Audit", "Comptabilité", "Déclarations fiscales"],
+            "experience_level": "JUNIOR",
+        }
+        evidence = build_recommendation_evidence(features, opportunity)
+
+        bucket, reason = classify_recommendation_bucket(
+            features=features,
+            opportunity=opportunity,
+            evidence=evidence,
+        )
+
+        self.assertFalse(evidence["role_match"])
+        self.assertGreater(evidence["profile_skill_overlap"], 0)
+        self.assertEqual(bucket, BUCKET_RELATED_REVIEW)
+        self.assertIn("without confirmed role alignment", reason)
+
+    def test_assistant_comptable_stays_strong_with_confirmed_role_alignment(self):
+        opportunity = self.create_opportunity(
+            "Assistant Comptable - Tunis",
+            0.64,
+            description="Saisie comptable, rapprochement bancaire, declarations fiscales et suivi administratif.",
+            skills=["Comptabilité", "Excel", "Déclarations fiscales"],
+            match_score=0.82,
+            semantic_score=0.64,
+            recommendation_debug={
+                "ai_metier_evidence": True,
+                "role_semantic_score": 0.69,
+                "hierarchy_validation": {
+                    "hierarchy_issue": "none",
+                    "needs_llm": False,
+                    "seniority_gap": 0,
+                    "qualification_gap": 0,
+                    "responsibility_gap": 0,
+                    "score_multiplier": 1.0,
+                    "is_compatible": True,
+                    "reason": "",
+                },
+            },
+        )
+        features = {
+            "target_roles": ["Comptable"],
+            "roles": ["Comptable"],
+            "skills": ["Excel", "Audit", "Comptabilité", "Déclarations fiscales"],
+            "profile_skills": ["Excel", "Audit", "Comptabilité", "Déclarations fiscales"],
+            "experience_level": "JUNIOR",
+        }
+        evidence = build_recommendation_evidence(features, opportunity)
+
+        bucket, reason = classify_recommendation_bucket(
+            features=features,
+            opportunity=opportunity,
+            evidence=evidence,
+        )
+
+        self.assertTrue(evidence["role_match"])
+        self.assertEqual(bucket, BUCKET_STRONG_MATCH)
+        self.assertIn("Strong role", reason)
 
     def test_role_evidence_does_not_treat_customer_support_as_support_it(self):
         opportunity = self.create_opportunity(
@@ -358,6 +595,15 @@ class RecommendationQualityGateTests(TestCase):
         ProfileResume.objects.create(
             profile=user.profil,
             parsed_text="Backend Django APIs PostgreSQL Redis Celery",
+            extracted_skills=["Django", "PostgreSQL", "Redis", "Celery"],
+            semantic_resume_status="SUCCEEDED",
+            semantic_resume_confidence=0.9,
+            semantic_resume_metadata={
+                "business_families": ["software_web"],
+                "family_confidence": 0.9,
+                "target_roles": ["Backend Developer"],
+                "canonical_role": "Backend Developer",
+            },
             is_active=True,
         )
         user.profil.embedding_content_hash = build_profile_embedding_content_hash(user.profil)
@@ -446,7 +692,7 @@ class RecommendationQualityGateTests(TestCase):
         user.profil.embedding_content_hash = build_profile_embedding_content_hash(user.profil)
         user.profil.embedding_features_hash = user.profil.embedding_content_hash
         user.profil.save(update_fields=["embedding_content_hash", "embedding_features_hash"])
-        backend = self.create_opportunity("API Platform Engineer", 0.61)
+        backend = self.create_opportunity("Backend Developer", 0.75)
         self.create_opportunity("Restaurant Manager", 0.45, skills=["Hospitality"])
 
         response = self.get_recommendations(user)
@@ -714,6 +960,7 @@ class RecommendationQualityGateTests(TestCase):
         features = {
             "profile_skills": ["React", "JavaScript"],
             "skills": ["React", "JavaScript"],
+            "profile_business_families": ["software_web"],
             "target_roles": ["Frontend Developer"],
             "roles": ["Frontend Developer"],
         }
@@ -751,7 +998,7 @@ class RecommendationQualityGateTests(TestCase):
             description="Role: Comptable saisie.",
             skills=[],
             ville="Tunis",
-            embedding_vector=vector_with_similarity(0.58),
+            embedding_vector=vector_with_similarity(0.63),
             date_publication=date.today(),
         )
         excel_only = SimpleNamespace(
@@ -774,6 +1021,7 @@ class RecommendationQualityGateTests(TestCase):
         features = {
             "profile_skills": ["React", "JavaScript"],
             "skills": ["React", "JavaScript"],
+            "profile_business_families": ["software_web"],
             "target_roles": ["Frontend Developer"],
             "roles": ["Frontend Developer"],
         }
@@ -789,7 +1037,7 @@ class RecommendationQualityGateTests(TestCase):
                     "business_families": ["frontend"],
                 }
             },
-            embedding_vector=vector_with_similarity(0.58),
+            embedding_vector=vector_with_similarity(0.63),
             date_publication=date.today(),
         )
         sales = SimpleNamespace(
@@ -822,6 +1070,37 @@ class RecommendationQualityGateTests(TestCase):
             ranked[1].recommendation_debug["llm_business_family_mismatch_penalty"],
             0,
         )
+
+    def test_low_score_family_only_match_does_not_show_job_family_reason(self):
+        features = {
+            "profile_skills": ["Windows", "Active Directory"],
+            "skills": ["Windows", "Active Directory"],
+            "profile_business_families": ["it_network_support"],
+            "profile_family_confidence": 0.9,
+            "target_roles": ["Technicien support informatique"],
+            "roles": ["Technicien support informatique"],
+        }
+        opportunity = SimpleNamespace(
+            id=1,
+            titre="Agent de Service Support Agent d Entretien",
+            description="Entretien des locaux et services generaux.",
+            skills=[],
+            extra_data={
+                "llm_enrichment": {
+                    "confidence": 0.9,
+                    "family_confidence": 0.9,
+                    "business_families": ["it_network_support"],
+                }
+            },
+            embedding_vector=vector_with_similarity(0.44),
+            date_publication=date.today(),
+        )
+
+        from ai.recommendation_service import rank_opportunities
+
+        ranked = rank_opportunities(user_vector(), [opportunity], features=features)
+
+        self.assertNotIn("Related job family signal detected", ranked[0].reason)
 
     def test_clear_devops_profile_strictly_penalizes_accounting_family(self):
         features = {
@@ -972,7 +1251,7 @@ class RecommendationQualityGateTests(TestCase):
         tech_support = SimpleNamespace(
             titre="Technical Support Specialist",
             description="Technical IT support for networks, servers and routing incidents.",
-            skills=[],
+            skills=["Support"],
             semantic_score=0.45,
             match_score=0.45,
         )
@@ -1010,6 +1289,7 @@ class RecommendationQualityGateTests(TestCase):
         features = {
             "profile_skills": ["React", "JavaScript", "Node.js"],
             "skills": ["React", "JavaScript", "Node.js"],
+            "profile_business_families": ["software_web"],
             "target_roles": ["Frontend Developer"],
             "roles": ["Frontend Developer"],
         }
@@ -1018,6 +1298,13 @@ class RecommendationQualityGateTests(TestCase):
             titre="Mid-Senior Frontend Engineer - Design System",
             description="Build component libraries and user interfaces.",
             skills=[],
+            extra_data={
+                "llm_enrichment": {
+                    "business_families": ["software_web"],
+                    "family_confidence": 0.9,
+                    "confidence": 0.9,
+                }
+            },
             semantic_score=0.63,
             match_score=0.67,
         )
@@ -1038,6 +1325,7 @@ class RecommendationQualityGateTests(TestCase):
         features = {
             "profile_skills": ["React", "JavaScript", "Node.js"],
             "skills": ["React", "JavaScript", "Node.js"],
+            "profile_business_families": ["software_web"],
             "target_roles": ["Frontend Developer"],
             "roles": ["Frontend Developer"],
         }
@@ -1049,6 +1337,13 @@ class RecommendationQualityGateTests(TestCase):
                 "marketing coordination, support, and design collaboration."
             ),
             skills=[],
+            extra_data={
+                "llm_enrichment": {
+                    "business_families": ["hr_administration"],
+                    "family_confidence": 0.9,
+                    "confidence": 0.9,
+                }
+            },
             semantic_score=0.63,
             match_score=0.61,
         )
@@ -1177,7 +1472,13 @@ class RecommendationQualityGateTests(TestCase):
             competences=["Python"],
             opportunity_types=["JOB"],
         )
-        self.create_opportunity("Python Developer", 0.50, skills=["Python"])
+        opportunity = self.create_opportunity(
+            "Python Developer",
+            0.50,
+            description="Build Python services and APIs.",
+            source_item_url="https://example.test/jobs/python-developer",
+            skills=["Python"],
+        )
 
         response = self.get_recommendations(user)
 
@@ -1186,6 +1487,10 @@ class RecommendationQualityGateTests(TestCase):
             self.assertIn(field, item)
         for field in ("recommendation_confidence", "profile_strength", "recommendation_mode", "evidence_summary"):
             self.assertIn(field, item)
+        self.assertEqual(item["description"], opportunity.description)
+        self.assertEqual(item["source_item_url"], opportunity.source_item_url)
+        self.assertEqual(item["skills"], ["Python"])
+        self.assertEqual(item["source"]["nom"], self.source.nom)
 
     def test_pgvector_retrieval_entrypoint_is_still_used(self):
         user = self.create_user(

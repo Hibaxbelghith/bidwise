@@ -10,8 +10,6 @@ from django.db import transaction
 from rest_framework import serializers
 from ai.business_families import CONTROLLED_FAMILIES, normalize_family
 from ai.embeddings import enqueue_profile_embedding_refresh
-from ai.esco_skill_storage import clean_skill_storage_list
-from ai.tasks import enqueue_profile_skill_normalization
 from .models import Utilisateur, Profil, ProfileResume, OrganizationProfile
 from opportunities.autocomplete.service import normalize_profile_terms
 from opportunities.normalization.employment import (
@@ -105,6 +103,9 @@ PROFILE_BUSINESS_FAMILY_ALIASES = {
     "santé": "healthcare",
     "health": "healthcare",
     "medical": "healthcare",
+    "ecommerce": "sales_business",
+    "e_commerce": "sales_business",
+    "commerce_en_ligne": "sales_business",
 }
 
 TUNISIAN_LOCATIONS = (
@@ -309,9 +310,7 @@ def _normalize_profile_business_families(value):
         key = _profile_term_key(item)
         canonical = PROFILE_BUSINESS_FAMILY_ALIASES.get(key) or normalize_family(key)
         if not canonical or canonical not in CONTROLLED_FAMILIES:
-            raise serializers.ValidationError(
-                "Select a valid sector from the approved business family list."
-            )
+            continue
         canonical = PROFILE_BUSINESS_FAMILY_ALIASES.get(canonical, canonical)
         if canonical in seen:
             continue
@@ -1101,8 +1100,10 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
 
         if should_refresh_skill_normalization:
-            instance.raw_skills = clean_skill_storage_list(
-                validated_data.get("competences", [])
+            instance.raw_skills = _normalize_text_list(
+                validated_data.get("competences", []),
+                strict_items=True,
+                max_item_length=PROFILE_LIST_ITEM_MAX_LENGTH,
             )
             instance.normalized_skills = []
             instance.skills_normalization_hash = ""
@@ -1119,10 +1120,6 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             instance.embedding_content_hash = ''
 
         instance.save()
-        if should_refresh_skill_normalization:
-            transaction.on_commit(
-                lambda profile_id=instance.pk: enqueue_profile_skill_normalization(profile_id)
-            )
         if should_invalidate_embedding:
             transaction.on_commit(
                 lambda profile_id=instance.pk: enqueue_profile_embedding_refresh(profile_id)

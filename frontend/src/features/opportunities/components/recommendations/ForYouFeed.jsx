@@ -34,6 +34,31 @@ const getItemScorePercent = (item) =>
 const getRecommendationBucket = (item) =>
   String(item?.recommendation?.recommendation_bucket || '').trim().toUpperCase();
 
+const feedIdentity = (item) => {
+  const id = String(item?.id || '').trim();
+  if (id) return `id:${id}`;
+  return [
+    item?.titre,
+    item?.organisation_nom,
+    item?.ville,
+    item?.contract_type,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .join('|');
+};
+
+const dedupeFeedItems = (items = []) => {
+  const seen = new Set();
+  const unique = [];
+  for (const item of items) {
+    const key = feedIdentity(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+  }
+  return unique;
+};
+
 const isResumeStillPreparing = (user) => {
   const resume = user?.profil?.active_resume;
   if (!resume) return false;
@@ -126,7 +151,10 @@ const ForYouFeed = ({
     recommendedOpportunities,
   ]);
 
-  const visibleItems = feedItems.slice(0, CURATED_FEED_LIMIT);
+  const visibleItems = useMemo(
+    () => dedupeFeedItems(feedItems).slice(0, CURATED_FEED_LIMIT),
+    [feedItems],
+  );
   const strongMatchItems = useMemo(
     () =>
       visibleItems.filter((item) => {

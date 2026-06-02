@@ -86,7 +86,7 @@ const buildSignalChips = (recommendation = {}) => {
   };
 
   if (evidence.role_match) add('role', 'Role', 'strong');
-  if (Number(evidence.skill_overlap) > 0 || rawReasons.some((reason) => /skill|alignment/i.test(reason))) {
+  if (Number(evidence.skill_overlap) > 0 || Number(evidence.profile_skill_overlap) > 0) {
     add('skills', 'Skill match', 'strong');
   }
   if (evidence.llm_family_match) add('family', 'Job category', 'strong');
@@ -212,6 +212,8 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
   const confidenceLabel = isSparseProfile
     ? 'Limited profile data'
     : CONFIDENCE_LABELS[confidenceKey] || 'Confidence improving';
+  const bucket = normalizeText(recommendation.recommendation_bucket).toUpperCase();
+  const isStrongBucket = bucket === 'STRONG_MATCH';
   const tone = getRecommendationTone(recommendation);
   const rawReasons = normalizeArray(recommendation.reasons || recommendation.reason);
   const evidenceReasons = buildEvidenceReasons(recommendation.evidence_summary);
@@ -232,16 +234,21 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     scorePercent && scorePercent > 0 ? `${scorePercent}% match` : scoreLabel;
   const signalChips = buildSignalChips(recommendation);
   const primaryReason = visibleReasons[0] || '';
+  const bucketReason = normalizeText(recommendation.recommendation_bucket_reason).replace(/[.!?]+$/, '');
+  const highScoreRelatedReason =
+    bucket === 'RELATED_REVIEW' && scorePercent >= 75 && bucketReason
+      ? bucketReason
+      : '';
   const matchSummary =
     options.context === 'detail'
-      ? scorePercent >= 70 && primaryReason
+      ? isStrongBucket && scorePercent >= 70 && primaryReason
         ? `Recommended to apply: ${primaryReason}.`
         : scorePercent >= 60 && primaryReason
-          ? `Good fit, but review the details: ${primaryReason}.`
+          ? `Good fit, but review the details: ${primaryReason}.${highScoreRelatedReason ? ` ${highScoreRelatedReason}.` : ''}`
           : primaryReason
             ? `Worth reviewing before applying: ${primaryReason}.`
             : `${fitLabel} based on your profile signals.`
-      : scorePercent >= 70 && primaryReason
+      : isStrongBucket && scorePercent >= 70 && primaryReason
         ? `${primaryReason}.`
         : scorePercent >= 60 && primaryReason
           ? `Good fit: ${primaryReason}.`
@@ -250,7 +257,7 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
             : `${fitLabel} based on your profile signals.`;
   const panelTitle = options.context === 'detail' ? 'Your fit' : 'Recommendation match';
   const verdictLabel =
-    scorePercent >= 70
+    isStrongBucket && scorePercent >= 70
       ? 'Recommended to apply'
       : scorePercent >= 60
         ? 'Good fit'
@@ -258,11 +265,12 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
           ? 'Worth reviewing'
           : scoreLabel;
   const verdictDescription =
-    scorePercent >= 70
+    isStrongBucket && scorePercent >= 70
       ? 'Your profile has strong evidence for this opportunity.'
       : scorePercent >= 60
         ? 'The opportunity is relevant, but review the gaps before applying.'
         : 'Review the details carefully before deciding.';
+  const isRecommendedToApply = verdictLabel === 'Recommended to apply';
 
   return {
     scorePercent,
@@ -276,6 +284,7 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     panelTitle,
     verdictLabel,
     verdictDescription,
+    reviewLabel: isRecommendedToApply ? 'Details to confirm' : 'Review before applying',
     gaps: dedupe(gaps).slice(0, options.gapLimit || 4),
     hasGaps: gaps.length > 0,
     tone,

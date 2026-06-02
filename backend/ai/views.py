@@ -1,7 +1,10 @@
 import logging
+import hashlib
+import json
 
 from django.conf import settings
-from django.db.models import Count, Q
+from django.core.cache import cache
+from django.db.models import Count, Max, Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -45,6 +48,7 @@ logger = logging.getLogger(__name__)
 MAX_RECOMMENDATIONS = 50
 DEFAULT_RECOMMENDATIONS = 10
 MIN_MATCH_SCORE = 0.1
+RECOMMENDATIONS_CACHE_TTL_SECONDS = 15 * 60
 SHOW_RECENT_FALLBACK_SETTING = "RECOMMENDATION_SHOW_RECENT_FALLBACK"
 BUSINESS_RERANK_CANDIDATES = 50
 JOBBERT_RETRIEVAL_CANDIDATES = 2500
@@ -162,6 +166,59 @@ def _parse_limit(value):
     return max(1, min(parsed, MAX_RECOMMENDATIONS))
 
 
+def _stable_hash(payload):
+    try:
+        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    except TypeError:
+        raw = str(payload)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _active_opportunities_cache_marker():
+    queryset = _exclude_internal_benchmark_opportunities(
+        Opportunite.objects.filter(statut=StatutOpportunite.ACTIVE)
+    )
+    marker = queryset.aggregate(
+        count=Count("id"),
+        latest_modified=Max("date_modification"),
+    )
+    return {
+        "count": int(marker.get("count") or 0),
+        "latest_modified": marker.get("latest_modified"),
+    }
+
+
+def _followed_opportunities_cache_marker(user):
+    values = _safe_followed_opportunity_ids(user)
+    return _stable_hash(sorted(int(item) for item in values if item))
+
+
+def _recommendations_cache_key(request, limit):
+    try:
+        profile = request.user.profil
+    except Profil.DoesNotExist:
+        return None
+
+    features = build_user_features(profile)
+    profile_marker = {
+        "features": features,
+        "embedding_content_hash": getattr(profile, "embedding_content_hash", ""),
+        "embedding_updated_at": getattr(profile, "embedding_updated_at", None),
+        "jobbert_embedding_content_hash": getattr(profile, "jobbert_embedding_content_hash", ""),
+        "jobbert_embedding_updated_at": getattr(profile, "jobbert_embedding_updated_at", None),
+    }
+    key_payload = {
+        "version": 1,
+        "user_id": getattr(request.user, "pk", None),
+        "profile_id": getattr(profile, "pk", None),
+        "limit": int(limit),
+        "profile": profile_marker,
+        "opportunities": _active_opportunities_cache_marker(),
+        "followed": _followed_opportunities_cache_marker(request.user),
+    }
+    return f"ai:recommendations:{_stable_hash(key_payload)}"
+
+
 def _profile_opportunity_types(profile):
     selected = getattr(profile, "opportunity_types", []) or []
     normalized = []
@@ -170,6 +227,67 @@ def _profile_opportunity_types(profile):
         if mapped and mapped not in normalized:
             normalized.append(mapped)
     return normalized
+
+
+def _source_payload(opportunity):
+    source = getattr(opportunity, "source", None)
+    if not source:
+        return None
+    return {
+        "id": source.id,
+        "nom": source.nom,
+        "url": source.url,
+        "type_source": source.type_source,
+    }
+
+
+def _as_list(value):
+    return value if isinstance(value, list) else []
+
+
+def _opportunity_payload(opportunity):
+    date_publication = getattr(opportunity, "date_publication", None)
+    date_limite = getattr(opportunity, "date_limite", None)
+    date_creation = getattr(opportunity, "date_creation", None)
+    date_modification = getattr(opportunity, "date_modification", None)
+    return {
+        "id": opportunity.id,
+        "titre": opportunity.titre,
+        "title": opportunity.titre,
+        "description": opportunity.description or "",
+        "description_html": opportunity.description_html or "",
+        "organisation_nom": opportunity.organisation_nom or "",
+        "company": opportunity.organisation_nom or "",
+        "company_logo": opportunity.company_logo or "",
+        "ville": opportunity.ville or "",
+        "location": opportunity.ville or "",
+        "type_opportunite": opportunity.type_opportunite,
+        "type": opportunity.type_opportunite,
+        "statut": opportunity.statut,
+        "date_publication": date_publication.isoformat() if date_publication else None,
+        "date_limite": date_limite.isoformat() if date_limite else None,
+        "date_creation": date_creation.isoformat() if date_creation else None,
+        "date_modification": date_modification.isoformat() if date_modification else None,
+        "source_item_url": opportunity.source_item_url or "",
+        "source": _source_payload(opportunity),
+        "salary": opportunity.salary or "",
+        "contract_type": opportunity.contract_type or "",
+        "availability": opportunity.availability or "",
+        "education_level": opportunity.education_level or "",
+        "experience_min": opportunity.experience_min,
+        "experience_max": opportunity.experience_max,
+        "experience_years": opportunity.experience_years,
+        "normalized_contract_types": _as_list(opportunity.normalized_contract_types),
+        "normalized_work_mode": opportunity.normalized_work_mode or "",
+        "normalized_schedule": opportunity.normalized_schedule or "",
+        "normalized_industries": _as_list(opportunity.normalized_industries),
+        "skills": _as_list(opportunity.skills),
+        "raw_skills": _as_list(opportunity.raw_skills),
+        "normalized_skills": _as_list(opportunity.normalized_skills),
+        "languages": _as_list(opportunity.languages),
+        "languages_fallback": _as_list(opportunity.languages_fallback),
+        "extra_data": opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {},
+    }
 
 
 def _serialize_recommendation(opportunity, *, features=None, profile_strength=None):
@@ -198,9 +316,8 @@ def _serialize_recommendation(opportunity, *, features=None, profile_strength=No
     reasons = sanitize_recommendation_reasons(reasons, evidence)
     gaps = sanitize_recommendation_gaps(explanation["gaps"])
     profile_strength_level = (profile_strength or {}).get("level", "LOW")
-    return {
-        "id": opportunity.id,
-        "title": opportunity.titre,
+    payload = _opportunity_payload(opportunity)
+    payload.update({
         "score": round(float(score or 0.0), 4),
         "match_score": round(float(score or 0.0), 4),
         "semantic_score": round(float(semantic_score or 0.0), 4),
@@ -227,19 +344,16 @@ def _serialize_recommendation(opportunity, *, features=None, profile_strength=No
         "ai_semantic_score": round(jobbert_score, 4),
         "ai_semantic_adjustment": round(jobbert_adjustment, 6),
         "ai_semantic_model": "JobBERT" if jobbert_score else "",
-        "location": opportunity.ville or "",
-        "company": opportunity.organisation_nom or "",
-        "type": opportunity.type_opportunite,
-    }
+    })
+    return payload
 
 
 def _serialize_fallback(opportunity, *, profile_strength=None, recommendation_mode="FALLBACK"):
     application_count = int(getattr(opportunity, "application_count", 0) or 0)
     reason = "Popular opportunity" if application_count else "Recent opportunity"
     profile_strength_level = (profile_strength or {}).get("level", "LOW")
-    return {
-        "id": opportunity.id,
-        "title": opportunity.titre,
+    payload = _opportunity_payload(opportunity)
+    payload.update({
         "score": 0.0,
         "match_score": 0.0,
         "semantic_score": 0.0,
@@ -261,10 +375,8 @@ def _serialize_fallback(opportunity, *, profile_strength=None, recommendation_mo
             "semantic_strength": "WEAK",
             "resume_signal": False,
         },
-        "location": opportunity.ville or "",
-        "company": opportunity.organisation_nom or "",
-        "type": opportunity.type_opportunite,
-    }
+    })
+    return payload
 
 
 def _followed_opportunity_ids(user):
@@ -315,6 +427,7 @@ def _fallback_recommendations(
         queryset = (
             Opportunite.objects
             .filter(statut=StatutOpportunite.ACTIVE)
+            .select_related("source")
             .annotate(application_count=Count("candidatures"))
             .order_by("-application_count", "-date_publication", "-id")
         )
@@ -324,14 +437,7 @@ def _fallback_recommendations(
         if exclusions:
             queryset = queryset.exclude(id__in=exclusions)
 
-        fallback_items = queryset.only(
-            "id",
-            "titre",
-            "organisation_nom",
-            "ville",
-            "type_opportunite",
-            "date_publication",
-        )[:limit]
+        fallback_items = queryset[:limit]
         return [
             _serialize_fallback(
                 item,
@@ -776,6 +882,7 @@ def _build_recommendations(request, limit):
             profile_text=build_user_embedding_text(features) or "",
             profile_strength=profile_strength,
             top_n=limit,
+            cache_only=True,
         )
     except Exception:
         logger.exception(
@@ -821,6 +928,14 @@ def recommendations_view(request):
     Returns active opportunities ranked against the cached user profile embedding.
     """
     limit = _parse_limit(request.query_params.get("limit"))
+    cache_key = _recommendations_cache_key(request, limit)
+    if cache_key:
+        cached_recommendations = cache.get(cache_key)
+        if cached_recommendations is not None:
+            response = Response(cached_recommendations, status=status.HTTP_200_OK)
+            response["X-BidWise-Recommendations-Cache"] = "hit"
+            return response
+
     try:
         recommendations = _build_recommendations(request, limit)
     except Exception:
@@ -847,4 +962,9 @@ def recommendations_view(request):
             recommendation_mode=recommendation_mode_for_profile(profile_strength),
         )
 
-    return Response(recommendations, status=status.HTTP_200_OK)
+    if cache_key and recommendations:
+        cache.set(cache_key, recommendations, timeout=RECOMMENDATIONS_CACHE_TTL_SECONDS)
+
+    response = Response(recommendations, status=status.HTTP_200_OK)
+    response["X-BidWise-Recommendations-Cache"] = "miss" if cache_key else "skip"
+    return response

@@ -6,21 +6,16 @@ from datetime import date
 
 from django.conf import settings
 
+from opportunities.models import Opportunite
 from ai.business_families import (
     families_are_compatible,
     opportunity_llm_business_families,
-    opportunity_text_business_families,
     profile_business_families,
-)
-from ai.esco_recommendation_signals import build_esco_skill_overlap
-from ai.esco_mapper import (
-    role_families_for_text,
-    role_families_for_values,
-    skill_families_for_values,
 )
 from ai.jobbert import (
     build_jobbert_scores,
     build_precomputed_jobbert_scores,
+    generate_jobbert_embeddings_batch,
     get_or_build_profile_jobbert_embedding,
     jobbert_adjustment,
     jobbert_enabled,
@@ -56,18 +51,19 @@ ROLE_MATCH_FINAL_BOOST = 0.035
 ROLE_AND_PROFILE_SKILL_DENSITY_BOOST = 0.03
 ROLE_ONLY_EVIDENCE_PENALTY = 0.035
 ISOLATED_SKILL_EVIDENCE_PENALTY = 0.035
-GENERIC_SINGLE_SKILL_PENALTY = 0.08
+ISOLATED_SINGLE_SKILL_PENALTY = 0.08
 SKILL_MATCH_BONUS = 0.025
 SKILL_MATCH_BONUS_CAP = 0.10
-NORMALIZED_SKILL_MATCH_BONUS = 0.01
-NORMALIZED_SKILL_MATCH_BONUS_CAP = 0.03
-ESCO_FAMILY_BONUS = 0.03
 LLM_BUSINESS_FAMILY_BONUS = 0.04
 LLM_BUSINESS_FAMILY_MISMATCH_PENALTY = 0.10
 STRICT_BUSINESS_FAMILY_MISMATCH_PENALTY = 0.15
 FAMILY_ONLY_SCORE_CAP = 0.58
 SKILL_ONLY_EXPLICIT_ROLE_SCORE_CAP = 0.54
 SPARSE_ROLE_ONLY_SCORE_CAP = 0.68
+ROLE_SEMANTIC_CAP_THRESHOLD = 0.62
+ROLE_SEMANTIC_BUCKET_THRESHOLD = 0.68
+ROLE_SEMANTIC_SUPPORT_THRESHOLD = 0.58
+LLM_FAMILY_SEMANTIC_SUPPORT_THRESHOLD = 0.62
 SECTOR_MATCH_BONUS = 0.025
 SALARY_MATCH_BONUS = 0.02
 SALARY_BELOW_EXPECTATION_PENALTY = 0.025
@@ -77,120 +73,6 @@ EXPERIENCE_GAP_PENALTY_LARGE = 0.08
 EXPERIENCE_GAP_PENALTY_CAP = 0.10
 NO_METIER_EVIDENCE_SEMANTIC_THRESHOLD = 0.60
 NO_METIER_EVIDENCE_SCORE_MULTIPLIER = 0.50
-CONTEXTUAL_GENERIC_SKILLS = {"support"}
-GENERIC_SINGLE_SKILL_SIGNALS = {
-    "excel",
-    "support",
-    "gestion",
-    "management",
-    "communication",
-    "marketing",
-    "vente",
-    "sales",
-    "javascript",
-    "node",
-    "node js",
-    "python",
-    "crm",
-}
-TECHNICAL_SUPPORT_CONTEXT_KEYWORDS = (
-    "technical",
-    "technician",
-    "technicien",
-    "technique",
-    "engineer",
-    "ingenieur",
-    "ingénieur",
-    "network",
-    "reseau",
-    "réseau",
-    "server",
-    "serveur",
-    "system",
-    "systeme",
-    "système",
-    "helpdesk",
-    "infrastructure",
-    "cisco",
-    "bgp",
-    "routing",
-    "mpls",
-)
-SHORT_TECHNICAL_SUPPORT_CONTEXT_KEYWORDS = {"it", "ip"}
-GENERIC_ROLE_MATCH_TERMS = {
-    "administration",
-    "gestion de dossier",
-    "gestion de dossiers",
-    "it support",
-    "network administration",
-    "human resources",
-    "ressources humaines",
-    "accounting",
-    "finance",
-    "comptabilite",
-    "comptabilité",
-}
-FAMILY_ROLE_TITLE_TERMS = {
-    "administration": (
-        "assistante administrative",
-        "assistant administratif",
-        "adjointe administrative",
-        "adjoint administratif",
-        "secretaire",
-        "secrétaire",
-        "gestionnaire administrative",
-        "gestionnaire administratif",
-        "employée administrative",
-        "employe administratif",
-    ),
-    "it_network_support": (
-        "technicien support",
-        "support informatique",
-        "helpdesk",
-        "administrateur systemes",
-        "administrateur systèmes",
-        "systemes et reseaux",
-        "systèmes et réseaux",
-    ),
-    "devops_cloud_infrastructure": (
-        "devops",
-        "dev ops",
-        "cloud engineer",
-        "cloud infrastructure",
-        "site reliability",
-        "sre",
-        "ci/cd",
-        "cicd",
-        "docker",
-        "kubernetes",
-        "terraform",
-        "infrastructure as code",
-        "deployment automation",
-    ),
-    "it_support_network": (
-        "technicien support",
-        "support informatique",
-        "helpdesk",
-        "administrateur systemes",
-        "administrateur systèmes",
-        "systemes et reseaux",
-        "systèmes et réseaux",
-    ),
-    "accounting_finance_audit": (
-        "assistant comptable",
-        "assistante comptable",
-        "comptable",
-        "auditeur comptable",
-        "auditrice comptable",
-    ),
-    "accounting_finance": (
-        "assistant comptable",
-        "assistante comptable",
-        "comptable",
-        "auditeur comptable",
-        "auditrice comptable",
-    ),
-}
 
 EXPERIENCE_LEVEL_RANGES = {
     "DEBUTANT": (0, 1),
@@ -204,6 +86,8 @@ EXPERIENCE_LEVEL_REPRESENTATIVE_YEARS = {
     "CONFIRME": 4.0,
     "SENIOR": 6.0,
 }
+
+
 TITLE_SENIORITY_FLOORS = (
     ("staff", 6.0),
     ("principal", 6.0),
@@ -235,6 +119,7 @@ REMOTE_KEYWORDS = ("remote", "teletravail", "a distance", "work from home")
 HYBRID_KEYWORDS = ("hybrid", "hybride")
 FULL_TIME_CONTRACT_TYPES = {CONTRACT_TYPE_CDI}
 INTERNSHIP_CONTRACT_TYPES = {CONTRACT_TYPE_INTERNSHIP}
+VAGUE_ROLE_TITLES = {"developer", "engineer", "consultant", "assistant", "specialist"}
 
 
 def get_score_label(score, *, is_fallback=False):
@@ -369,10 +254,6 @@ def _clamp_score(value):
     return max(0.0, min(1.0, float(value)))
 
 
-def _normalized_skill_bonus_enabled():
-    return bool(getattr(settings, "RECOMMENDATION_ENABLE_NORMALIZED_SKILL_BONUS", True))
-
-
 def _experience_gap_penalty_enabled():
     return bool(getattr(settings, "RECOMMENDATION_ENABLE_EXPERIENCE_GAP_PENALTY", True))
 
@@ -401,6 +282,25 @@ def _clean_list(value):
         if text:
             cleaned.append(text)
     return cleaned
+
+
+def _semantic_tokens(value):
+    raw_tokens = re.findall(r"[A-Za-z0-9]+", str(value or ""))
+    return {
+        _normalize_text(token)
+        for token in raw_tokens
+        if len(_normalize_text(token)) >= 3
+        or (len(token) >= 2 and token.isupper())
+    }
+
+
+def _token_overlap_matches(source_tokens, target_tokens, *, min_common=2, min_ratio=0.5):
+    if not source_tokens or not target_tokens:
+        return False
+    common_count = len(set(source_tokens).intersection(target_tokens))
+    if common_count < min_common:
+        return False
+    return (common_count / max(1, len(source_tokens))) >= min_ratio
 
 
 def _set_recommendation_debug(item, payload):
@@ -857,38 +757,22 @@ def _role_matches(features, opportunity):
         _get_value(opportunity, "titre", ""),
         *_llm_values(opportunity, "canonical_role", "target_roles"),
     ]
-    searchable = " ".join(_normalize_text(value) for value in role_texts if value).strip()
+    searchable_raw = " ".join(str(value or "") for value in role_texts if value).strip()
+    searchable = _normalize_text(searchable_raw)
     if not searchable:
         return []
-    searchable_tokens = {
-        token
-        for token in searchable.split()
-        if len(token) >= 3 or token in SHORT_TECHNICAL_SUPPORT_CONTEXT_KEYWORDS
-    }
+    searchable_tokens = _semantic_tokens(searchable_raw)
 
     matches = []
-    for role in _clean_list(features.get("roles")):
+    for role in _clean_list(features.get("target_roles")) or _clean_list(features.get("roles")):
         normalized_role = _normalize_text(role)
-        if normalized_role in GENERIC_ROLE_MATCH_TERMS:
-            continue
-        role_tokens = {
-            token
-            for token in normalized_role.split()
-            if len(token) >= 3 or token in SHORT_TECHNICAL_SUPPORT_CONTEXT_KEYWORDS
-        }
+        role_tokens = _semantic_tokens(role)
         if normalized_role and (
             normalized_role in searchable
             or (len(role_tokens) >= 2 and role_tokens.issubset(searchable_tokens))
+            or _token_overlap_matches(role_tokens, searchable_tokens)
         ):
             matches.append(role)
-    if not matches:
-        title = _normalize_text(_get_value(opportunity, "titre", ""))
-        for family in sorted(profile_business_families(features or {})):
-            for term in FAMILY_ROLE_TITLE_TERMS.get(family, ()):
-                normalized_term = _normalize_text(term)
-                if normalized_term and normalized_term in title:
-                    matches.append(term)
-                    return matches
     return matches
 
 
@@ -912,39 +796,62 @@ def _skill_matches(features, opportunity):
     opportunity_skills = {
         _normalize_text(skill)
         for skill in opportunity_skill_values
+        if _normalize_text(skill)
     }
-    title = _normalize_text(
-        " ".join([
+    opportunity_skill_tokens = {
+        skill: _semantic_tokens(skill)
+        for skill in opportunity_skills
+    }
+    title_raw = " ".join([
             str(_get_value(opportunity, "titre", "") or ""),
             " ".join(_llm_values(opportunity, "canonical_role", "target_roles")),
         ])
-    )
+    title = _normalize_text(title_raw)
+    title_tokens = _semantic_tokens(title_raw)
 
     matches = []
     for skill in user_skills:
         normalized_skill = _normalize_text(skill)
         if not normalized_skill:
             continue
-        if not _is_contextual_skill_match_allowed(normalized_skill, opportunity):
+        skill_tokens = _semantic_tokens(skill)
+        if normalized_skill in opportunity_skills:
+            matches.append(skill)
             continue
-        if normalized_skill in opportunity_skills or normalized_skill in title:
+        if len(skill_tokens) >= 2 and skill_tokens.issubset(title_tokens):
+            matches.append(skill)
+            continue
+        if len(skill_tokens) >= 3 and _token_overlap_matches(skill_tokens, title_tokens):
+            matches.append(skill)
+            continue
+        if len(skill_tokens) >= 2 and any(
+            skill_tokens.issubset(tokens)
+            for tokens in opportunity_skill_tokens.values()
+        ):
+            matches.append(skill)
+            continue
+        if len(skill_tokens) >= 3 and any(
+            _token_overlap_matches(skill_tokens, tokens)
+            for tokens in opportunity_skill_tokens.values()
+        ):
             matches.append(skill)
 
     return matches
 
 
 def _is_contextual_skill_match_allowed(normalized_skill, opportunity):
-    if normalized_skill not in CONTEXTUAL_GENERIC_SKILLS:
+    skill_tokens = _semantic_tokens(normalized_skill)
+    if len(skill_tokens) >= 2:
         return True
-    text = " ".join(
-        str(_get_value(opportunity, field, "") or "")
-        for field in ("titre", "description")
-    )
-    text = _normalize_text(text)
-    if any(keyword in text for keyword in TECHNICAL_SUPPORT_CONTEXT_KEYWORDS):
-        return True
-    tokens = set(re.findall(r"[a-z0-9]+", text))
-    return bool(tokens.intersection(SHORT_TECHNICAL_SUPPORT_CONTEXT_KEYWORDS))
+    opportunity_skills = {
+        _normalize_text(skill)
+        for skill in (
+            _clean_list(_get_value(opportunity, "skills", []))
+            + _llm_values(opportunity, "skills", "tools", "domains")
+        )
+        if _normalize_text(skill)
+    }
+    return normalized_skill in opportunity_skills
 
 
 def _sector_values_from_opportunity(opportunity):
@@ -998,68 +905,18 @@ def _skill_bonus(features, opportunity, reasons):
     return min(SKILL_MATCH_BONUS_CAP, len(matches) * SKILL_MATCH_BONUS), matches
 
 
-def _normalized_skill_bonus(features, opportunity):
-    overlap = build_esco_skill_overlap(
-        (features or {}).get("normalized_skills"),
-        _get_value(opportunity, "normalized_skills", []),
-    )
-    if not _normalized_skill_bonus_enabled():
-        return 0.0, overlap
-
-    if overlap.anchored_novel_overlap_count <= 0:
-        return 0.0, overlap
-
-    bonus = min(
-        NORMALIZED_SKILL_MATCH_BONUS_CAP,
-        overlap.anchored_novel_overlap_count * NORMALIZED_SKILL_MATCH_BONUS,
-    )
-    return bonus, overlap
-
-
-def _profile_esco_families(features):
-    families = set()
-    families.update(role_families_for_values(_clean_list(features.get("target_roles"))))
-    families.update(role_families_for_values(_clean_list(features.get("roles"))))
-    families.update(skill_families_for_values(_clean_list(features.get("skills"))))
-    return families
-
-
-def _opportunity_esco_families(opportunity):
-    families = set()
-    families.update(role_families_for_text(_get_value(opportunity, "titre", "")))
-    families.update(skill_families_for_values(_clean_list(_get_value(opportunity, "skills", []))))
-    families.update(role_families_for_values(_llm_values(opportunity, "canonical_role", "target_roles")))
-    families.update(skill_families_for_values(_llm_values(opportunity, "skills", "tools", "domains")))
-    return families
-
-
-def _esco_family_bonus(features, opportunity, semantic_score):
-    if not isinstance(features, dict):
-        return 0.0
-    if _role_matches(features, opportunity) or _skill_matches(features, opportunity):
-        return 0.0
-    if semantic_score < NO_METIER_EVIDENCE_SEMANTIC_THRESHOLD:
-        return 0.0
-
-    profile_families = _profile_esco_families(features)
-    if not profile_families:
-        return 0.0
-
-    opportunity_families = _opportunity_esco_families(opportunity)
-    if not opportunity_families:
-        return 0.0
-
-    if profile_families.intersection(opportunity_families):
-        return ESCO_FAMILY_BONUS
-    return 0.0
-
-
-def _llm_business_family_bonus(features, opportunity, reasons):
+def _llm_business_family_bonus(features, opportunity, reasons, *, semantic_score=0.0):
     profile_families = profile_business_families(features)
     opportunity_families = opportunity_llm_business_families(opportunity)
     if not profile_families or not opportunity_families:
         return 0.0
     if families_are_compatible(profile_families, opportunity_families):
+        has_explicit_metier_evidence = _role_matches(features, opportunity) or _skill_matches(features, opportunity)
+        if not (
+            has_explicit_metier_evidence
+            or float(semantic_score or 0.0) >= LLM_FAMILY_SEMANTIC_SUPPORT_THRESHOLD
+        ):
+            return 0.0
         _append_reason(reasons, "Related job family signal detected")
         return LLM_BUSINESS_FAMILY_BONUS
     return 0.0
@@ -1109,7 +966,7 @@ def _feedback_bonus(feedback, opportunity, reasons):
     return 0.0
 
 
-def _business_score(features, opportunity, *, semantic_score=0.0):
+def _business_score(features, opportunity, *, semantic_score=0.0, role_semantic_score=0.0):
     if not isinstance(features, dict):
         return 0.0, [], {}
 
@@ -1117,20 +974,23 @@ def _business_score(features, opportunity, *, semantic_score=0.0):
     location_bonus = _location_bonus(features, opportunity, reasons)
     remote_bonus = _remote_bonus(features, opportunity, reasons)
     raw_skill_bonus, raw_skill_matches = _skill_bonus(features, opportunity, reasons)
-    normalized_skill_bonus, normalized_overlap = _normalized_skill_bonus(features, opportunity)
     employment_bonus = _employment_bonus(features, opportunity, reasons)
     experience_bonus = _experience_bonus(features, opportunity, reasons)
     role_bonus = _role_bonus(features, opportunity, reasons)
-    esco_family_bonus = _esco_family_bonus(features, opportunity, semantic_score)
-    llm_family_bonus = _llm_business_family_bonus(features, opportunity, reasons)
+    llm_family_bonus = _llm_business_family_bonus(features, opportunity, reasons, semantic_score=semantic_score)
     sector_bonus, sector_matches = _sector_match_bonus(features, opportunity, reasons)
     salary_bonus, salary_debug = _salary_bonus(features, opportunity, reasons)
+    ai_metier_evidence = _has_ai_metier_evidence(
+        features,
+        opportunity,
+        semantic_score=semantic_score,
+        role_semantic_score=role_semantic_score,
+    )
     has_metier_signal = bool(
         raw_skill_matches
-        or normalized_overlap.shared_uris
         or role_bonus > 0
-        or esco_family_bonus > 0
         or llm_family_bonus > 0
+        or ai_metier_evidence
     )
     strict_location_adjustment = (
         _strict_location_adjustment(features, opportunity, location_bonus)
@@ -1143,11 +1003,9 @@ def _business_score(features, opportunity, *, semantic_score=0.0):
         + strict_location_adjustment
         + remote_bonus
         + raw_skill_bonus
-        + normalized_skill_bonus
         + employment_bonus
         + experience_bonus
         + role_bonus
-        + esco_family_bonus
         + llm_family_bonus
         + sector_bonus
         + salary_bonus
@@ -1156,28 +1014,29 @@ def _business_score(features, opportunity, *, semantic_score=0.0):
     debug_payload = {
         "raw_skill_match_count": len(raw_skill_matches),
         "raw_skill_matches": raw_skill_matches[:3],
-        "normalized_skill_overlap_count": len(normalized_overlap.shared_uris),
         "sector_match_count": len(sector_matches),
         "sector_matches": sector_matches,
         "salary": salary_debug,
-        "normalized_skill_overlap_labels": list(normalized_overlap.shared_labels[:3]),
-        "normalized_skill_overlap_uris": list(normalized_overlap.shared_uris[:3]),
-        "normalized_skill_exact_overlap_count": normalized_overlap.exact_overlap_count,
-        "normalized_skill_anchored_overlap_count": normalized_overlap.anchored_overlap_count,
-        "normalized_skill_semantic_only_overlap_count": normalized_overlap.semantic_only_overlap_count,
-        "normalized_skill_raw_equivalent_overlap_count": normalized_overlap.raw_equivalent_overlap_count,
-        "normalized_skill_novel_overlap_count": normalized_overlap.anchored_novel_overlap_count,
-        "normalized_skill_bonus": round(float(normalized_skill_bonus), 6),
+        "normalized_skill_overlap_count": 0,
+        "normalized_skill_overlap_labels": [],
+        "normalized_skill_overlap_uris": [],
+        "normalized_skill_exact_overlap_count": 0,
+        "normalized_skill_anchored_overlap_count": 0,
+        "normalized_skill_semantic_only_overlap_count": 0,
+        "normalized_skill_raw_equivalent_overlap_count": 0,
+        "normalized_skill_novel_overlap_count": 0,
+        "normalized_skill_bonus": 0.0,
+        "ai_metier_evidence": bool(ai_metier_evidence),
+        "role_semantic_score": round(float(role_semantic_score or 0.0), 4),
         "business_components": {
             "location_bonus": round(float(location_bonus), 6),
             "strict_location_adjustment": round(float(strict_location_adjustment), 6),
             "remote_bonus": round(float(remote_bonus), 6),
             "raw_skill_bonus": round(float(raw_skill_bonus), 6),
-            "normalized_skill_bonus": round(float(normalized_skill_bonus), 6),
+            "normalized_skill_bonus": 0.0,
             "employment_bonus": round(float(employment_bonus), 6),
             "experience_bonus": round(float(experience_bonus), 6),
             "role_bonus": round(float(role_bonus), 6),
-            "esco_family_bonus": round(float(esco_family_bonus), 6),
             "llm_business_family_bonus": round(float(llm_family_bonus), 6),
             "sector_bonus": round(float(sector_bonus), 6),
             "salary_bonus": round(float(salary_bonus), 6),
@@ -1185,14 +1044,6 @@ def _business_score(features, opportunity, *, semantic_score=0.0):
         "profile_business_families": sorted(profile_business_families(features)),
         "opportunity_llm_business_families": sorted(opportunity_llm_business_families(opportunity)),
     }
-    if normalized_skill_bonus > 0:
-        logger.debug(
-            "Applied normalized ESCO skill bonus opportunity_id=%s bonus=%.4f overlap=%s raw_skill_matches=%s",
-            _get_value(opportunity, "id", None),
-            normalized_skill_bonus,
-            list(normalized_overlap.shared_labels[:3]),
-            raw_skill_matches[:3],
-        )
 
     return min(BUSINESS_BONUS_CAP, total_bonus), reasons[:5], debug_payload
 
@@ -1247,7 +1098,7 @@ def _profile_skill_matches(features, opportunity):
     return matches
 
 
-def _single_generic_skill_signal_penalty(features, opportunity):
+def _single_isolated_skill_signal_penalty(features, opportunity):
     role_matches = _role_matches(features or {}, opportunity)
     if role_matches:
         return 0.0
@@ -1260,19 +1111,15 @@ def _single_generic_skill_signal_penalty(features, opportunity):
     if len(skill_matches) != 1:
         return 0.0
 
-    matched_skill = next(iter(skill_matches))
-    if matched_skill not in GENERIC_SINGLE_SKILL_SIGNALS:
-        return 0.0
-
     profile_families = profile_business_families(features or {})
     opportunity_families = opportunity_llm_business_families(opportunity)
     if opportunity_families and profile_families and families_are_compatible(profile_families, opportunity_families):
         return 0.0
 
-    return GENERIC_SINGLE_SKILL_PENALTY
+    return ISOLATED_SINGLE_SKILL_PENALTY
 
 
-def _single_generic_skill_score_cap(features, opportunity):
+def _single_isolated_skill_score_cap(features, opportunity):
     if _role_matches(features or {}, opportunity):
         return None
 
@@ -1284,10 +1131,6 @@ def _single_generic_skill_score_cap(features, opportunity):
     if len(skill_matches) != 1:
         return None
 
-    matched_skill = next(iter(skill_matches))
-    if matched_skill not in GENERIC_SINGLE_SKILL_SIGNALS:
-        return None
-
     profile_families = profile_business_families(features or {})
     opportunity_families = opportunity_llm_business_families(opportunity)
     if opportunity_families and profile_families and families_are_compatible(profile_families, opportunity_families):
@@ -1297,10 +1140,7 @@ def _single_generic_skill_score_cap(features, opportunity):
 
 
 def _opportunity_business_families_for_scoring(opportunity):
-    return opportunity_llm_business_families(opportunity) or opportunity_text_business_families(
-        opportunity,
-        include_description=False,
-    )
+    return opportunity_llm_business_families(opportunity)
 
 
 def _has_compatible_business_family(features, opportunity):
@@ -1313,10 +1153,6 @@ def _has_compatible_business_family(features, opportunity):
     )
 
 
-def _family_and_skill_evidence_boost(features, opportunity):
-    return 0.0
-
-
 def _family_only_score_cap(features, opportunity):
     if not _has_compatible_business_family(features, opportunity):
         return None
@@ -1327,11 +1163,162 @@ def _family_only_score_cap(features, opportunity):
     return FAMILY_ONLY_SCORE_CAP
 
 
+def _profile_role_text(features):
+    features = features or {}
+    values = (
+        _clean_list(features.get("target_roles"))
+        or _clean_list(features.get("roles"))
+        or _clean_list(features.get("semantic_resume_target_roles"))
+    )
+    canonical_role = str(features.get("semantic_resume_canonical_role") or "").strip()
+    if canonical_role:
+        values = [canonical_role, *values]
+    if values:
+        role_text = " | ".join(_dedupe_casefold(values)[:4])
+        skills = _dedupe_casefold(
+            _clean_list(features.get("profile_skills"))
+            + _clean_list(features.get("semantic_resume_skills"))
+            + _clean_list(features.get("semantic_resume_tools"))
+        )
+        if skills:
+            role_text = f"{role_text} skills: {', '.join(skills[:8])}"
+        return role_text
+
+    fallback = (
+        _clean_list(features.get("semantic_resume_domains"))
+        + _clean_list(features.get("semantic_resume_skills"))
+        + _clean_list(features.get("profile_skills"))
+    )
+    fallback = _dedupe_casefold(fallback)
+    if len(fallback) >= 2:
+        return "profile role evidence: " + ", ".join(fallback[:8])
+    return ""
+
+
+def _opportunity_role_text(opportunity):
+    values = []
+    values.extend(_llm_values(opportunity, "canonical_role", "target_roles"))
+    title = str(_get_value(opportunity, "titre", "") or "").strip()
+    if title:
+        values.append(title)
+    values = _dedupe_casefold(values)
+    role_text = " | ".join(values[:4]).strip()
+    skills = _clean_list(_get_value(opportunity, "skills", [])) + _llm_values(
+        opportunity,
+        "skills",
+        "tools",
+        "domains",
+    )
+    skills = _dedupe_casefold(skills)
+    tokens = _semantic_tokens(role_text)
+    normalized = _normalize_text(role_text)
+    if skills and (len(tokens) < 2 or normalized in VAGUE_ROLE_TITLES or len(skills) >= 2):
+        role_text = f"{role_text} skills: {', '.join(skills[:6])}".strip()
+    return role_text
+
+
+def _dedupe_casefold(values):
+    seen = set()
+    result = []
+    for value in values:
+        text = str(value or "").strip()
+        key = text.casefold()
+        if text and key not in seen:
+            seen.add(key)
+            result.append(text)
+    return result
+
+
+def _build_role_semantic_scores(features, opportunities, *, jobbert_scores=None):
+    if not getattr(settings, "JOBBERT_ROLE_SEMANTIC_ENABLED", True):
+        return {}
+    if not (jobbert_enabled() or _to_float_vector((features or {}).get("_jobbert_profile_vector"))):
+        return {}
+
+    profile_text = _profile_role_text(features or {})
+    if not profile_text:
+        return {}
+
+    selected = []
+    texts = []
+    jobbert_scores = jobbert_scores or {}
+    max_candidates = max(1, int(getattr(settings, "JOBBERT_ROLE_SEMANTIC_MAX_CANDIDATES", 80) or 80))
+    for opportunity in opportunities:
+        opportunity_id = int(_get_value(opportunity, "id", 0) or 0)
+        if not opportunity_id:
+            continue
+        text = _opportunity_role_text(opportunity)
+        if not text:
+            continue
+        has_title_signal = len(_semantic_tokens(text)) >= 2
+        has_support_signal = bool(
+            _skill_matches(features or {}, opportunity)
+            or _has_compatible_business_family(features or {}, opportunity)
+            or float(jobbert_scores.get(opportunity_id, 0.0) or 0.0) >= ROLE_SEMANTIC_SUPPORT_THRESHOLD
+            or has_title_signal
+        )
+        if not has_support_signal:
+            continue
+        selected.append(opportunity_id)
+        texts.append(text)
+        if len(selected) >= max_candidates:
+            break
+
+    if not texts:
+        return {}
+
+    try:
+        vectors = generate_jobbert_embeddings_batch([profile_text, *texts], batch_size=min(16, len(texts) + 1))
+    except Exception:
+        logger.exception("JobBERT role semantic scoring failed; continuing without role scores")
+        return {}
+
+    if len(vectors) != len(texts) + 1:
+        return {}
+    profile_vector = vectors[0]
+    return {
+        opportunity_id: round(float(_cosine_similarity(profile_vector, vector) or 0.0), 4)
+        for opportunity_id, vector in zip(selected, vectors[1:])
+    }
+
+
 def _skill_only_explicit_role_score_cap(features, opportunity):
+    return _skill_only_explicit_role_score_cap_for_semantic(features, opportunity, semantic_score=0.0)
+
+
+def _has_ai_metier_evidence(features, opportunity, *, semantic_score=0.0, role_semantic_score=0.0):
+    features = features or {}
+    if _role_matches(features, opportunity):
+        return True
+
+    skill_matches = _skill_matches(features, opportunity)
+    if _has_compatible_business_family(features, opportunity) and (
+        skill_matches or float(semantic_score or 0.0) >= ROLE_SEMANTIC_CAP_THRESHOLD
+    ):
+        return True
+
+    if float(role_semantic_score or 0.0) < ROLE_SEMANTIC_CAP_THRESHOLD:
+        return False
+
+    return bool(skill_matches or float(semantic_score or 0.0) >= ROLE_SEMANTIC_SUPPORT_THRESHOLD)
+
+
+def _skill_only_explicit_role_score_cap_for_semantic(
+    features,
+    opportunity,
+    *,
+    semantic_score=0.0,
+    role_semantic_score=0.0,
+):
     features = features or {}
     if not _clean_list(features.get("target_roles")) and not _clean_list(features.get("roles")):
         return None
-    if _role_matches(features, opportunity):
+    if _has_ai_metier_evidence(
+        features,
+        opportunity,
+        semantic_score=semantic_score,
+        role_semantic_score=role_semantic_score,
+    ):
         return None
     if not _skill_matches(features, opportunity):
         return None
@@ -1339,10 +1326,6 @@ def _skill_only_explicit_role_score_cap(features, opportunity):
     profile_families = profile_business_families(features)
     opportunity_families = opportunity_llm_business_families(opportunity)
     if profile_families and opportunity_families and families_are_compatible(profile_families, opportunity_families):
-        return None
-    profile_esco_families = _profile_esco_families(features)
-    opportunity_esco_families = _opportunity_esco_families(opportunity)
-    if profile_esco_families and opportunity_esco_families and profile_esco_families.intersection(opportunity_esco_families):
         return None
 
     return SKILL_ONLY_EXPLICIT_ROLE_SCORE_CAP
@@ -1388,14 +1371,11 @@ def _metier_density_adjustment(features, opportunity, *, semantic_score=0.0):
         and len(opportunity_skills) <= 1
         and float(semantic_score or 0.0) < 0.72
     ):
-        normalized_match = _normalize_text(all_skill_matches[0])
-        if normalized_match in GENERIC_SINGLE_SKILL_SIGNALS:
-            return -GENERIC_SINGLE_SKILL_PENALTY
         return -ISOLATED_SKILL_EVIDENCE_PENALTY
 
-    generic_skill_penalty = _single_generic_skill_signal_penalty(features or {}, opportunity)
-    if generic_skill_penalty:
-        return -generic_skill_penalty
+    isolated_skill_penalty = _single_isolated_skill_signal_penalty(features or {}, opportunity)
+    if isolated_skill_penalty:
+        return -isolated_skill_penalty
 
     return 0.0
 
@@ -1459,25 +1439,155 @@ def _apply_diversity_penalties(scored):
 
 
 def _dedupe_ranked_opportunities(scored):
-    seen = set()
-    deduped = []
+    best_by_key = {}
+    passthrough = []
     for item in scored:
-        key = (
-            _duplicate_identity_title(_get_value(item, "titre", "")),
-            _normalize_text(_get_value(item, "organisation_nom", "")),
-            _normalize_text(_get_value(item, "ville", "")),
-            str(_get_value(item, "type_opportunite", "") or "").strip().upper(),
-        )
-        if all(key) and key in seen:
-            if isinstance(item, dict):
-                item["duplicate_suppressed"] = True
-            else:
-                setattr(item, "duplicate_suppressed", True)
+        key = _duplicate_identity_key(item)
+        if not key:
+            passthrough.append(item)
             continue
-        if all(key):
-            seen.add(key)
-        deduped.append(item)
-    return deduped
+
+        current = best_by_key.get(key)
+        if current is None or _duplicate_preference_key(item) > _duplicate_preference_key(current):
+            if current is not None:
+                _mark_duplicate_suppressed(current)
+            best_by_key[key] = item
+        else:
+            _mark_duplicate_suppressed(item)
+    deduped = [*best_by_key.values(), *passthrough]
+    deduped.sort(key=_sort_key, reverse=True)
+    return _hydrate_ranked_opportunities(deduped)
+
+
+def _hydrate_ranked_opportunities(items):
+    ids = []
+    for item in items:
+        try:
+            opportunity_id = int(_get_value(item, "id", 0) or 0)
+        except (TypeError, ValueError):
+            opportunity_id = 0
+        if opportunity_id:
+            ids.append(opportunity_id)
+
+    if not ids:
+        return items
+
+    full_by_id = {
+        opportunity.id: opportunity
+        for opportunity in Opportunite.objects.select_related("source").filter(id__in=ids)
+    }
+    if not full_by_id:
+        return items
+
+    hydrated = []
+    for item in items:
+        try:
+            opportunity_id = int(_get_value(item, "id", 0) or 0)
+        except (TypeError, ValueError):
+            opportunity_id = 0
+        full_opportunity = full_by_id.get(opportunity_id)
+        if full_opportunity is None:
+            hydrated.append(item)
+            continue
+        _copy_recommendation_runtime_fields(item, full_opportunity)
+        hydrated.append(full_opportunity)
+    return hydrated
+
+
+def _copy_recommendation_runtime_fields(source, target):
+    for field in (
+        "match_score",
+        "semantic_score",
+        "score",
+        "score_label",
+        "score_percent",
+        "reason",
+        "reason_codes",
+        "recommendation",
+        "recommendation_debug",
+        "recommendation_evidence",
+        "recommendation_confidence",
+        "recommendation_mode",
+        "recommendation_bucket",
+        "recommendation_bucket_reason",
+        "profile_strength",
+        "duplicate_suppressed",
+    ):
+        value = _get_value(source, field, None)
+        if value is not None:
+            setattr(target, field, value)
+
+
+def _duplicate_identity_key(item):
+    republication_key = _duplicate_republication_key(item)
+    if republication_key:
+        return ("republication", *republication_key)
+
+    source_url = str(_get_value(item, "source_item_url", "") or "").strip().casefold()
+    if source_url:
+        source_id = str(_get_value(item, "source_id", "") or "").strip()
+        source_name = _normalize_text(_get_value(_get_value(item, "source", None), "nom", ""))
+        return ("url", source_id or source_name, source_url)
+
+    fallback_key = (
+        _duplicate_identity_title(_get_value(item, "titre", "")),
+        _normalize_text(_get_value(item, "organisation_nom", "")),
+        _normalize_text(_get_value(item, "ville", "")),
+        str(_get_value(item, "type_opportunite", "") or "").strip().upper(),
+    )
+    if all(fallback_key):
+        return ("fallback", *fallback_key)
+    return None
+
+
+def _duplicate_republication_key(item):
+    source_id = str(_get_value(item, "source_id", "") or "").strip()
+    source_name = _normalize_text(_get_value(_get_value(item, "source", None), "nom", ""))
+    source_key = source_id or source_name
+    organization_key = _normalize_text(_get_value(item, "organisation_nom", ""))
+    if organization_key in {
+        "",
+        "entreprise anonyme",
+        "company",
+        "societe",
+        "société",
+        "anonymous company",
+    }:
+        return None
+
+    key = (
+        source_key,
+        _duplicate_identity_title(_get_value(item, "titre", "")),
+        organization_key,
+        _normalize_text(_get_value(item, "ville", "")),
+        str(_get_value(item, "type_opportunite", "") or "").strip().upper(),
+    )
+    return key if all(key) else None
+
+
+def _mark_duplicate_suppressed(item):
+    if isinstance(item, dict):
+        item["duplicate_suppressed"] = True
+    else:
+        setattr(item, "duplicate_suppressed", True)
+
+
+def _duplicate_preference_key(item):
+    skills_count = len(_clean_list(_get_value(item, "skills", [])))
+    enrichment = _opportunity_llm_enrichment(item)
+    description_length = len(str(_get_value(item, "description", "") or ""))
+    publication_date = _get_value(item, "date_publication")
+    date_key = publication_date.toordinal() if hasattr(publication_date, "toordinal") else 0
+    return (
+        1 if skills_count > 0 else 0,
+        1 if enrichment else 0,
+        min(skills_count, 20),
+        description_length,
+        float(_get_value(item, "quality_score", 0.0) or 0.0),
+        float(_get_value(item, "match_score", 0.0) or 0.0),
+        date_key,
+        int(_get_value(item, "id", 0) or 0),
+    )
 
 
 def _duplicate_identity_title(value):
@@ -1541,6 +1651,11 @@ def rank_opportunities(
         jobbert_scores = build_precomputed_jobbert_scores(profile_vector, opportunity_list)
         if not jobbert_scores and bool(getattr(settings, "JOBBERT_ALLOW_LIVE_FALLBACK", False)):
             jobbert_scores = build_jobbert_scores(features or {}, opportunity_list)
+    role_semantic_scores = _build_role_semantic_scores(
+        features or {},
+        opportunity_list,
+        jobbert_scores=jobbert_scores,
+    )
     for opportunity in opportunity_list:
         if _employment_type_is_hard_incompatible(features or {}, opportunity):
             continue
@@ -1557,11 +1672,13 @@ def rank_opportunities(
             semantic_score = 0.0
         jobbert_score = jobbert_scores.get(int(_get_value(opportunity, "id", 0) or 0), 0.0)
         ranking_semantic_score = max(float(semantic_score or 0.0), float(jobbert_score or 0.0))
+        role_semantic_score = role_semantic_scores.get(int(_get_value(opportunity, "id", 0) or 0), 0.0)
 
         business_score, reasons, recommendation_debug = _business_score(
             features or {},
             opportunity,
             semantic_score=ranking_semantic_score,
+            role_semantic_score=role_semantic_score,
         )
         feedback_score = _feedback_bonus(feedback or {}, opportunity, reasons)
         if mode == "partial":
@@ -1598,11 +1715,15 @@ def rank_opportunities(
                 semantic_score=semantic_score,
             )
         )
-        score = _clamp_score(score + _family_and_skill_evidence_boost(features or {}, opportunity))
-        score_cap = _single_generic_skill_score_cap(features or {}, opportunity)
+        score_cap = _single_isolated_skill_score_cap(features or {}, opportunity)
         if score_cap is not None and score > score_cap:
             score = score_cap
-        skill_only_role_cap = _skill_only_explicit_role_score_cap(features or {}, opportunity)
+        skill_only_role_cap = _skill_only_explicit_role_score_cap_for_semantic(
+            features or {},
+            opportunity,
+            semantic_score=ranking_semantic_score,
+            role_semantic_score=role_semantic_score,
+        )
         if (
             jobbert_scores
             and not jobbert_score

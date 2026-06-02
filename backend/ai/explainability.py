@@ -1,4 +1,5 @@
 from django.conf import settings
+from opportunities.normalization.employment import normalize_contract_types
 
 from ai.business_families import (
     families_are_compatible,
@@ -25,27 +26,6 @@ MAX_GAPS = 3
 MAX_SKILL_GAPS = 2
 HIGH_SEMANTIC_THRESHOLD = 0.78
 MEDIUM_SEMANTIC_THRESHOLD = 0.62
-NOISY_SKILL_TOKENS = {
-    "api",
-    "apis",
-    "it",
-    "web",
-    "office",
-    "software",
-    "development",
-    "developer",
-    "engineer",
-    "sante",
-    "santé",
-    "qualite",
-    "qualité",
-    "hotellerie",
-    "hôtellerie",
-    "commercial",
-    "mission",
-    "poste",
-    "machines",
-}
 
 
 def _append_unique(items, text, *, limit):
@@ -64,6 +44,18 @@ def _normalized_map(values):
     return mapped
 
 
+def _should_show_missing_skill_gap(label):
+    normalized = _normalize_text(label)
+    if not normalized:
+        return False
+    tokens = [token for token in normalized.split() if len(token) >= 3]
+    if not tokens:
+        return False
+    if len(tokens) == 1 and len(tokens[0]) <= 3:
+        return False
+    return True
+
+
 def _skill_reasons_and_gaps(features, opportunity):
     user_skills = _normalized_map(features.get("skills"))
     opportunity_skills = _normalized_map(_get_value(opportunity, "skills", []))
@@ -78,7 +70,7 @@ def _skill_reasons_and_gaps(features, opportunity):
     missing = [
         label
         for key, label in opportunity_skills.items()
-        if key not in user_skills and key not in NOISY_SKILL_TOKENS
+        if key not in user_skills and _should_show_missing_skill_gap(label)
     ]
 
     reasons = []
@@ -128,7 +120,13 @@ def _industry_reason(features, opportunity):
 def _llm_family_reason(features, opportunity):
     profile_families = profile_business_families(features)
     opportunity_families = opportunity_llm_business_families(opportunity)
-    if families_are_compatible(profile_families, opportunity_families):
+    semantic_score = float(_get_value(opportunity, "semantic_score", 0.0) or 0.0)
+    has_supporting_evidence = bool(
+        _role_reason(features, opportunity)
+        or _skill_reasons_and_gaps(features, opportunity)[0]
+        or semantic_score >= MEDIUM_SEMANTIC_THRESHOLD
+    )
+    if has_supporting_evidence and families_are_compatible(profile_families, opportunity_families):
         return "Related job family signal detected"
     return ""
 
@@ -160,9 +158,17 @@ def _work_mode_reason_or_gap(features, opportunity):
 
 
 def _employment_reason_or_gap(features, opportunity):
-    selected = {str(item or "").strip().upper() for item in _clean_list(features.get("employment_types"))}
+    selected = set(normalize_contract_types(_clean_list(features.get("employment_types"))))
     if not selected:
         return "", ""
+
+    opportunity_contracts = set(normalize_contract_types(_get_value(opportunity, "normalized_contract_types", [])))
+    opportunity_contracts.update(normalize_contract_types(_get_value(opportunity, "contract_type", "")))
+    opportunity_contracts.update(normalize_contract_types(_get_value(opportunity, "type_opportunite", "")))
+    if opportunity_contracts:
+        if selected.intersection(opportunity_contracts):
+            return f"{sorted(selected.intersection(opportunity_contracts))[0].replace('_', ' ').title()} contract aligned", ""
+        return "", "Contract type may differ from your preference"
 
     text = _combined_opportunity_text(opportunity)
     for employment_type in selected:
@@ -170,7 +176,7 @@ def _employment_reason_or_gap(features, opportunity):
         if keywords and _text_has_any(text, keywords):
             return f"{employment_type.replace('_', ' ').title()} contract aligned", ""
 
-    return "", "Contract type may differ from your preference"
+    return "", ""
 
 
 def _location_reason_or_gap(features, opportunity):

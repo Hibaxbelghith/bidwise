@@ -6,7 +6,6 @@ from typing import Any
 
 from django.db import transaction
 
-from ai.esco_skill_storage import clean_skill_storage_list
 from opportunities.models import Opportunite, StatutOpportunite, TypeOpportunite
 from opportunities.normalization.employment import (
     SCHEDULE_UNSPECIFIED,
@@ -29,6 +28,13 @@ from opportunities.utils.images import is_valid_image_url, normalize_company_log
 
 logger = logging.getLogger(__name__)
 MIN_DESCRIPTION_LENGTH = 40
+GENERIC_REPUBLICATION_ORGANIZATIONS = {
+    "entreprise anonyme",
+    "company",
+    "societe",
+    "société",
+    "anonymous company",
+}
 
 
 def _persist_text(value: Any) -> str:
@@ -208,6 +214,102 @@ def _build_external_id(source_item_url: str, *, titre: str = "", organisation_no
     return hashlib.sha1(fallback_key.encode("utf-8")).hexdigest()
 
 
+def compute_content_fingerprint(
+    *,
+    source: Any,
+    titre: Any,
+    organisation_nom: Any,
+    ville: Any,
+    type_opportunite: Any,
+    description: Any,
+) -> str:
+    source_name = _normalize_key_text(getattr(source, "nom", source))
+    title_key = _normalize_key_text(titre)
+    organization_key = _normalize_key_text(organisation_nom)
+    city_key = _normalize_key_text(ville)
+    type_key = _normalize_key_text(type_opportunite)
+    description_key = _normalize_key_text(description)[:300]
+
+    stable_parts = (source_name, title_key, organization_key, city_key, type_key, description_key)
+    if not all(stable_parts):
+        return ""
+    raw = "|".join(stable_parts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _is_republication_organization_usable(value: Any) -> bool:
+    normalized_org = normalize_organization_name(value)
+    if not normalized_org:
+        return False
+    return _normalize_key_text(normalized_org) not in GENERIC_REPUBLICATION_ORGANIZATIONS
+
+
+def _build_republication_key(
+    *,
+    source: Any,
+    titre: Any,
+    organisation_nom: Any,
+    ville: Any,
+    type_opportunite: Any,
+) -> str:
+    source_name = _normalize_key_text(getattr(source, "nom", source))
+    title_key = _normalize_key_text(titre)
+    organization_key = _normalize_key_text(organisation_nom)
+    city_key = _normalize_key_text(ville)
+    type_key = _normalize_key_text(type_opportunite)
+
+    if not _is_republication_organization_usable(organisation_nom):
+        return ""
+
+    stable_parts = (source_name, title_key, organization_key, city_key, type_key)
+    if not all(stable_parts):
+        return ""
+    return "|".join(stable_parts)
+
+
+def _find_existing_republication(
+    *,
+    source: Any,
+    titre: Any,
+    organisation_nom: Any,
+    ville: Any,
+    type_opportunite: Any,
+) -> Opportunite | None:
+    republication_key = _build_republication_key(
+        source=source,
+        titre=titre,
+        organisation_nom=organisation_nom,
+        ville=ville,
+        type_opportunite=type_opportunite,
+    )
+    if not republication_key:
+        return None
+
+    candidates = (
+        Opportunite.objects.select_for_update()
+        .filter(
+            source=source,
+            statut=StatutOpportunite.ACTIVE,
+            duplicate_of__isnull=True,
+            type_opportunite=type_opportunite,
+            ville__iexact=_persist_text(ville).strip(),
+            organisation_nom__iexact=_persist_text(organisation_nom).strip(),
+        )
+        .order_by("-quality_score", "-date_publication", "-id")[:20]
+    )
+    for candidate in candidates:
+        candidate_key = _build_republication_key(
+            source=candidate.source,
+            titre=candidate.titre,
+            organisation_nom=candidate.organisation_nom,
+            ville=candidate.ville,
+            type_opportunite=candidate.type_opportunite,
+        )
+        if candidate_key == republication_key:
+            return candidate
+    return None
+
+
 def _is_structured_value_present(value: Any) -> bool:
     if value is None:
         return False
@@ -244,7 +346,12 @@ def _merge_structured_extra_data(normalized_data: dict[str, Any]) -> dict[str, A
     return merged_extra_data
 
 
-def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) -> list[str]:
+def _merge_duplicate_fields(
+    opportunity: Opportunite,
+    defaults: dict[str, Any],
+    *,
+    allow_identity_refresh: bool = False,
+) -> list[str]:
     update_fields = []
 
     def _confidence_rank(value: Any) -> int:
@@ -307,8 +414,30 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
         opportunity.date_limite = incoming_deadline
         update_fields.append("date_limite")
 
+    incoming_publication_date = defaults.get("date_publication")
+    if (
+        incoming_publication_date is not None
+        and getattr(opportunity, "date_publication", None) is not None
+        and incoming_publication_date > opportunity.date_publication
+    ):
+        opportunity.date_publication = incoming_publication_date
+        update_fields.append("date_publication")
+
     incoming_source_item_url = _persist_text(defaults.get("source_item_url", "")).strip()
-    if incoming_source_item_url and not _persist_text(getattr(opportunity, "source_item_url", "")).strip():
+    current_source_item_url = _persist_text(getattr(opportunity, "source_item_url", "")).strip()
+    if incoming_source_item_url and not current_source_item_url:
+        opportunity.source_item_url = incoming_source_item_url
+        update_fields.append("source_item_url")
+    elif (
+        allow_identity_refresh
+        and incoming_source_item_url
+        and incoming_source_item_url != current_source_item_url
+        and (
+            incoming_publication_date is None
+            or getattr(opportunity, "date_publication", None) is None
+            or incoming_publication_date >= opportunity.date_publication
+        )
+    ):
         opportunity.source_item_url = incoming_source_item_url
         update_fields.append("source_item_url")
 
@@ -316,6 +445,14 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
     if incoming_external_id and not _persist_text(getattr(opportunity, "external_id", "")).strip():
         opportunity.external_id = incoming_external_id
         update_fields.append("external_id")
+    elif allow_identity_refresh and incoming_external_id and incoming_external_id != opportunity.external_id:
+        opportunity.external_id = incoming_external_id
+        update_fields.append("external_id")
+
+    incoming_content_fingerprint = _persist_text(defaults.get("content_fingerprint", "")).strip()
+    if incoming_content_fingerprint and incoming_content_fingerprint != getattr(opportunity, "content_fingerprint", ""):
+        opportunity.content_fingerprint = incoming_content_fingerprint
+        update_fields.append("content_fingerprint")
 
     incoming_company_logo = normalize_company_logo_url(
         defaults.get("company_logo", ""),
@@ -460,10 +597,10 @@ def _merge_duplicate_fields(opportunity: Opportunite, defaults: dict[str, Any]) 
         opportunity.skills = merged_skills
         update_fields.append("skills")
 
-    merged_raw_skills = clean_skill_storage_list(
+    merged_raw_skills = _clean_optional_list(
         [*list(getattr(opportunity, "raw_skills", []) or []), *list(defaults.get("raw_skills", []) or [])]
     )
-    if merged_raw_skills != clean_skill_storage_list(getattr(opportunity, "raw_skills", [])):
+    if merged_raw_skills != _clean_optional_list(getattr(opportunity, "raw_skills", [])):
         opportunity.raw_skills = merged_raw_skills
         update_fields.append("raw_skills")
         _clear_skill_normalization_state(opportunity, update_fields)
@@ -742,6 +879,14 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         titre=titre,
         organisation_nom=organisation_nom,
     )
+    content_fingerprint = compute_content_fingerprint(
+        source=source,
+        titre=titre,
+        organisation_nom=organisation_nom,
+        ville=ville,
+        type_opportunite=normalized_data.get("type_opportunite"),
+        description=description,
+    )
     incoming_quality_score = normalized_data.get("quality_score")
     if incoming_quality_score is None:
         quality_score = compute_quality_score(
@@ -790,6 +935,7 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         "ville": ville,
         "source_item_url": source_item_url or None,
         "external_id": external_id,
+        "content_fingerprint": content_fingerprint or None,
         "contract_type": contract_type,
         **normalized_employment_fields,
         "experience_min": experience_min,
@@ -799,7 +945,7 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         "salary": salary,
         "experience_years": legacy_experience_years,
         "skills": skills,
-        "raw_skills": clean_skill_storage_list(skills),
+        "raw_skills": _clean_optional_list(skills),
         "normalized_skills": [],
         "skills_normalization_hash": "",
         "skills_normalization_updated_at": None,
@@ -811,13 +957,16 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
         "quality_score": quality_score,
         "type_opportunite": normalized_data["type_opportunite"],
         "statut": quality_status,
+        "date_publication": date_publication,
         "date_limite": normalized_data.get("date_limite"),
         "organisation": normalized_data.get("organisation"),
     }
 
     # Canonical identity policy:
-    # source + source_item_url is the only reliable matching key.
-    # Title/company-based matching is intentionally disabled.
+    # 1) source + source_item_url is the strict technical identity.
+    # 2) republication_key catches same-source republications with a new URL
+    #    when title, real organization, city, and opportunity type are stable.
+    # 3) content_fingerprint catches same-source republications with stable content.
     with transaction.atomic():
         same_source_url = None
         if source_item_url:
@@ -838,6 +987,54 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
                 same_source_url.save(update_fields=update_fields)
             same_source_url._materialization_created = False
             return same_source_url
+
+        same_republication = None
+        if quality_status == StatutOpportunite.ACTIVE:
+            same_republication = _find_existing_republication(
+                source=source,
+                titre=titre,
+                organisation_nom=organisation_nom,
+                ville=ville,
+                type_opportunite=normalized_data.get("type_opportunite"),
+            )
+
+        if same_republication is not None:
+            update_fields = _merge_duplicate_fields(
+                same_republication,
+                defaults,
+                allow_identity_refresh=True,
+            )
+            if update_fields:
+                same_republication.save(update_fields=update_fields)
+            same_republication._materialization_created = False
+            same_republication._materialization_duplicate_reason = "republication_key"
+            return same_republication
+
+        same_content_fingerprint = None
+        if content_fingerprint and quality_status == StatutOpportunite.ACTIVE:
+            same_content_fingerprint = (
+                Opportunite.objects.select_for_update()
+                .filter(
+                    source=source,
+                    content_fingerprint=content_fingerprint,
+                    statut=StatutOpportunite.ACTIVE,
+                    duplicate_of__isnull=True,
+                )
+                .order_by("-quality_score", "-date_publication", "-id")
+                .first()
+            )
+
+        if same_content_fingerprint is not None:
+            update_fields = _merge_duplicate_fields(
+                same_content_fingerprint,
+                defaults,
+                allow_identity_refresh=True,
+            )
+            if update_fields:
+                same_content_fingerprint.save(update_fields=update_fields)
+            same_content_fingerprint._materialization_created = False
+            same_content_fingerprint._materialization_duplicate_reason = "content_fingerprint"
+            return same_content_fingerprint
 
         create_defaults = {
             "titre": titre,

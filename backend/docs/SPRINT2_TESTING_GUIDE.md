@@ -29,12 +29,15 @@ Expected services:
 - `db` is healthy
 - `redis` is healthy
 - `celery_worker` is `Up`
+- `celery_enrichment` is `Up`
+- `celery_profile` is `Up`
 - `celery_beat` is `Up`
 
 Optional but useful:
 
 ```bash
 docker compose logs --tail=80 celery_worker
+docker compose logs --tail=80 celery_enrichment
 docker compose logs --tail=80 celery_beat
 ```
 
@@ -52,6 +55,39 @@ Dashboard surfaces:
 - metrics endpoint: `/api/metrics/pipeline/`
 
 The dashboard requires an authenticated staff or superuser account.
+
+## 1.1 Celery queue isolation check
+
+Purpose: prove that scraping and LLM enrichment do not compete for the same worker queue.
+
+### Command
+
+```bash
+docker compose exec backend celery -A config inspect active_queues
+docker compose exec backend celery -A config inspect active
+docker compose exec backend celery -A config inspect reserved
+```
+
+Optional Redis queue length check:
+
+```bash
+docker compose exec redis redis-cli -n 0 llen celery
+docker compose exec redis redis-cli -n 0 llen opportunity_enrichment
+docker compose exec redis redis-cli -n 0 llen profile_resume
+```
+
+### Expected behavior
+
+- `celery_worker` consumes the default `celery` queue.
+- `celery_enrichment` consumes the `opportunity_enrichment` queue.
+- `celery_profile` consumes the `profile_resume` queue.
+- `ai.enrich_opportunity_llm_backfill` may be active on `opportunity_enrichment`.
+- Scraping tasks such as `opportunities.collect_opportunities` and `opportunities.collect_source` should not be active on `opportunity_enrichment`.
+- A slow LLM task must not create backlog in the default `celery` queue.
+
+### What to explain orally
+
+The LLM enrichment backfill is intentionally isolated from source collection. Local Ollama calls can be slow, so they run in `celery_enrichment` with concurrency 1. The default worker remains available for scraping, raw materialization, embeddings, and monitoring.
 
 ## 2. Manual CLI execution test
 
@@ -137,6 +173,73 @@ docker compose exec backend python manage.py shell -c "from opportunities.models
 ### What to explain orally
 
 Beat only dispatches the top-level task. The top-level task checks due sources through the scheduler/orchestrator and dispatches one task per source. The source task owns locking and `PipelineRun`. Downstream tasks are event-driven: the materialization task calls `process_pending_raw_opportunities` from `opportunities/processing.py` only when raw records exist, and embeddings start only when the raw backlog is drained.
+
+## 3.1 LLM opportunity enrichment backfill test
+
+Purpose: prove that offline LLM enrichment can improve opportunity skills without blocking scraping.
+
+### Dry-run command
+
+This command selects candidates but does not call the LLM:
+
+```bash
+docker compose exec backend python manage.py enrich_opportunities_with_gemini --source all --weak-skills-only --min-description-chars 1000 --limit 10 --audit --json
+```
+
+Expected behavior:
+
+- Candidates are active job opportunities with rich descriptions and weak/generic skills.
+- Non-job sources such as `MarchesPublics` are excluded.
+- Output includes `description_length`, current `skills`, `weak_skills`, and `needs_enrichment`.
+
+### Manual controlled enrichment
+
+Use a very small limit for demos:
+
+```bash
+docker compose exec backend python manage.py enrich_opportunities_with_gemini --source LinkedIn --weak-skills-only --min-description-chars 1000 --limit 1 --delay-seconds 0
+```
+
+### Periodic Celery task
+
+The scheduled task is:
+
+```text
+ai.enrich_opportunity_llm_backfill
+```
+
+It calls the same command with guarded options from settings:
+
+- `OPPORTUNITY_LLM_BACKFILL_SOURCE`
+- `OPPORTUNITY_LLM_BACKFILL_LIMIT`
+- `OPPORTUNITY_LLM_BACKFILL_MIN_DESCRIPTION_CHARS`
+- `OPPORTUNITY_LLM_BACKFILL_DELAY_SECONDS`
+- `OPPORTUNITY_LLM_BACKFILL_WORKERS`
+
+### Runtime verification
+
+```bash
+docker compose exec backend celery -A config inspect active
+docker compose logs --tail=120 celery_enrichment
+docker compose logs --tail=120 celery_worker
+```
+
+Expected behavior:
+
+- If LLM enrichment is running, it appears under `celery_enrichment`.
+- `celery_worker` remains free for scraping/materialization/embeddings.
+- The default `celery` queue should not fill because of LLM work.
+
+### Coverage check
+
+```bash
+docker compose exec backend python manage.py shell -c "from opportunities.models import Opportunite; from django.db.models import Count; qs=Opportunite.objects.select_related('source'); [print(row['source__nom'], 'total', row['total'], 'skills', qs.filter(source__nom=row['source__nom']).exclude(skills=[]).count(), 'llm', qs.filter(source__nom=row['source__nom'], extra_data__llm_enrichment__isnull=False).count()) for row in qs.values('source__nom').annotate(total=Count('id')).order_by('source__nom')]"
+```
+
+Expected behavior:
+
+- `LinkedIn`, `Keejob`, and `EmploiTunisie` may gain LLM-enriched skills over time.
+- `MarchesPublics` should remain without LLM opportunity enrichment because it is a project/tender source, not a job source.
 
 ## 4. Monitoring anomaly detection test
 

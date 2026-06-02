@@ -15,7 +15,7 @@ const normalizeNumberOrNull = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const normalizeRecommendation = (recommendation) => {
+export const normalizeRecommendation = (recommendation) => {
   const raw = normalizeObject(recommendation);
   const reasons = normalizeArray(raw.reasons || raw.reason);
 
@@ -55,7 +55,7 @@ const isPublicFilterSource = (source) => {
   );
 };
 
-const normalizeOpportunity = (opportunity) => {
+export const normalizeOpportunity = (opportunity) => {
   const raw = normalizeObject(opportunity);
 
   return {

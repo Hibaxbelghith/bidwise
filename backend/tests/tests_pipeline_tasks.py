@@ -5,6 +5,7 @@ from django.core.cache import cache
 from django.utils import timezone
 from django.test import SimpleTestCase, TestCase, override_settings
 
+from ai.tasks import enrich_opportunity_llm_backfill_task
 from opportunities.management.commands.collect_opportunities import (
     collect_opportunities_pipeline,
     normalize_source,
@@ -146,6 +147,57 @@ class PipelineDispatchTests(TestCase):
         self.assertEqual(result["sources"], [])
         self.assertEqual(result["skipped_sources"], [{"source": "keejob", "reason": "recently_dispatched"}])
         apply_async_mock.assert_not_called()
+
+
+class OpportunityLLMBackfillTaskTests(TestCase):
+    @override_settings(OPPORTUNITY_LLM_BACKFILL_ENABLED=False)
+    def test_llm_backfill_skips_when_disabled(self):
+        self.assertEqual(
+            enrich_opportunity_llm_backfill_task.run(),
+            {"status": "skipped", "reason": "disabled"},
+        )
+
+    @override_settings(
+        OPPORTUNITY_LLM_BACKFILL_ENABLED=True,
+        OPPORTUNITY_LLM_BACKFILL_SOURCE="LinkedIn",
+        OPPORTUNITY_LLM_BACKFILL_LIMIT=7,
+        OPPORTUNITY_LLM_BACKFILL_MIN_DESCRIPTION_CHARS=1200,
+        OPPORTUNITY_LLM_BACKFILL_DELAY_SECONDS=0,
+        OPPORTUNITY_LLM_BACKFILL_WORKERS=1,
+    )
+    @patch("ai.tasks.call_command")
+    def test_llm_backfill_calls_enrichment_command_with_guarded_scope(self, call_command_mock):
+        cache.clear()
+
+        result = enrich_opportunity_llm_backfill_task.run()
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["source"], "LinkedIn")
+        self.assertEqual(result["limit"], 7)
+        call_command_mock.assert_called_once_with(
+            "enrich_opportunities_with_gemini",
+            source="LinkedIn",
+            weak_skills_only=True,
+            min_description_chars=1200,
+            limit=7,
+            delay_seconds=0.0,
+            workers=1,
+        )
+
+    @override_settings(
+        OPPORTUNITY_LLM_BACKFILL_ENABLED=True,
+        OPPORTUNITY_LLM_BACKFILL_LOCK_SECONDS=60,
+    )
+    @patch("ai.tasks.call_command")
+    def test_llm_backfill_skips_when_locked(self, call_command_mock):
+        cache.clear()
+        cache.add("ai:opportunity_llm_backfill:lock", "locked", timeout=60)
+
+        self.assertEqual(
+            enrich_opportunity_llm_backfill_task.run(),
+            {"status": "skipped", "reason": "locked"},
+        )
+        call_command_mock.assert_not_called()
 
 
 class PipelineCoreExecutionTests(TestCase):

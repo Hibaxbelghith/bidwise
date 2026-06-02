@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { BriefcaseBusiness, Globe2, MapPin, Sparkles } from 'lucide-react';
+import { BriefcaseBusiness, CalendarDays, Globe2, MapPin, Sparkles } from 'lucide-react';
 
 import { Badge } from '../../../../components/ui/badge.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
@@ -68,6 +68,12 @@ const ForYouPreviewCard = memo(({
           ) : null}
 
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-600">
+            {viewModel.publishedAgoLabel ? (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
+                <span className="truncate">Published {viewModel.publishedAgoLabel}</span>
+              </span>
+            ) : null}
             {viewModel.locationLabel ? (
               <span className="inline-flex min-w-0 items-center gap-1">
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />

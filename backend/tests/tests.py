@@ -1326,6 +1326,120 @@ class OpportunityMaterializationTests(TestCase):
         self.assertEqual(updated.company_logo, "https://jobboard.example/media/new-logo.png")
         self.assertEqual(updated.source_item_url, "https://jobboard.example/opportunity/99")
 
+    def test_materialization_merges_republished_offer_by_republication_key(self):
+        source = SourceOpportunite.objects.create(
+            nom="Keejob",
+            url="https://www.keejob.com",
+            type_source="SITE_EMPLOI",
+        )
+        base_description = (
+            "Cabinet d'expertise comptable recrute un auditeur comptable junior pour participer "
+            "aux missions d'audit legal et contractuel, verifier les comptes et rediger des rapports. "
+            "Le candidat participera aux travaux de controle, a la verification des pieces comptables, "
+            "a l'analyse des risques et a la preparation des syntheses pour les clients du cabinet. "
+            "Cette introduction longue reste stable entre deux republications du meme poste. "
+            "Les responsabilites incluent la revue des dossiers, la coordination avec les clients, "
+            "la preparation des documents de mission et le suivi des recommandations internes."
+        )
+
+        first = materialize_opportunity(
+            {
+                "raw_id": 3001,
+                "source": source,
+                "titre": "Auditeurs comptable",
+                "description": (
+                    "Notre cabinet d'expertise comptable, reconnu pour son engagement envers "
+                    "l'excellence et la qualite, cherche a renforcer son equipe en integrant "
+                    "un Auditeur Comptable Junior. Le poste couvre les missions d'audit legal, "
+                    "l'analyse des comptes, l'evaluation des risques et la redaction de rapports."
+                ),
+                "organisation_nom": "RAYON CONSULT",
+                "ville": "Tunis",
+                "source_item_url": "https://www.keejob.com/offres-emploi/239399/auditeurs-comptable",
+                "type_opportunite": TypeOpportunite.EMPLOI,
+                "statut": StatutOpportunite.ACTIVE,
+                "date_publication": date.today() - timedelta(days=30),
+                "date_confidence": "EXACT",
+                "date_limite": None,
+                "organisation": None,
+                "skills": [],
+                "languages": [],
+                "languages_fallback": [],
+            }
+        )
+
+        second = materialize_opportunity(
+            {
+                "raw_id": 3002,
+                "source": source,
+                "titre": "Auditeurs comptable",
+                "description": base_description,
+                "description_html": "<p>description enrichie</p>",
+                "organisation_nom": "RAYON CONSULT",
+                "ville": "Tunis",
+                "source_item_url": "https://www.keejob.com/offres-emploi/240916/auditeurs-comptable",
+                "type_opportunite": TypeOpportunite.EMPLOI,
+                "statut": StatutOpportunite.ACTIVE,
+                "date_publication": date.today(),
+                "date_confidence": "EXACT",
+                "date_limite": None,
+                "organisation": None,
+                "skills": ["Audit légal", "Audit contractuel", "Excel"],
+                "languages": [],
+                "languages_fallback": [],
+            }
+        )
+
+        first.refresh_from_db()
+        self.assertEqual(second.pk, first.pk)
+        self.assertEqual(Opportunite.objects.filter(source=source).count(), 1)
+        self.assertEqual(first.source_item_url, "https://www.keejob.com/offres-emploi/240916/auditeurs-comptable")
+        self.assertEqual(first.skills, ["Audit légal", "Audit contractuel", "Excel"])
+        self.assertTrue(first.content_fingerprint)
+
+    def test_materialization_does_not_merge_republication_with_generic_organization(self):
+        source = SourceOpportunite.objects.create(
+            nom="Keejob",
+            url="https://www.keejob.com",
+            type_source="SITE_EMPLOI",
+        )
+
+        common_payload = {
+            "source": source,
+            "titre": "Comptable",
+            "organisation_nom": "Entreprise Anonyme",
+            "ville": "Tunis",
+            "type_opportunite": TypeOpportunite.EMPLOI,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": date.today(),
+            "date_confidence": "EXACT",
+            "date_limite": None,
+            "organisation": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        first = materialize_opportunity(
+            {
+                **common_payload,
+                "raw_id": 3003,
+                "description": "Premiere offre comptable avec organisation non exploitable.",
+                "source_item_url": "https://www.keejob.com/offres-emploi/3003/comptable",
+            }
+        )
+        second = materialize_opportunity(
+            {
+                **common_payload,
+                "raw_id": 3004,
+                "description": "Deuxieme offre comptable distincte avec organisation non exploitable.",
+                "source_item_url": "https://www.keejob.com/offres-emploi/3004/comptable",
+            }
+        )
+
+        self.assertNotEqual(second.pk, first.pk)
+        self.assertEqual(Opportunite.objects.filter(source=source).count(), 2)
+
     def test_materialization_replaces_missing_incoming_logo_with_default(self):
         source = SourceOpportunite.objects.create(
             nom="JobBoard",
