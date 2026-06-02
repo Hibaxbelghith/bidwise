@@ -6,9 +6,10 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Count, Max, Q
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 
 from applications.models import Candidature, StatutSuiviCandidature
 from opportunities.models import Opportunite, StatutOpportunite, TypeOpportunite
@@ -35,6 +36,8 @@ from .quality_gates import (
 )
 from .recommendation_service import get_score_label, rank_opportunities
 from .recommendation_llm import apply_llm_hierarchy_validation_to_ranked
+from .resume_match.evidence import READY_STATUS, build_resume_match_evidence
+from .resume_match.llm import ResumeMatchLLMError, generate_resume_match_analysis
 from .retrieval import (
     MAX_SEMANTIC_CANDIDATES,
     RECOMMENDATION_CANDIDATE_FIELDS,
@@ -49,6 +52,7 @@ MAX_RECOMMENDATIONS = 50
 DEFAULT_RECOMMENDATIONS = 10
 MIN_MATCH_SCORE = 0.1
 RECOMMENDATIONS_CACHE_TTL_SECONDS = 15 * 60
+RESUME_MATCH_LLM_CACHE_TTL_SECONDS = 24 * 60 * 60
 SHOW_RECENT_FALLBACK_SETTING = "RECOMMENDATION_SHOW_RECENT_FALLBACK"
 BUSINESS_RERANK_CANDIDATES = 50
 JOBBERT_RETRIEVAL_CANDIDATES = 2500
@@ -967,4 +971,225 @@ def recommendations_view(request):
 
     response = Response(recommendations, status=status.HTTP_200_OK)
     response["X-BidWise-Recommendations-Cache"] = "miss" if cache_key else "skip"
+    return response
+
+
+def _resume_match_cache_key(request, opportunity, evidence, action):
+    profile = getattr(request.user, "profil", None)
+    resume = evidence.get("resume") if isinstance(evidence, dict) else {}
+    if not profile or not isinstance(resume, dict) or not resume.get("id"):
+        return ""
+
+    provider_signature = {
+        "provider": str(getattr(settings, "LLM_PROVIDER", "") or ""),
+        "ollama_model": str(getattr(settings, "OLLAMA_MODEL", "") or ""),
+        "gemini_model": str(getattr(settings, "GEMINI_MODEL", "") or ""),
+    }
+    payload = {
+        "user_id": getattr(request.user, "id", None),
+        "profile_id": getattr(profile, "id", None),
+        "resume_id": resume.get("id"),
+        "resume_updated_at": resume.get("updated_at", ""),
+        "opportunity_id": getattr(opportunity, "id", None),
+        "opportunity_updated_at": getattr(opportunity, "date_modification", None).isoformat()
+        if getattr(opportunity, "date_modification", None)
+        else "",
+        "action": action,
+        "provider": provider_signature,
+    }
+    return f"ai:resume-match:{_stable_hash(payload)}"
+
+
+def _deterministic_resume_match_analysis(evidence):
+    match = evidence.get("match") if isinstance(evidence, dict) else {}
+    opportunity = evidence.get("opportunity") if isinstance(evidence, dict) else {}
+    if not isinstance(match, dict):
+        match = {}
+    if not isinstance(opportunity, dict):
+        opportunity = {}
+
+    status_value = str(evidence.get("status") or "") if isinstance(evidence, dict) else ""
+    if status_value != READY_STATUS:
+        return {
+            "status": "not_ready",
+            "source": "deterministic",
+            "analysis_markdown": (
+                "## 1. Verdict global\n"
+                "Votre CV n'est pas encore pret pour une analyse complete. "
+                "BidWise pourra comparer votre CV avec cette offre lorsque l'analyse du resume sera terminee.\n\n"
+                "## 5. Prochaine etape\n"
+                "Attendez la fin de l'analyse du CV ou importez un resume valide."
+            ),
+        }
+
+    strong_items = match.get("where_strong_fit") if isinstance(match.get("where_strong_fit"), list) else []
+    watch_items = match.get("what_to_watch_out_for") if isinstance(match.get("what_to_watch_out_for"), list) else []
+    ats = match.get("ats") if isinstance(match.get("ats"), dict) else {}
+    covered = ats.get("covered_keywords") if isinstance(ats.get("covered_keywords"), list) else []
+    missing = ats.get("missing_or_weak_keywords") if isinstance(ats.get("missing_or_weak_keywords"), list) else []
+    score = int(match.get("fit_score") or 0)
+    verdict = str(match.get("verdict") or "unclear")
+    title = str(opportunity.get("title") or "this role").strip()
+
+    if score >= 78:
+        verdict_sentence = f"Votre CV presente un bon alignement avec {title}."
+    elif score >= 62:
+        verdict_sentence = f"Votre CV presente un match encourageant avec {title}, avec quelques points a renforcer."
+    elif score >= 45:
+        verdict_sentence = f"Votre CV presente un match partiel avec {title}."
+    else:
+        verdict_sentence = f"Votre CV presente un alignement limite avec {title}."
+
+    strong_lines = [
+        f"- **{str(item.get('title') or 'Signal fort').strip()}** — {str(item.get('evidence') or '').strip()}"
+        for item in strong_items[:4]
+        if isinstance(item, dict)
+    ]
+    if not strong_lines:
+        strong_lines = ["- **Signaux disponibles** — BidWise a detecte quelques elements exploitables, mais les preuves fortes restent limitees."]
+
+    watch_lines = [
+        f"- **{str(item.get('title') or 'Point a verifier').strip()}** — {str(item.get('evidence') or '').strip()}"
+        for item in watch_items[:4]
+        if isinstance(item, dict)
+    ]
+    if not watch_lines:
+        watch_lines = ["- **A verifier** — Aucun gap critique n'est clairement detecte, mais adaptez le CV aux mots-cles de l'offre."]
+
+    coverage = int(ats.get("keyword_coverage_percent") or 0)
+    ats_level = "Bon" if coverage >= 70 else "Moyen" if coverage >= 40 else "Faible"
+    next_steps = match.get("next_step_hints") if isinstance(match.get("next_step_hints"), list) else []
+    next_step = str(next_steps[0]).strip() if next_steps else "Adaptez votre resume professionnel aux exigences principales de l'offre."
+
+    markdown = "\n\n".join(
+        [
+            "## 1. Verdict global\n"
+            f"{verdict_sentence} Score BidWise: {score}%. "
+            "Cette analyse rapide utilise les signaux deja extraits de votre CV et de l'offre.",
+            "## 2. Points forts — Ou vous etes un candidat solide\n" + "\n".join(strong_lines),
+            "## 3. Points a surveiller — Gaps identifies\n" + "\n".join(watch_lines),
+            "## 4. Analyse ATS\n"
+            f"- Score ATS BidWise : {coverage}%\n"
+            f"- Keywords couverts : {', '.join(covered[:10]) if covered else 'non visible dans le CV'}\n"
+            f"- Keywords manquants : {', '.join(missing[:10]) if missing else 'aucun keyword critique detecte'}\n"
+            f"- Niveau compatibilite ATS : {ats_level}",
+            "## 5. Prochaine etape\n" + next_step,
+        ]
+    )
+
+    return {
+        "status": "ready",
+        "source": "deterministic",
+        "analysis_markdown": markdown,
+        "verdict": verdict,
+        "ats_level": ats_level,
+        "next_step": next_step,
+    }
+
+
+def _get_resume_match_opportunity(opportunity_id):
+    try:
+        return Opportunite.objects.select_related("source").get(
+            pk=int(opportunity_id),
+            statut=StatutOpportunite.ACTIVE,
+        )
+    except (TypeError, ValueError, Opportunite.DoesNotExist):
+        return None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def resume_match_view(request, opportunity_id):
+    opportunity = _get_resume_match_opportunity(opportunity_id)
+    if opportunity is None:
+        return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    evidence = build_resume_match_evidence(user=request.user, opportunity=opportunity)
+    deterministic = _deterministic_resume_match_analysis(evidence)
+    return Response(
+        {
+            "status": evidence.get("status"),
+            "has_resume": bool(evidence.get("has_resume")),
+            "resume_status": evidence.get("resume_status", ""),
+            "evidence": evidence,
+            "deterministic_analysis": deterministic,
+            "can_generate_ai_analysis": evidence.get("status") == READY_STATUS,
+            "suggested_actions": [
+                {"key": "full_fit_analysis", "label": "Full AI analysis"},
+            ],
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+class ResumeMatchAIThrottle(UserRateThrottle):
+    scope = "resume_match_ai"
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ResumeMatchAIThrottle])
+def resume_match_action_view(request, opportunity_id):
+    action = str(request.data.get("action") or "").strip()
+    if action != "full_fit_analysis":
+        return Response(
+            {"action": ["Unsupported action. Use full_fit_analysis."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    opportunity = _get_resume_match_opportunity(opportunity_id)
+    if opportunity is None:
+        return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    evidence = build_resume_match_evidence(user=request.user, opportunity=opportunity)
+    deterministic = _deterministic_resume_match_analysis(evidence)
+    if evidence.get("status") != READY_STATUS:
+        return Response(
+            {
+                "status": evidence.get("status"),
+                "has_resume": bool(evidence.get("has_resume")),
+                "resume_status": evidence.get("resume_status", ""),
+                "evidence": evidence,
+                "analysis": deterministic,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    cache_key = _resume_match_cache_key(request, opportunity, evidence, action)
+    if cache_key:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            response = Response(cached, status=status.HTTP_200_OK)
+            response["X-BidWise-Resume-Match-Cache"] = "hit"
+            return response
+
+    try:
+        analysis = generate_resume_match_analysis(evidence)
+    except ResumeMatchLLMError as exc:
+        logger.warning(
+            "Resume match LLM failed user_id=%s opportunity_id=%s reason=%s",
+            getattr(request.user, "id", None),
+            getattr(opportunity, "id", None),
+            exc,
+        )
+        response_payload = {
+            "status": "fallback",
+            "source": "deterministic",
+            "error": str(exc),
+            "evidence": evidence,
+            "analysis": deterministic,
+        }
+        return Response(response_payload, status=status.HTTP_200_OK)
+
+    response_payload = {
+        "status": "ready",
+        "action": action,
+        "evidence": evidence,
+        "analysis": analysis,
+    }
+    if cache_key:
+        cache.set(cache_key, response_payload, timeout=RESUME_MATCH_LLM_CACHE_TTL_SECONDS)
+
+    response = Response(response_payload, status=status.HTTP_200_OK)
+    response["X-BidWise-Resume-Match-Cache"] = "miss" if cache_key else "skip"
     return response
