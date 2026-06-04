@@ -4,11 +4,15 @@ import { ExternalLink, Sparkles } from 'lucide-react';
 import { Button } from '../../../../components/ui/button.jsx';
 import { DETAIL_SIMILAR_OPPORTUNITIES_LIMIT } from '../../constants/opportunityDetail.js';
 import {
+  confirmProfileResume,
+  deleteProfileResume,
   generateResumeMatchAction,
   generateResumeMatchAnalysis,
   getResumeMatch,
   getSimilarOpportunities,
+  uploadProfileResume,
 } from '../../services/opportunitiesService.js';
+import { validateResumeFile } from '../../../profile/profileValidation.js';
 import OpportunityDescriptionSection from '../detail/OpportunityDescriptionSection.jsx';
 import OpportunityExtraData from '../detail/OpportunityExtraData.jsx';
 import OpportunityMeta from '../detail/OpportunityMeta.jsx';
@@ -20,6 +24,8 @@ import { buildOpportunityDetailPageViewModel } from '../../viewModels/opportunit
 
 const VISIBLE_ADDITIONAL_INFO_LABELS = new Set(['Sector', 'Company size', 'Reference']);
 const RESUME_MATCH_MIN_THINKING_MS = 900;
+const RESUME_READY_POLL_INTERVAL_MS = 2500;
+const RESUME_READY_MAX_POLLS = 72;
 
 const waitForMinimumDelay = async (startedAt, minimumDelay = RESUME_MATCH_MIN_THINKING_MS) => {
   const elapsed = Date.now() - startedAt;
@@ -29,6 +35,23 @@ const waitForMinimumDelay = async (startedAt, minimumDelay = RESUME_MATCH_MIN_TH
       window.setTimeout(resolve, remaining);
     });
   }
+};
+
+const waitForResumeMatchReady = async (opportunityId) => {
+  let latestMatch = null;
+
+  for (let attempt = 0; attempt < RESUME_READY_MAX_POLLS; attempt += 1) {
+    latestMatch = await getResumeMatch(opportunityId);
+    if (latestMatch?.has_resume !== false && latestMatch?.status === 'READY') {
+      return latestMatch;
+    }
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, RESUME_READY_POLL_INTERVAL_MS);
+    });
+  }
+
+  return latestMatch;
 };
 
 const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
@@ -47,6 +70,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const [resumeMatchActionResults, setResumeMatchActionResults] = useState([]);
   const [resumeMatchActionLoading, setResumeMatchActionLoading] = useState('');
   const [resumeMatchActionError, setResumeMatchActionError] = useState('');
+  const [resumeUploadState, setResumeUploadState] = useState({ status: 'idle', resume: null, error: '' });
   const scrollContainerRef = useRef(null);
 
   useEffect(() => {
@@ -62,6 +86,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
     setResumeMatchActionResults([]);
     setResumeMatchActionLoading('');
     setResumeMatchActionError('');
+    setResumeUploadState({ status: 'idle', resume: null, error: '' });
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
     }
@@ -134,6 +159,43 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
     window.open(viewModel.sourceUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const runResumeMatchAiAnalysis = async (startedAt = Date.now()) => {
+    try {
+      setResumeMatchLoading(true);
+      const data = await generateResumeMatchAnalysis(opportunity.id);
+      await waitForMinimumDelay(startedAt);
+      if (data?.status === 'fallback' || data?.source === 'deterministic') {
+        setResumeMatch({
+          ...(data?.evidence || {}),
+          deterministic_analysis: data?.analysis || null,
+          can_generate_ai_analysis: true,
+        });
+        setResumeMatchAiError(
+          data?.error || 'The full AI analysis is not available right now. Showing the quick BidWise analysis instead.',
+        );
+      } else {
+        setResumeMatchAiAnalysis(data);
+      }
+    } catch (error) {
+      console.log('Failed to generate resume match analysis', error);
+
+      try {
+        const fallbackStartedAt = Date.now();
+        const fallback = await getResumeMatch(opportunity.id);
+        await waitForMinimumDelay(fallbackStartedAt, 500);
+        setResumeMatch(fallback);
+        setResumeMatchAiError(
+          error?.response?.data?.detail || 'The full AI analysis is not available right now. Showing the quick BidWise analysis instead.',
+        );
+      } catch (fallbackError) {
+        console.log('Failed to load resume match fallback', fallbackError);
+        setResumeMatchError('Could not analyze your resume right now.');
+      }
+    } finally {
+      setResumeMatchLoading(false);
+    }
+  };
+
   const handleResumeMatch = async () => {
     setShowResumeMatch(true);
 
@@ -150,6 +212,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
       setResumeMatchActionResults([]);
       setResumeMatchActionLoading('');
       setResumeMatchActionError('');
+      setResumeUploadState({ status: 'idle', resume: null, error: '' });
 
       const initialMatch = await getResumeMatch(opportunity.id);
       setResumeMatch(initialMatch);
@@ -158,21 +221,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
         return;
       }
 
-      setResumeMatchLoading(true);
-      const data = await generateResumeMatchAnalysis(opportunity.id);
-      await waitForMinimumDelay(startedAt);
-      if (data?.status === 'fallback' || data?.source === 'deterministic') {
-        setResumeMatch({
-          ...(data?.evidence || {}),
-          deterministic_analysis: data?.analysis || null,
-          can_generate_ai_analysis: true,
-        });
-        setResumeMatchAiError(
-          data?.error || 'The full AI analysis is not available right now. Showing the quick BidWise analysis instead.',
-        );
-      } else {
-        setResumeMatchAiAnalysis(data);
-      }
+      await runResumeMatchAiAnalysis(startedAt);
     } catch (error) {
       console.log('Failed to generate resume match analysis', error);
 
@@ -223,6 +272,91 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
       );
     } finally {
       setResumeMatchActionLoading('');
+    }
+  };
+
+  const handleResumeUpload = async (file) => {
+    const validationError = validateResumeFile(file);
+    if (validationError) {
+      setResumeUploadState({ status: 'idle', resume: null, error: validationError });
+      return;
+    }
+
+    try {
+      setResumeUploadState({ status: 'uploading', resume: null, error: '' });
+      const data = await uploadProfileResume(file);
+      setResumeUploadState({ status: 'confirm', resume: data?.resume || null, error: '' });
+    } catch (error) {
+      console.log('Failed to upload resume from assistant', error);
+      setResumeUploadState({
+        status: 'idle',
+        resume: null,
+        error: error?.response?.data?.file?.[0] || error?.response?.data?.detail || 'Resume upload failed.',
+      });
+    }
+  };
+
+  const handleCancelResumeUpload = async () => {
+    const resumeId = resumeUploadState.resume?.id;
+    setResumeUploadState({ status: 'idle', resume: null, error: '' });
+    if (!resumeId) return;
+
+    try {
+      await deleteProfileResume(resumeId);
+    } catch (error) {
+      console.log('Failed to cancel resume upload from assistant', error);
+    }
+  };
+
+  const handleConfirmResumeUpload = async () => {
+    const resumeId = resumeUploadState.resume?.id;
+    if (!resumeId) return;
+
+    try {
+      setResumeUploadState((previous) => ({ ...previous, status: 'confirming', error: '' }));
+      const data = await confirmProfileResume(resumeId);
+      setResumeUploadState({ status: 'processing', resume: data?.resume || resumeUploadState.resume, error: '' });
+      setResumeMatch({
+        has_resume: true,
+        status: 'PROCESSING',
+        can_generate_ai_analysis: false,
+      });
+      setResumeMatchError('');
+      setResumeMatchAiAnalysis(null);
+      setResumeMatchAiError('');
+      setResumeMatchActionResults([]);
+      setResumeMatchActionLoading('');
+      setResumeMatchActionError('');
+      setResumeMatchLoading(true);
+
+      const readyMatch = await waitForResumeMatchReady(opportunity.id);
+      if (readyMatch?.status !== 'READY') {
+        setResumeMatch(readyMatch || {
+          has_resume: true,
+          status: 'PROCESSING',
+          can_generate_ai_analysis: false,
+        });
+        setResumeUploadState((previous) => ({
+          ...previous,
+          status: 'idle',
+          error: 'Resume analysis is still running. Please try again in a moment.',
+        }));
+        setResumeMatchError('Resume analysis is still running. Please try again in a moment.');
+        setResumeMatchLoading(false);
+        return;
+      }
+
+      setResumeMatch(readyMatch);
+      setResumeUploadState({ status: 'idle', resume: readyMatch?.resume || data?.resume || resumeUploadState.resume, error: '' });
+      await runResumeMatchAiAnalysis(Date.now());
+    } catch (error) {
+      console.log('Failed to confirm resume from assistant', error);
+      setResumeMatchLoading(false);
+      setResumeUploadState((previous) => ({
+        ...previous,
+        status: 'confirm',
+        error: error?.response?.data?.detail || 'Could not activate the resume.',
+      }));
     }
   };
 
@@ -317,9 +451,13 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
               actionResults={resumeMatchActionResults}
               actionLoading={resumeMatchActionLoading}
               actionError={resumeMatchActionError}
+              uploadState={resumeUploadState}
               onClose={() => setShowResumeMatch(false)}
               onGenerateAnalysis={handleGenerateResumeMatchAnalysis}
               onAction={handleResumeMatchAction}
+              onUploadResume={handleResumeUpload}
+              onCancelResumeUpload={handleCancelResumeUpload}
+              onConfirmResumeUpload={handleConfirmResumeUpload}
             />
           ) : null}
 

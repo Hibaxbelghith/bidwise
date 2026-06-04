@@ -281,3 +281,25 @@ export const generateResumeMatchAction = async (opportunityId, action) => {
   });
   return normalizeObject(response.data);
 };
+
+export const uploadProfileResume = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('activate', 'false');
+
+  const response = await api.post('/profile/resume/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return normalizeObject(response.data);
+};
+
+export const confirmProfileResume = async (resumeId) => {
+  const response = await api.patch('/profile/resume/', { resume_id: resumeId });
+  return normalizeObject(response.data);
+};
+
+export const deleteProfileResume = async (resumeId) => {
+  const suffix = resumeId ? `?resume_id=${encodeURIComponent(resumeId)}` : '';
+  const response = await api.delete(`/profile/resume/${suffix}`);
+  return normalizeObject(response.data);
+};

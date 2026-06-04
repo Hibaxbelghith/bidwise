@@ -222,6 +222,12 @@ def _schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
     def strip_unsupported(value: Any) -> Any:
         if isinstance(value, dict):
             value.pop("additionalProperties", None)
+            raw_type = value.get("type")
+            if isinstance(raw_type, list):
+                non_null_types = [item for item in raw_type if item != "null"]
+                if len(non_null_types) == 1 and "null" in raw_type:
+                    value["type"] = non_null_types[0]
+                    value["nullable"] = True
             return {key: strip_unsupported(child) for key, child in value.items()}
         if isinstance(value, list):
             return [strip_unsupported(item) for item in value]

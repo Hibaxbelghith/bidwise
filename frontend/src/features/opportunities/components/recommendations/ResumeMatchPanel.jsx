@@ -1,4 +1,4 @@
-import { AlertCircle, Loader2, Maximize2, Sparkles, X, Minimize2, Zap } from 'lucide-react';
+import { AlertCircle, FileText, Loader2, Maximize2, Upload, X, Minimize2 } from 'lucide-react';
 import { Button } from '../../../../components/ui/button.jsx';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -6,6 +6,18 @@ import {
   StreamingMarkdownMessage,
   ThinkingLoader,
 } from './ResumeMatchMessageParts.jsx';
+import { ALLOWED_RESUME_ACCEPT } from '../../../profile/profileValidation.js';
+
+const getResumeFileName = (resume) =>
+  resume?.metadata?.original_filename || resume?.file?.name || 'Uploaded resume';
+
+const getResumeUrl = (resume) => resume?.file_url || resume?.previewUrl || '';
+
+const isPreviewableInline = (resume) => {
+  const fileName = getResumeFileName(resume).toLowerCase();
+  const contentType = resume?.metadata?.content_type || resume?.file?.type || '';
+  return fileName.endsWith('.pdf') || fileName.endsWith('.txt') || contentType === 'application/pdf' || contentType === 'text/plain';
+};
 
 const getAnalysisMarkdown = (resumeMatch, aiAnalysis) =>
   aiAnalysis?.analysis?.analysis_markdown ||
@@ -70,11 +82,16 @@ const ResumeMatchPanel = ({
   actionResults = [],
   actionLoading = '',
   actionError = '',
+  uploadState = { status: 'idle', resume: null, error: '' },
   onClose,
   onGenerateAnalysis,
   onAction,
+  onUploadResume,
+  onCancelResumeUpload,
+  onConfirmResumeUpload,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
+  const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
@@ -113,6 +130,12 @@ const ResumeMatchPanel = ({
     !aiLoading &&
     (!aiAnalysis || isAiFallback) &&
     !aiAnalysis?.analysis_markdown;
+  const uploadBusy =
+    uploadState?.status === 'uploading' ||
+    uploadState?.status === 'confirming' ||
+    uploadState?.status === 'processing';
+  const uploadProcessing = uploadState?.status === 'processing';
+  const pendingResume = uploadState?.resume || null;
 
   // Auto-scroll to bottom when new content arrives
   useEffect(() => {
@@ -216,20 +239,108 @@ const ResumeMatchPanel = ({
                       and streamline your career research.
                     </p>
                     <p className="mt-3 text-sm font-medium text-gray-900">Let's get started!</p>
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={ALLOWED_RESUME_ACCEPT}
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) {
+                          onUploadResume?.(file);
+                          event.target.value = '';
+                        }
+                      }}
+                    />
+
+                    {uploadState?.error ? (
+                      <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
+                        {uploadState.error}
+                      </div>
+                    ) : null}
+
+                    {uploadState?.status === 'uploading' ? (
+                      <div className="mt-4">
+                        <ThinkingLoader label="Uploading your resume" steps={['Uploading file', 'Preparing preview']} />
+                      </div>
+                    ) : null}
+
                     <button
                       type="button"
-                      onClick={() => {
-                        window.location.assign('/profile#resume');
-                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadBusy}
                       className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                     >
+                      <Upload className="mr-2 inline h-4 w-4" />
                       Upload your resume
                     </button>
                   </div>
                 ) : null}
 
+                {hasNoResume && ['confirm', 'confirming'].includes(uploadState?.status) && pendingResume ? (
+                  <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 px-4 py-6">
+                    <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+                        <h3 className="text-base font-semibold text-neutral-950">Resume preview</h3>
+                        <button
+                          type="button"
+                          onClick={onCancelResumeUpload}
+                          className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                          aria-label="Close resume preview"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-4 p-5">
+                        <div className="flex items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                          <FileText className="h-5 w-5 text-neutral-500" />
+                          <p className="min-w-0 truncate text-sm font-medium text-neutral-900">
+                            {getResumeFileName(pendingResume)}
+                          </p>
+                        </div>
+
+                        {getResumeUrl(pendingResume) && isPreviewableInline(pendingResume) ? (
+                          <iframe
+                            title={`Resume preview - ${getResumeFileName(pendingResume)}`}
+                            src={getResumeUrl(pendingResume)}
+                            referrerPolicy="no-referrer"
+                            className="h-80 w-full rounded-md border border-neutral-200 bg-white"
+                          />
+                        ) : (
+                          <div className="flex h-72 items-center justify-center rounded-md border border-neutral-200 bg-neutral-50 p-6 text-center">
+                            <div>
+                              <FileText className="mx-auto h-10 w-10 text-neutral-400" />
+                              <p className="mt-3 text-sm font-medium text-neutral-900">
+                                {getResumeFileName(pendingResume)}
+                              </p>
+                              <p className="mt-1 text-sm text-neutral-500">
+                                This file is ready to use. Confirm it to attach it to your profile.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                          <Button type="button" variant="outline" onClick={onCancelResumeUpload}>
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            className="bg-neutral-950 text-white hover:bg-neutral-800"
+                            onClick={onConfirmResumeUpload}
+                            disabled={uploadState?.status === 'confirming'}
+                          >
+                            {uploadState?.status === 'confirming' ? 'Confirming...' : 'Looks good'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* Loading */}
-                {!hasNoResume && loading && (
+                {!hasNoResume && (loading || uploadProcessing) && (
                   <ThinkingLoader label="BidWise AI is reading your resume" />
                 )}
 
@@ -242,7 +353,7 @@ const ResumeMatchPanel = ({
                 )}
 
                 {/* Status Message */}
-                {!loading && statusMessage && !hasNoResume && (
+                {!loading && !uploadProcessing && statusMessage && !hasNoResume && (
                   <div className="rounded-2xl rounded-tl-md bg-amber-50 px-4 py-2.5 ring-1 ring-amber-100">
                     <p className="text-sm text-amber-700">{statusMessage}</p>
                   </div>
