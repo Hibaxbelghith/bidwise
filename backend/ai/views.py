@@ -1,6 +1,7 @@
 import logging
 import hashlib
 import json
+import unicodedata
 
 from django.conf import settings
 from django.core.cache import cache
@@ -37,6 +38,7 @@ from .quality_gates import (
 from .recommendation_service import get_score_label, rank_opportunities
 from .recommendation_llm import apply_llm_hierarchy_validation_to_ranked
 from .resume_match.evidence import READY_STATUS, build_resume_match_evidence
+from .resume_match.chatbot import OpportunityAssistantError, answer_opportunity_question
 from .resume_match.llm import (
     ResumeMatchLLMError,
     generate_cover_letter,
@@ -60,7 +62,68 @@ DEFAULT_RECOMMENDATIONS = 10
 MIN_MATCH_SCORE = 0.1
 RECOMMENDATIONS_CACHE_TTL_SECONDS = 15 * 60
 RESUME_MATCH_LLM_CACHE_TTL_SECONDS = 24 * 60 * 60
-RESUME_MATCH_LLM_PROMPT_VERSION = 24
+RESUME_MATCH_LLM_PROMPT_VERSION = 25
+ASSISTANT_QUESTION_MAX_CHARS = 500
+ASSISTANT_HISTORY_MAX_MESSAGES = 4
+ASSISTANT_HISTORY_MAX_CHARS = 1800
+OPPORTUNITY_ASSISTANT_CACHE_TTL_SECONDS = 24 * 60 * 60
+OPPORTUNITY_ASSISTANT_VERSION = 11
+APPLICATION_ACTION_INTENTS = (
+    (
+        "generate_cover_letter",
+        (
+            "lettre de motivation",
+            "motivation letter",
+            "cover letter",
+            "lettre candidature",
+            "message de candidature",
+            "mail de candidature",
+            "email de candidature",
+        ),
+    ),
+    (
+        "optimize_cv",
+        (
+            "optimise mon cv",
+            "optimiser mon cv",
+            "optimize my cv",
+            "optimize resume",
+            "adapter mon cv",
+            "adapte mon cv",
+            "ameliore mon cv",
+            "ameliorer mon cv",
+            "cv pour cette offre",
+            "prepare ma candidature",
+            "preparer ma candidature",
+            "candidature complete",
+        ),
+    ),
+    (
+        "rewrite_summary",
+        (
+            "resume professionnel",
+            "résumé professionnel",
+            "professional summary",
+            "rewrite summary",
+            "reformule mon profil",
+            "reformuler mon profil",
+            "accroche cv",
+        ),
+    ),
+    (
+        "interview_prep",
+        (
+            "questions entretien",
+            "questions d entretien",
+            "entretien rh",
+            "interview questions",
+            "prepare interview",
+            "preparer entretien",
+            "preparer mon entretien",
+            "préparer entretien",
+        ),
+    ),
+)
 SHOW_RECENT_FALLBACK_SETTING = "RECOMMENDATION_SHOW_RECENT_FALLBACK"
 BUSINESS_RERANK_CANDIDATES = 50
 JOBBERT_RETRIEVAL_CANDIDATES = 2500
@@ -229,6 +292,22 @@ def _recommendations_cache_key(request, limit):
     return f"ai:recommendations:{_stable_hash(key_payload)}"
 
 
+def _recommendation_context_cache_key(request, opportunity_id):
+    recommendation_state_key = _recommendations_cache_key(request, 1)
+    if not recommendation_state_key:
+        return ""
+    return f"ai:recommendation-context:{_stable_hash({'state': recommendation_state_key, 'opportunity_id': opportunity_id})}"
+
+
+def _cache_recommendation_contexts(request, recommendations):
+    for recommendation in recommendations if isinstance(recommendations, list) else []:
+        if not isinstance(recommendation, dict) or not recommendation.get("id"):
+            continue
+        cache_key = _recommendation_context_cache_key(request, recommendation["id"])
+        if cache_key:
+            cache.set(cache_key, recommendation, timeout=RECOMMENDATIONS_CACHE_TTL_SECONDS)
+
+
 def _profile_opportunity_types(profile):
     selected = getattr(profile, "opportunity_types", []) or []
     normalized = []
@@ -345,6 +424,7 @@ def _serialize_recommendation(opportunity, *, features=None, profile_strength=No
             "recommendation_mode",
             recommendation_mode_for_profile(profile_strength),
         ),
+        "recommendation_scoring_mode": str(recommendation_debug.get("scoring_mode") or ""),
         "recommendation_bucket": getattr(opportunity, "recommendation_bucket", "RELATED_REVIEW"),
         "recommendation_bucket_reason": getattr(opportunity, "recommendation_bucket_reason", ""),
         "llm_hierarchy_validation": recommendation_debug.get("llm_hierarchy_validation", {}),
@@ -942,6 +1022,7 @@ def recommendations_view(request):
     if cache_key:
         cached_recommendations = cache.get(cache_key)
         if cached_recommendations is not None:
+            _cache_recommendation_contexts(request, cached_recommendations)
             response = Response(cached_recommendations, status=status.HTTP_200_OK)
             response["X-BidWise-Recommendations-Cache"] = "hit"
             return response
@@ -974,6 +1055,7 @@ def recommendations_view(request):
 
     if cache_key and recommendations:
         cache.set(cache_key, recommendations, timeout=RECOMMENDATIONS_CACHE_TTL_SECONDS)
+    _cache_recommendation_contexts(request, recommendations)
 
     response = Response(recommendations, status=status.HTTP_200_OK)
     response["X-BidWise-Recommendations-Cache"] = "miss" if cache_key else "skip"
@@ -1005,6 +1087,134 @@ def _resume_match_cache_key(request, opportunity, evidence, action):
         "provider": provider_signature,
     }
     return f"ai:resume-match:{_stable_hash(payload)}"
+
+
+def _opportunity_assistant_cache_key(request, opportunity, evidence, question):
+    resume = evidence.get("resume") if isinstance(evidence, dict) else {}
+    recommendation = evidence.get("recommendation") if isinstance(evidence, dict) else {}
+    if not isinstance(resume, dict):
+        resume = {}
+    if not isinstance(recommendation, dict):
+        recommendation = {}
+
+    provider_signature = {
+        "provider": str(getattr(settings, "LLM_PROVIDER", "") or ""),
+        "ollama_model": str(getattr(settings, "OLLAMA_MODEL", "") or ""),
+        "gemini_model": str(getattr(settings, "GEMINI_MODEL", "") or ""),
+    }
+    payload = {
+        "assistant_version": OPPORTUNITY_ASSISTANT_VERSION,
+        "user_id": getattr(request.user, "id", None),
+        "resume_id": resume.get("id"),
+        "resume_updated_at": resume.get("updated_at", ""),
+        "opportunity_id": getattr(opportunity, "id", None),
+        "opportunity_updated_at": getattr(opportunity, "date_modification", None).isoformat()
+        if getattr(opportunity, "date_modification", None)
+        else "",
+        "question": " ".join(str(question or "").casefold().split()),
+        "history": evidence.get("conversation_history", []) if isinstance(evidence, dict) else [],
+        "recommendation": recommendation,
+        "provider": provider_signature,
+    }
+    return f"ai:opportunity-assistant:{_stable_hash(payload)}"
+
+
+def _assistant_conversation_history(value):
+    if not isinstance(value, list):
+        return []
+
+    history = []
+    for item in value[-ASSISTANT_HISTORY_MAX_MESSAGES:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        history.append({"role": role, "content": content[:ASSISTANT_HISTORY_MAX_CHARS]})
+    return history
+
+
+def _assistant_intent_text(value):
+    normalized = unicodedata.normalize("NFKD", str(value or "").casefold())
+    without_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized_chars = [
+        ch if ch.isalnum() or ch in {"+", "#", ".", "/"} else " "
+        for ch in without_accents
+    ]
+    return " ".join("".join(normalized_chars).split())
+
+
+def _detect_application_action(question):
+    text = _assistant_intent_text(question)
+    if not text:
+        return ""
+
+    for action, phrases in APPLICATION_ACTION_INTENTS:
+        for phrase in phrases:
+            if _assistant_intent_text(phrase) in text:
+                return action
+    return ""
+
+
+def _generate_application_action_response(action, evidence):
+    if action == "optimize_cv":
+        return generate_resume_optimization(evidence)
+    if action == "rewrite_summary":
+        return generate_summary_rewrite(evidence)
+    if action == "generate_cover_letter":
+        return generate_cover_letter(evidence)
+    if action == "interview_prep":
+        return generate_interview_prep(evidence)
+    raise ResumeMatchLLMError("Unsupported application action.")
+
+
+def _recommendation_context_from_payload(recommendation):
+    if not isinstance(recommendation, dict):
+        return {}
+
+    def as_percent(value):
+        try:
+            return int(round(max(0.0, min(1.0, float(value))) * 100))
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "score_percent": as_percent(recommendation.get("match_score", recommendation.get("score"))),
+        "score_label": str(recommendation.get("score_label") or ""),
+        "confidence": str(recommendation.get("recommendation_confidence") or ""),
+        "bucket": str(recommendation.get("recommendation_bucket") or ""),
+        "bucket_reason": str(recommendation.get("recommendation_bucket_reason") or ""),
+        "mode": str(recommendation.get("recommendation_mode") or ""),
+        "scoring_mode": str(recommendation.get("recommendation_scoring_mode") or ""),
+        "reasons": _as_list(recommendation.get("reasons") or recommendation.get("reason"))[:5],
+        "gaps": _as_list(recommendation.get("gaps"))[:5],
+        "semantic_score_percent": as_percent(recommendation.get("semantic_score")),
+        "business_score_percent": as_percent(recommendation.get("business_score")),
+        "feedback_score_percent": as_percent(recommendation.get("feedback_score")),
+        "evidence_summary": recommendation.get("evidence_summary")
+        if isinstance(recommendation.get("evidence_summary"), dict)
+        else {},
+    }
+
+
+def _cached_recommendation_context(request, opportunity_id):
+    item_cache_key = _recommendation_context_cache_key(request, opportunity_id)
+    recommendation = cache.get(item_cache_key) if item_cache_key else None
+
+    if not isinstance(recommendation, dict):
+        list_cache_key = _recommendations_cache_key(request, MAX_RECOMMENDATIONS)
+        recommendations = cache.get(list_cache_key) if list_cache_key else None
+        recommendation = next(
+            (
+                item
+                for item in recommendations
+                if isinstance(item, dict) and str(item.get("id") or "") == str(opportunity_id)
+            ),
+            None,
+        ) if isinstance(recommendations, list) else None
+
+    return _recommendation_context_from_payload(recommendation)
 
 
 def _deterministic_resume_match_analysis(evidence):
@@ -1135,6 +1345,134 @@ def resume_match_view(request, opportunity_id):
 
 class ResumeMatchAIThrottle(UserRateThrottle):
     scope = "resume_match_ai"
+
+
+class OpportunityAssistantThrottle(UserRateThrottle):
+    scope = "opportunity_assistant"
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([OpportunityAssistantThrottle])
+def opportunity_assistant_question_view(request, opportunity_id):
+    question_value = request.data.get("question")
+    if not isinstance(question_value, str):
+        return Response(
+            {"question": ["A text question is required."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    question = question_value.strip()
+    if not question:
+        return Response(
+            {"question": ["A text question is required."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if len(question) > ASSISTANT_QUESTION_MAX_CHARS:
+        return Response(
+            {"question": [f"Question must be at most {ASSISTANT_QUESTION_MAX_CHARS} characters."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    opportunity = _get_resume_match_opportunity(opportunity_id)
+    if opportunity is None:
+        return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    history = _assistant_conversation_history(request.data.get("history"))
+    evidence = build_resume_match_evidence(user=request.user, opportunity=opportunity)
+    evidence["conversation_history"] = history
+    evidence["recommendation"] = _cached_recommendation_context(request, opportunity.id)
+    cache_key = _opportunity_assistant_cache_key(request, opportunity, evidence, question)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        response = Response(cached, status=status.HTTP_200_OK)
+        response["X-BidWise-Opportunity-Assistant-Cache"] = "hit"
+        return response
+
+    application_action = _detect_application_action(question)
+    if application_action:
+        if evidence.get("status") != READY_STATUS:
+            response_payload = {
+                "answer": (
+                    "Upload and confirm your resume first so BidWise AI can generate "
+                    "application content for this opportunity."
+                ),
+                "answered": True,
+                "source": "resume_action",
+                "action": application_action,
+                "provider": "",
+                "model": "",
+            }
+            response = Response(response_payload, status=status.HTTP_200_OK)
+            response["X-BidWise-Opportunity-Assistant-Cache"] = "skip"
+            return response
+
+        try:
+            analysis = _generate_application_action_response(application_action, evidence)
+        except ResumeMatchLLMError as exc:
+            logger.warning(
+                "Opportunity assistant action failed action=%s user_id=%s opportunity_id=%s reason=%s",
+                application_action,
+                getattr(request.user, "id", None),
+                getattr(opportunity, "id", None),
+                exc,
+            )
+            return Response(
+                {"detail": "This AI action is temporarily unavailable. Please try again."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        markdown = str(analysis.get("analysis_markdown") or "").strip() if isinstance(analysis, dict) else ""
+        if not markdown:
+            logger.warning(
+                "Opportunity assistant action returned empty content action=%s user_id=%s opportunity_id=%s",
+                application_action,
+                getattr(request.user, "id", None),
+                getattr(opportunity, "id", None),
+            )
+            return Response(
+                {"detail": "This AI action is temporarily unavailable. Please try again."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        response_payload = {
+            "answer": markdown,
+            "answered": True,
+            "source": "resume_action",
+            "action": application_action,
+            "provider": analysis.get("provider", ""),
+            "model": analysis.get("model", ""),
+        }
+        cache.set(cache_key, response_payload, timeout=OPPORTUNITY_ASSISTANT_CACHE_TTL_SECONDS)
+        response = Response(response_payload, status=status.HTTP_200_OK)
+        response["X-BidWise-Opportunity-Assistant-Cache"] = "miss"
+        return response
+
+    try:
+        answer = answer_opportunity_question(question, evidence, history=history)
+    except OpportunityAssistantError as exc:
+        logger.warning(
+            "Opportunity assistant failed user_id=%s opportunity_id=%s reason=%s",
+            getattr(request.user, "id", None),
+            getattr(opportunity, "id", None),
+            exc,
+        )
+        return Response(
+            {"detail": "The opportunity assistant is temporarily unavailable. Please try again."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    response_payload = {
+        "answer": answer["answer"],
+        "answered": answer["answered"],
+        "source": "llm",
+        "provider": answer["provider"],
+        "model": answer["model"],
+    }
+    cache.set(cache_key, response_payload, timeout=OPPORTUNITY_ASSISTANT_CACHE_TTL_SECONDS)
+    response = Response(response_payload, status=status.HTTP_200_OK)
+    response["X-BidWise-Opportunity-Assistant-Cache"] = "miss"
+    return response
 
 
 @api_view(["POST"])

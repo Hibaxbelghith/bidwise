@@ -134,8 +134,9 @@ def generate_resume_match_analysis(
     prompt = build_resume_match_analysis_prompt(evidence)
 
     match = _dict(evidence.get("match"))
+    expected_ats_percent = _dict(match.get("ats")).get("keyword_coverage_percent")
     expected_ats_level = _ats_level_from_percent(
-        _dict(match.get("ats")).get("keyword_coverage_percent"),
+        expected_ats_percent,
     )
 
     try:
@@ -144,7 +145,12 @@ def generate_resume_match_analysis(
         logger.warning("Resume match LLM analysis failed provider=%s reason=%s", getattr(llm_provider, "provider_name", ""), exc)
         raise ResumeMatchLLMError(str(exc)) from exc
 
-    return _normalize_analysis_payload(payload, provider=llm_provider, expected_ats_level=expected_ats_level)
+    return _normalize_analysis_payload(
+        payload,
+        provider=llm_provider,
+        expected_ats_level=expected_ats_level,
+        expected_ats_percent=expected_ats_percent,
+    )
 
 
 def generate_resume_optimization(
@@ -888,6 +894,7 @@ def _normalize_analysis_payload(
     *,
     provider: LLMProvider,
     expected_ats_level: str,
+    expected_ats_percent: Any,
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ResumeMatchLLMError("Resume match LLM payload must be a dictionary.")
@@ -910,6 +917,7 @@ def _normalize_analysis_payload(
     verdict = str(payload.get("verdict") or "unclear").strip() or "unclear"
     ats_level = expected_ats_level or str(payload.get("ats_level") or "Unknown").strip() or "Unknown"
     next_step = str(payload.get("next_step") or "").strip()
+    analysis_markdown = _force_ats_score_in_markdown(analysis_markdown, expected_ats_percent)
     analysis_markdown = _force_ats_level_in_markdown(analysis_markdown, ats_level)
 
     return {
@@ -1284,6 +1292,19 @@ def _force_ats_level_in_markdown(markdown: str, ats_level: str) -> str:
         return pattern.sub(rf"\1{ats_level}", markdown, count=1)
 
     return markdown
+
+
+def _force_ats_score_in_markdown(markdown: str, ats_percent: Any) -> str:
+    try:
+        normalized_percent = int(round(float(ats_percent)))
+    except (TypeError, ValueError):
+        return markdown
+
+    pattern = re.compile(
+        r"((?:BidWise\s+)?ATS\s+Score\s*:\s*)\d+(?:\.\d+)?%",
+        re.IGNORECASE,
+    )
+    return pattern.sub(rf"\g<1>{normalized_percent}%", markdown)
 
 
 def _dict(value: Any) -> dict[str, Any]:

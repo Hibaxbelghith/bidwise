@@ -216,11 +216,18 @@ Do not return legacy aliases for opportunities.
 Rules:
 - The input may come from Keejob, EmploiTunisie, LinkedIn, or public tender sources with different field coverage.
 - Use Known structured fields first when present, then complete missing fields from description/list context.
-- For Keejob, structured fields such as Location, Contract, Experience, Education, Company sector, Existing skills, and Known human languages are usually reliable; copy them into the appropriate JSON fields instead of rediscovering them.
+- For Keejob, structured fields such as Location, Contract, Experience, Education, Company sector, and Known human languages are usually reliable. Existing skills are candidate signals, but they may contain noisy scraper labels; validate every existing skill against the candidate-relevance rules below before returning it.
 - For Keejob descriptions, section headers like "Les attributions", "Missions", "Votre profil", "Profil recherché", "Qualités", and "Les spécificités du poste" usually contain the strongest matching evidence.
 - Extract real skills/tools even when the existing structured skills list is empty or incomplete.
-- skills are professional capabilities required to perform the job.
+- skills are professional capabilities the candidate is explicitly expected to know, use, or perform in this job.
 - tools are software, frameworks, platforms, machines, instruments, or named methods used in the job.
+- Apply this candidate-relevance test before returning every skill or tool: "Could an interviewer reasonably assess the candidate on this label based on a task, requirement, qualification, or clearly stated nice-to-have in the offer?" If not, omit it.
+- Read the full description and distinguish candidate expectations from company information. Exclude labels supported only by company history, culture, values, employee benefits, diversity/equal-opportunity notices, privacy/legal text, client industries, product marketing, or general claims about the organization.
+- Candidate-facing fields (skills, tools, soft_skills, domains, responsibilities, and requirements) must contain only information that describes the role or what the candidate is expected to know, use, demonstrate, or perform. Company-only context may help interpret the role, but must not be returned as candidate evidence.
+- Do not turn a team, department, stakeholder, audience, or person mentioned only as a collaboration partner into a candidate skill. For example, collaborating with QA or Project Management does not by itself require Quality Assurance or Project Management expertise.
+- Do not turn generic nouns, action verbs, outcomes, or adjectives into skills. A label must name a reusable professional capability, domain, method, or tool.
+- For ambiguous labels, return a specific professional capability only when the text supports it. For example, return "Quality Assurance" or "Contrôle qualité" only when the candidate must perform testing, QA, inspection, or quality-control work; omit generic uses such as "high-quality work".
+- If a label appears in Existing skills but has no candidate-relevant support in the title, tasks, requirements, qualifications, or nice-to-have sections, omit it.
 - soft_skills are behavioral or interpersonal qualities expected from the candidate, such as rigour, communication, teamwork, autonomy, responsibility, discretion, motivation, stress resistance, observation, and adaptability.
 - languages are human spoken/written languages such as French, English, Arabic, Italian, German, or Spanish.
 - Never put a human language in skills or tools; put it only in languages.
@@ -238,7 +245,7 @@ Rules:
 - If a task says "planifier la production", add a short skill such as "Planification de production".
 - If a task says "assurer la traçabilité" or "respecter QHSSE/ISO", add short skills such as "Traçabilité", "QHSE", or "Normes ISO" when supported by text.
 - If a candidate skill is only a generic office condition and the description gives no tasks or requirements around it, keep it out of skills and explain the uncertainty in warnings.
-- Do not include generic words like "quality", "management", or "team" unless they are clearly a professional domain.
+- Prefer omission over guessing. A shorter evidence-backed skills list is better than a longer noisy list.
 - business_families is secondary. Prefer exact free-text domains over forced classification.
 - Choose business_families from this taxonomy after reading the title, known structured fields, company sector, domains, tasks, and requirements:
 {FAMILY_DECISION_PROMPT}

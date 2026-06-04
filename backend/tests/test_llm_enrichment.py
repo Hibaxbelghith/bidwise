@@ -220,6 +220,12 @@ class LLMEnrichmentTests(SimpleTestCase):
         self.assertIn("Do not use engineering_construction for operating room", provider.prompts[0])
         self.assertIn("Prefer deriving skills from mission/responsibility/action sections", provider.prompts[0])
         self.assertIn("For security_safety roles, derive skills from operational duties", provider.prompts[0])
+        self.assertIn("Apply this candidate-relevance test", provider.prompts[0])
+        self.assertIn("Existing skills are candidate signals", provider.prompts[0])
+        self.assertIn("company history, culture, values, employee benefits", provider.prompts[0])
+        self.assertIn("Candidate-facing fields", provider.prompts[0])
+        self.assertIn("collaborating with QA or Project Management", provider.prompts[0])
+        self.assertIn("Prefer omission over guessing", provider.prompts[0])
 
     @override_settings(LLM_ENRICHMENT_ENABLED=False)
     def test_provider_is_disabled_by_default(self):

@@ -6,6 +6,10 @@ import {
   StreamingMarkdownMessage,
   ThinkingLoader,
 } from './ResumeMatchMessageParts.jsx';
+import {
+  OpportunityAssistantComposer,
+  OpportunityAssistantMessages,
+} from './OpportunityAssistantChat.jsx';
 import { ALLOWED_RESUME_ACCEPT } from '../../../profile/profileValidation.js';
 
 const getResumeFileName = (resume) =>
@@ -89,6 +93,10 @@ const ResumeMatchPanel = ({
   onUploadResume,
   onCancelResumeUpload,
   onConfirmResumeUpload,
+  chatMessages = [],
+  chatLoading = false,
+  chatError = '',
+  onSendQuestion,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const fileInputRef = useRef(null);
@@ -141,7 +149,15 @@ const ResumeMatchPanel = ({
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
-  }, [deterministicMarkdown, aiMarkdown, actionMessages.length, aiLoading, actionLoading]);
+  }, [
+    deterministicMarkdown,
+    aiMarkdown,
+    actionMessages.length,
+    aiLoading,
+    actionLoading,
+    chatMessages.length,
+    chatLoading,
+  ]);
 
   // Minimized state - Wide block with large rounded corners
   if (isMinimized) {
@@ -438,6 +454,12 @@ const ResumeMatchPanel = ({
                   </div>
                 )}
 
+                <OpportunityAssistantMessages
+                  messages={chatMessages}
+                  loading={chatLoading}
+                  error={chatError}
+                />
+
                 {resumeMatchReady && !hasNoResume && (aiMarkdown || shouldShowDeterministic) && (
                   <div className="mt-4 space-y-2">
                     {ACTION_SUGGESTIONS.map((suggestion) => (
@@ -466,7 +488,7 @@ const ResumeMatchPanel = ({
           </div>
         </div>
 
-        {/* Gemini-first flow runs automatically; follow-up suggestions appear inline after analysis. */}
+        <OpportunityAssistantComposer loading={chatLoading} onSendQuestion={onSendQuestion} />
       </section>
     </div>
   );

@@ -282,6 +282,41 @@ export const generateResumeMatchAction = async (opportunityId, action) => {
   return normalizeObject(response.data);
 };
 
+export const askOpportunityAssistant = async (opportunityId, question, history = []) => {
+  if (!opportunityId) {
+    throw new Error('Opportunity id is required');
+  }
+
+  const normalizedQuestion = String(question || '').trim();
+  if (!normalizedQuestion) {
+    throw new Error('A question is required');
+  }
+  if (normalizedQuestion.length > 500) {
+    throw new Error('Question must be at most 500 characters');
+  }
+
+  const normalizedHistory = Array.isArray(history)
+    ? history
+        .slice(-4)
+        .filter(
+          (message) =>
+            message &&
+            ['user', 'assistant'].includes(message.role) &&
+            String(message.content || '').trim(),
+        )
+        .map((message) => ({
+          role: message.role,
+          content: String(message.content).trim().slice(0, 1800),
+        }))
+    : [];
+
+  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${opportunityId}/assistant/questions/`, {
+    question: normalizedQuestion,
+    history: normalizedHistory,
+  });
+  return normalizeObject(response.data);
+};
+
 export const uploadProfileResume = async (file) => {
   const formData = new FormData();
   formData.append('file', file);

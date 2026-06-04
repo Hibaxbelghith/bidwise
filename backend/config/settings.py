@@ -270,6 +270,7 @@ REST_FRAMEWORK = {
         # Authenticated profile autocomplete endpoints
         'profile_suggestions': os.getenv('PROFILE_SUGGESTIONS_RATE', '120/min'),
         'resume_match_ai': '5/min',
+        'opportunity_assistant': os.getenv('OPPORTUNITY_ASSISTANT_RATE', '10/min'),
     },
 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

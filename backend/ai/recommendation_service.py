@@ -1800,6 +1800,7 @@ def rank_opportunities(
         _update_recommendation_debug(
             scored_item,
             {
+                "scoring_mode": mode,
                 "base_semantic_score": round(float(semantic_score or 0.0), 4),
                 "jobbert_score": round(float(jobbert_score or 0.0), 4),
                 "jobbert_adjustment": round(float(jobbert_delta or 0.0), 6),

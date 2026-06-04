@@ -20,7 +20,7 @@ const escapeHtml = (value) =>
 const renderInlineMarkdown = (value) =>
   escapeHtml(value).replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>');
 
-const markdownToHtml = (markdown) => {
+export const markdownToHtml = (markdown) => {
   const lines = String(markdown || '').split(/\r?\n/);
   const html = [];
   let inList = false;

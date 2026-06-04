@@ -24,7 +24,7 @@ from .schemas import LLMExtractionResult
 
 logger = logging.getLogger(__name__)
 
-LLM_OPPORTUNITY_ENRICHMENT_VERSION = "gemini-opportunity-enrichment-v2"
+LLM_OPPORTUNITY_ENRICHMENT_VERSION = "gemini-opportunity-enrichment-v3"
 MIN_CONFIDENCE_TO_APPLY = 0.75
 MAX_APPLIED_SKILLS = 18
 LLM_CANONICAL_EXTRACTION_SOURCES = {"gemini", "ollama", "fallback"}

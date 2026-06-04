@@ -5,6 +5,7 @@ import unicodedata
 from typing import Any
 
 from ai.user_features import build_user_features
+from opportunities.normalization.employment import normalize_contract_types
 
 
 MAX_TEXT_EXCERPT_CHARS = 2600
@@ -447,6 +448,14 @@ def _contract_alignment(profile_payload: dict[str, Any], opportunity_payload: di
         return {"level": "unknown", "reason": "Opportunity contract is not specified."}
     if not contracts:
         return {"level": "unknown", "reason": "Profile contract preferences are not specified."}
+
+    profile_contracts = set(normalize_contract_types(contracts))
+    opportunity_contracts = set(normalize_contract_types(opportunity_contract))
+    if profile_contracts and opportunity_contracts:
+        if profile_contracts.intersection(opportunity_contracts):
+            return {"level": "aligned", "reason": f"Contract preference appears compatible: {opportunity_contract}."}
+        return {"level": "review", "reason": f"Contract should be reviewed: {opportunity_contract}."}
+
     if _has_token_overlap(contracts, [opportunity_contract]):
         return {"level": "aligned", "reason": f"Contract preference appears compatible: {opportunity_contract}."}
     return {"level": "review", "reason": f"Contract should be reviewed: {opportunity_contract}."}

@@ -13,6 +13,7 @@ import {
   uploadProfileResume,
 } from '../../services/opportunitiesService.js';
 import { validateResumeFile } from '../../../profile/profileValidation.js';
+import { useOpportunityAssistantChat } from '../../hooks/useOpportunityAssistantChat.js';
 import OpportunityDescriptionSection from '../detail/OpportunityDescriptionSection.jsx';
 import OpportunityExtraData from '../detail/OpportunityExtraData.jsx';
 import OpportunityMeta from '../detail/OpportunityMeta.jsx';
@@ -80,6 +81,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const resumeMatchRequestIdRef = useRef(0);
   const opportunityIdRef = useRef(opportunity?.id);
   opportunityIdRef.current = opportunity?.id;
+  const opportunityAssistant = useOpportunityAssistantChat(opportunity?.id);
 
   useEffect(() => {
     resumeMatchRequestIdRef.current += 1;
@@ -516,6 +518,10 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
               onUploadResume={handleResumeUpload}
               onCancelResumeUpload={handleCancelResumeUpload}
               onConfirmResumeUpload={handleConfirmResumeUpload}
+              chatMessages={opportunityAssistant.messages}
+              chatLoading={opportunityAssistant.loading}
+              chatError={opportunityAssistant.error}
+              onSendQuestion={opportunityAssistant.sendQuestion}
             />
           ) : null}
 
