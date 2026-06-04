@@ -116,7 +116,6 @@ class Command(BaseCommand):
             TypeOpportunite.EMPLOI,
             TypeOpportunite.STAGE,
             TypeOpportunite.PROJET,
-            TypeOpportunite.FINANCEMENT,
         ]
         cities = ["Tunis", "Sfax", "Sousse", "Ariana", "Remote"]
         work_modes = ["REMOTE", "HYBRID", "ON_SITE", "UNSPECIFIED"]

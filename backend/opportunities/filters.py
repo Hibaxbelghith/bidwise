@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 import django_filters
+from django.utils import timezone
 from django.db.models import F, Func, IntegerField, Q, Value
 from django.db.models.functions import Cast, NullIf
 
@@ -27,6 +30,7 @@ class OpportuniteFilterSet(django_filters.FilterSet):
     source = django_filters.CharFilter(method="filter_source")
     work_mode = django_filters.CharFilter(method="filter_work_mode")
     experience_level = django_filters.CharFilter(method="filter_experience_level")
+    date_posted = django_filters.CharFilter(method="filter_date_posted")
     sector = django_filters.CharFilter(method="filter_sector")
     industry = django_filters.CharFilter(method="filter_sector")
 
@@ -96,6 +100,23 @@ class OpportuniteFilterSet(django_filters.FilterSet):
             return queryset.filter(experience_min__gte=5)
         return queryset
 
+    def filter_date_posted(self, queryset, _name, value):
+        normalized = str(value or "").strip().lower()
+        days_by_value = {
+            "day": 1,
+            "24h": 1,
+            "3days": 3,
+            "week": 7,
+            "2weeks": 14,
+            "month": 30,
+        }
+        days = days_by_value.get(normalized)
+        if not days:
+            return queryset
+
+        cutoff = timezone.localdate() - timedelta(days=days)
+        return queryset.filter(date_publication__gte=cutoff)
+
     def filter_sector(self, queryset, _name, value):
         raw_value = str(value or "").strip()
         lookup_key = normalize_lookup_key(raw_value)
@@ -133,6 +154,7 @@ class OpportuniteFilterSet(django_filters.FilterSet):
             "source",
             "work_mode",
             "experience_level",
+            "date_posted",
             "sector",
             "industry",
         ]

@@ -2,12 +2,13 @@ import re
 
 from django.contrib.postgres.search import (
     SearchQuery,
+    SearchRank,
     SearchVector,
     TrigramSimilarity,
     TrigramWordSimilarity,
 )
 from django.db import connection
-from django.db.models import FloatField, Q, Value
+from django.db.models import Case, FloatField, Q, Value, When
 from django.db.models.functions import Greatest
 
 
@@ -21,7 +22,7 @@ SORT_ORDERINGS = {
     "newest": ["-date_publication", "-date_creation", "-id"],
     "created": ["-date_creation", "-id"],
     "deadline": ["date_limite", "-quality_score", "-id"],
-    "relevance": ["-search_rank", "-quality_score", "-date_publication", "-id"],
+    "relevance": ["-title_match_rank", "-search_rank", "-quality_score", "-date_publication", "-id"],
 }
 
 
@@ -46,7 +47,7 @@ def get_sort_ordering(sort_value, *, has_search=False):
         normalized = "newest"
 
     ordering = SORT_ORDERINGS.get(normalized, SORT_ORDERINGS["quality"])
-    if ordering[0] == "-search_rank" and not has_search:
+    if normalized == "relevance" and not has_search:
         return SORT_ORDERINGS["quality"]
     return ordering
 
@@ -75,8 +76,22 @@ def apply_opportunity_search(queryset, raw_query):
             search_filter |= Q(**{f"{field}__trigram_similar": query})
             search_filter |= Q(**{f"{field}__trigram_word_similar": query})
 
+    if connection.vendor == "postgresql":
+        search_filter |= Q(titre__icontains=query)
+
+    title_match_rank = Case(
+        When(titre__iexact=query, then=Value(3.0)),
+        When(titre__istartswith=query, then=Value(2.0)),
+        When(titre__icontains=query, then=Value(1.0)),
+        default=Value(0.0),
+        output_field=FloatField(),
+    )
+
     if connection.vendor != "postgresql":
-        return queryset.filter(search_filter), True
+        return queryset.annotate(
+            title_match_rank=title_match_rank,
+            search_rank=Value(0.0, output_field=FloatField()),
+        ).filter(search_filter), True
 
     search_vector = (
         SearchVector("titre", weight="A", config="simple")
@@ -88,7 +103,9 @@ def apply_opportunity_search(queryset, raw_query):
 
     queryset = queryset.annotate(
         search_document=search_vector,
+        title_match_rank=title_match_rank,
         search_rank=Greatest(
+            SearchRank(search_vector, search_query),
             TrigramWordSimilarity(query, "titre"),
             TrigramSimilarity("titre", query),
             TrigramWordSimilarity(query, "organisation_nom"),

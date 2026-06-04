@@ -512,7 +512,7 @@ SOURCE_CONFIG = {
         "stale_schedule_seconds": int(os.getenv("LINKEDIN_STALE_SCHEDULE_SECONDS", str(15 * 60))),
         "failure_retry_seconds": int(os.getenv("LINKEDIN_FAILURE_RETRY_SECONDS", str(15 * 60))),
         "stale_after_seconds": int(os.getenv("LINKEDIN_STALE_AFTER_SECONDS", str(12 * 60 * 60))),
-        "max_duration_seconds": int(os.getenv("LINKEDIN_MAX_DURATION_SECONDS", str(10 * 60))),
+        "max_duration_seconds": int(os.getenv("LINKEDIN_MAX_DURATION_SECONDS", str(30 * 60))),
     },
     "keejob": {
         "priority": 2,

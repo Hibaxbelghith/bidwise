@@ -28,6 +28,7 @@ const readPersistedBrowseState = () => {
       sourceFilter: String(parsed?.sourceFilter || ''),
       workModeFilter: String(parsed?.workModeFilter || ''),
       experienceFilter: String(parsed?.experienceFilter || ''),
+      datePostedFilter: String(parsed?.datePostedFilter || ''),
       page: Number.isFinite(page) && page > 0 ? page : 1,
     };
   } catch {
@@ -45,6 +46,7 @@ export const useOpportunitiesBrowse = () => {
   const [sourceFilter, setSourceFilter] = useState(initialState.sourceFilter);
   const [workModeFilter, setWorkModeFilter] = useState(initialState.workModeFilter);
   const [experienceFilter, setExperienceFilter] = useState(initialState.experienceFilter);
+  const [datePostedFilter, setDatePostedFilter] = useState(initialState.datePostedFilter);
   const [page, setPage] = useState(initialState.page);
 
   const [count, setCount] = useState(0);
@@ -90,6 +92,7 @@ export const useOpportunitiesBrowse = () => {
       sourceFilter,
       workModeFilter,
       experienceFilter,
+      datePostedFilter,
       page,
     };
     try {
@@ -97,7 +100,17 @@ export const useOpportunitiesBrowse = () => {
     } catch {
       // Ignore storage errors (e.g., private mode restrictions).
     }
-  }, [searchInput, typeFilter, statusFilter, cityFilter, sourceFilter, workModeFilter, experienceFilter, page]);
+  }, [
+    searchInput,
+    typeFilter,
+    statusFilter,
+    cityFilter,
+    sourceFilter,
+    workModeFilter,
+    experienceFilter,
+    datePostedFilter,
+    page,
+  ]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -200,6 +213,7 @@ export const useOpportunitiesBrowse = () => {
         }
         setError('');
 
+        const hasSearch = debouncedSearch.length > 0;
         const data = await listOpportunities({
           search: debouncedSearch,
           type: typeFilter,
@@ -208,7 +222,8 @@ export const useOpportunitiesBrowse = () => {
           source: sourceFilter,
           workMode: workModeFilter,
           experienceLevel: experienceFilter,
-          sort: DEFAULT_SORT,
+          datePosted: datePostedFilter,
+          sort: hasSearch ? 'relevance' : DEFAULT_SORT,
           page,
           pageSize: DEFAULT_PAGE_SIZE,
         });
@@ -222,15 +237,18 @@ export const useOpportunitiesBrowse = () => {
         setOpportunities(data.results ?? []);
         setHasLoadedOnce(true);
 
-        const extractedCities = (data.results ?? [])
-          .map((item) => String(item?.ville || '').trim())
+        const facetCities = (data.facets?.locations ?? [])
+          .map((item) => String(item?.key || '').trim())
           .filter(Boolean);
-        if (extractedCities.length > 0) {
-          setCityOptions((previousCities) => {
-            const merged = new Set(previousCities);
-            extractedCities.forEach((city) => merged.add(city));
-            return Array.from(merged).sort((a, b) => a.localeCompare(b));
-          });
+        if (facetCities.length > 0) {
+          setCityOptions(facetCities);
+        } else {
+          const extractedCities = (data.results ?? [])
+            .map((item) => String(item?.ville || '').trim())
+            .filter(Boolean);
+          if (extractedCities.length > 0) {
+            setCityOptions(Array.from(new Set(extractedCities)).sort((a, b) => a.localeCompare(b)));
+          }
         }
       } catch (err) {
         if (isCancelled) return;
@@ -267,6 +285,7 @@ export const useOpportunitiesBrowse = () => {
     sourceFilter,
     workModeFilter,
     experienceFilter,
+    datePostedFilter,
     page,
     reloadToken,
   ]);
@@ -306,6 +325,11 @@ export const useOpportunitiesBrowse = () => {
     setPage(1);
   };
 
+  const setDatePostedFilterAndResetPage = (value) => {
+    setDatePostedFilter(value);
+    setPage(1);
+  };
+
   const resetFilters = () => {
     setSearchInput('');
     setDebouncedSearch('');
@@ -315,6 +339,7 @@ export const useOpportunitiesBrowse = () => {
     setSourceFilter('');
     setWorkModeFilter('');
     setExperienceFilter('');
+    setDatePostedFilter('');
     setPage(1);
   };
 
@@ -350,6 +375,8 @@ export const useOpportunitiesBrowse = () => {
     setWorkModeFilter: setWorkModeFilterAndResetPage,
     experienceFilter,
     setExperienceFilter: setExperienceFilterAndResetPage,
+    datePostedFilter,
+    setDatePostedFilter: setDatePostedFilterAndResetPage,
     setPage,
     resetFilters,
     refetch,

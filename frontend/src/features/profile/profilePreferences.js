@@ -25,8 +25,7 @@ export const EMPLOYMENT_TYPE_OPTIONS = [
 export const OPPORTUNITY_TYPE_OPTIONS = [
 	{ value: 'JOB', label: 'Jobs' },
 	{ value: 'INTERNSHIP', label: 'Internships' },
-	{ value: 'RESEARCH', label: 'Research projects' },
-	{ value: 'FUNDING', label: 'Funding' },
+	{ value: 'CALLS_FOR_TENDER', label: 'Calls for tender' },
 ];
 
 export const BUSINESS_FAMILY_OPTIONS = [
@@ -168,10 +167,10 @@ export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
 		values: ['INTERNSHIP'],
 	},
 	{
-		value: 'PROJECTS',
-		label: 'Projects',
-		description: 'Calls for proposals, funding, and R&D',
-		values: ['RESEARCH', 'FUNDING'],
+		value: 'CALLS_FOR_TENDER',
+		label: 'Calls for tender',
+		description: 'Public tenders and project opportunities',
+		values: ['CALLS_FOR_TENDER'],
 	},
 ];
 

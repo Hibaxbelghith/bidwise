@@ -37,7 +37,14 @@ from .quality_gates import (
 from .recommendation_service import get_score_label, rank_opportunities
 from .recommendation_llm import apply_llm_hierarchy_validation_to_ranked
 from .resume_match.evidence import READY_STATUS, build_resume_match_evidence
-from .resume_match.llm import ResumeMatchLLMError, generate_resume_match_analysis
+from .resume_match.llm import (
+    ResumeMatchLLMError,
+    generate_cover_letter,
+    generate_interview_prep,
+    generate_resume_match_analysis,
+    generate_resume_optimization,
+    generate_summary_rewrite,
+)
 from .retrieval import (
     MAX_SEMANTIC_CANDIDATES,
     RECOMMENDATION_CANDIDATE_FIELDS,
@@ -53,6 +60,7 @@ DEFAULT_RECOMMENDATIONS = 10
 MIN_MATCH_SCORE = 0.1
 RECOMMENDATIONS_CACHE_TTL_SECONDS = 15 * 60
 RESUME_MATCH_LLM_CACHE_TTL_SECONDS = 24 * 60 * 60
+RESUME_MATCH_LLM_PROMPT_VERSION = 16
 SHOW_RECENT_FALLBACK_SETTING = "RECOMMENDATION_SHOW_RECENT_FALLBACK"
 BUSINESS_RERANK_CANDIDATES = 50
 JOBBERT_RETRIEVAL_CANDIDATES = 2500
@@ -147,10 +155,8 @@ OPPORTUNITY_TYPE_MAP = {
     "EMPLOI": TypeOpportunite.EMPLOI,
     "INTERNSHIP": TypeOpportunite.STAGE,
     "STAGE": TypeOpportunite.STAGE,
-    "RESEARCH": TypeOpportunite.RECHERCHE,
-    "RECHERCHE": TypeOpportunite.RECHERCHE,
-    "FUNDING": TypeOpportunite.FINANCEMENT,
-    "FINANCEMENT": TypeOpportunite.FINANCEMENT,
+    "CALLS_FOR_TENDER": TypeOpportunite.PROJET,
+    "CALL_FOR_TENDER": TypeOpportunite.PROJET,
     "PROJECT": TypeOpportunite.PROJET,
     "PROJET": TypeOpportunite.PROJET,
 }
@@ -986,6 +992,7 @@ def _resume_match_cache_key(request, opportunity, evidence, action):
         "gemini_model": str(getattr(settings, "GEMINI_MODEL", "") or ""),
     }
     payload = {
+        "prompt_version": RESUME_MATCH_LLM_PROMPT_VERSION,
         "user_id": getattr(request.user, "id", None),
         "profile_id": getattr(profile, "id", None),
         "resume_id": resume.get("id"),
@@ -1064,7 +1071,7 @@ def _deterministic_resume_match_analysis(evidence):
     markdown = "\n\n".join(
         [
             "## 1. Verdict global\n"
-            f"{verdict_sentence} Score BidWise: {score}%. "
+            f"{verdict_sentence} Score CV vs offre BidWise: {score}%. "
             "Cette analyse rapide utilise les signaux deja extraits de votre CV et de l'offre.",
             "## 2. Points forts — Ou vous etes un candidat solide\n" + "\n".join(strong_lines),
             "## 3. Points a surveiller — Gaps identifies\n" + "\n".join(watch_lines),
@@ -1116,6 +1123,10 @@ def resume_match_view(request, opportunity_id):
             "can_generate_ai_analysis": evidence.get("status") == READY_STATUS,
             "suggested_actions": [
                 {"key": "full_fit_analysis", "label": "Full AI analysis"},
+                {"key": "optimize_cv", "label": "Optimize my CV for this role"},
+                {"key": "rewrite_summary", "label": "Rewrite professional summary"},
+                {"key": "generate_cover_letter", "label": "Generate motivation letter"},
+                {"key": "interview_prep", "label": "Interview preparation"},
             ],
         },
         status=status.HTTP_200_OK,
@@ -1131,9 +1142,9 @@ class ResumeMatchAIThrottle(UserRateThrottle):
 @throttle_classes([ResumeMatchAIThrottle])
 def resume_match_action_view(request, opportunity_id):
     action = str(request.data.get("action") or "").strip()
-    if action != "full_fit_analysis":
+    if action not in {"full_fit_analysis", "optimize_cv", "rewrite_summary", "generate_cover_letter", "interview_prep"}:
         return Response(
-            {"action": ["Unsupported action. Use full_fit_analysis."]},
+            {"action": ["Unsupported action. Use full_fit_analysis, optimize_cv, rewrite_summary, generate_cover_letter, or interview_prep."]},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -1164,7 +1175,16 @@ def resume_match_action_view(request, opportunity_id):
             return response
 
     try:
-        analysis = generate_resume_match_analysis(evidence)
+        if action == "optimize_cv":
+            analysis = generate_resume_optimization(evidence)
+        elif action == "rewrite_summary":
+            analysis = generate_summary_rewrite(evidence)
+        elif action == "generate_cover_letter":
+            analysis = generate_cover_letter(evidence)
+        elif action == "interview_prep":
+            analysis = generate_interview_prep(evidence)
+        else:
+            analysis = generate_resume_match_analysis(evidence)
     except ResumeMatchLLMError as exc:
         logger.warning(
             "Resume match LLM failed user_id=%s opportunity_id=%s reason=%s",
@@ -1172,6 +1192,17 @@ def resume_match_action_view(request, opportunity_id):
             getattr(opportunity, "id", None),
             exc,
         )
+        if action in {"optimize_cv", "rewrite_summary", "generate_cover_letter", "interview_prep"}:
+            return Response(
+                {
+                    "status": "fallback",
+                    "source": "llm",
+                    "error": str(exc),
+                    "evidence": evidence,
+                    "analysis": None,
+                },
+                status=status.HTTP_200_OK,
+            )
         response_payload = {
             "status": "fallback",
             "source": "deterministic",

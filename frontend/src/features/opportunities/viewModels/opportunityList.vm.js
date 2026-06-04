@@ -29,7 +29,7 @@ export const buildOpportunityBrowseCardViewModel = (opportunity, isUserAuthentic
     organizationLabel,
     locationLabel: String(opportunity?.ville || '').trim(),
     publishedDateLabel: formatDate(opportunity?.date_publication),
-    publishedAgoLabel: formatRelativeDate(opportunity?.date_creation || opportunity?.date_publication),
+    publishedAgoLabel: formatRelativeDate(opportunity?.date_publication || opportunity?.date_creation),
     deadlineDateLabel: opportunity?.date_limite ? formatDate(opportunity.date_limite) : '',
     salaryLabel: String(opportunity?.salary || '').trim(),
     contractTypeLabel: String(opportunity?.contract_type || '').trim(),

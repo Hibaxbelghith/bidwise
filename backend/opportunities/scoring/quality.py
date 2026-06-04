@@ -22,17 +22,18 @@ SOURCE_RELIABILITY = {
 }
 
 JOB_SIGNAL_WEIGHTS = {
-    "organization": 0.16,
-    "description": 0.2,
-    "location": 0.08,
-    "url": 0.08,
-    "date": 0.08,
-    "skills": 0.12,
-    "title": 0.08,
-    "completeness": 0.05,
-    "skill_alignment": 0.07,
-    "freshness": 0.05,
-    "consistency": 0.03,
+    "organization": 0.12,
+    "description": 0.17,
+    "location": 0.07,
+    "url": 0.07,
+    "date": 0.07,
+    "skills": 0.1,
+    "title": 0.07,
+    "completeness": 0.09,
+    "employment_details": 0.07,
+    "skill_alignment": 0.05,
+    "freshness": 0.1,
+    "consistency": 0.02,
 }
 
 PROJECT_SIGNAL_WEIGHTS = {
@@ -271,6 +272,26 @@ def _score_completeness(**fields: Any) -> dict[str, Any]:
     return _score_signal(filled / total, True, f"{filled}/{total}")
 
 
+def _score_employment_details(
+    *,
+    contract_type: Any,
+    availability: Any,
+    education_level: Any,
+    experience_min: Any,
+    experience_max: Any,
+) -> dict[str, Any]:
+    fields = {
+        "contract_type": contract_type,
+        "availability": availability,
+        "education_level": education_level,
+        "experience": experience_min if _is_present(experience_min) else experience_max,
+    }
+    filled = sum(1 for value in fields.values() if _is_present(value))
+    if filled == 0:
+        return _score_signal(0.0, False, "missing")
+    return _score_signal(filled / len(fields), True, f"{filled}/{len(fields)}")
+
+
 def _score_extra_data_richness(extra_data: Any) -> dict[str, Any]:
     data = _normalize_extra_data(extra_data)
     if not data:
@@ -394,6 +415,8 @@ def _build_signals(
     contract_type: Any,
     availability: Any,
     education_level: Any,
+    experience_min: Any,
+    experience_max: Any,
     is_project: bool,
 ) -> dict[str, dict[str, Any]]:
     if is_project:
@@ -431,6 +454,10 @@ def _build_signals(
         contract_type=contract_type,
         availability=availability,
         education_level=education_level,
+        experience_min=experience_min,
+        experience_max=experience_max,
+        date_publication=date_publication,
+        date_limite=date_limite,
         skills=skills,
     )
     return {
@@ -442,6 +469,13 @@ def _build_signals(
         "skills": _score_skills(skills),
         "title": _score_title(titre),
         "completeness": completeness,
+        "employment_details": _score_employment_details(
+            contract_type=contract_type,
+            availability=availability,
+            education_level=education_level,
+            experience_min=experience_min,
+            experience_max=experience_max,
+        ),
         "skill_alignment": _score_skill_alignment(skills, description),
         "freshness": _score_freshness(date_publication),
         "consistency": _score_consistency(titre, description),
@@ -485,6 +519,8 @@ def compute_quality_score_v4(
     contract_type: Any = "",
     availability: Any = "",
     education_level: Any = "",
+    experience_min: Any = None,
+    experience_max: Any = None,
     date_publication: Any = None,
     date_limite: Any = None,
     type_opportunite: Any = "",
@@ -509,6 +545,8 @@ def compute_quality_score_v4(
         contract_type=contract_type,
         availability=availability,
         education_level=education_level,
+        experience_min=experience_min,
+        experience_max=experience_max,
         is_project=is_project,
     )
 

@@ -47,10 +47,10 @@ TYPE_MAP = {
     "seasonal": TypeOpportunite.SAISONNIER,
     "project": TypeOpportunite.PROJET,
     "projet": TypeOpportunite.PROJET,
-    "funding": TypeOpportunite.FINANCEMENT,
-    "financement": TypeOpportunite.FINANCEMENT,
-    "research": TypeOpportunite.RECHERCHE,
-    "recherche": TypeOpportunite.RECHERCHE,
+    "calls for tender": TypeOpportunite.PROJET,
+    "call for tender": TypeOpportunite.PROJET,
+    "appel d'offres": TypeOpportunite.PROJET,
+    "appel d offres": TypeOpportunite.PROJET,
 }
 
 STATUS_MAP = {

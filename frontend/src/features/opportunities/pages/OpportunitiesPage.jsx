@@ -113,6 +113,8 @@ const OpportunitiesPage = () => {
     setWorkModeFilter,
     experienceFilter,
     setExperienceFilter,
+    datePostedFilter,
+    setDatePostedFilter,
     setPage,
     resetFilters,
     refetch,
@@ -128,7 +130,8 @@ const OpportunitiesPage = () => {
       cityFilter ||
       sourceFilter ||
       workModeFilter ||
-      experienceFilter
+      experienceFilter ||
+      datePostedFilter
   );
   const forYouEnabled = isUserAuthenticated && canUseForYouFeed(user);
   const profileRecommendationTier = getProfileRecommendationTier(user);
@@ -156,7 +159,7 @@ const OpportunitiesPage = () => {
   const forYouShowFetchingSpinner = recommendationsState.isFetching || recommendationsState.isHydratingDetails;
 
   const countLabel = useMemo(() => {
-    if (loading && opportunities.length === 0) return 'Loading opportunities...';
+    if (loading && opportunities.length === 0) return '';
     if (count <= 0) return 'No opportunities found for current filters';
     return `${count} opportunities found`;
   }, [count, loading, opportunities.length]);
@@ -240,18 +243,9 @@ const OpportunitiesPage = () => {
     });
   }, [scrollToResultsTop]);
 
-  const updateFilterAndScroll = useCallback(
-    (setter) => (value) => {
-      setter(value);
-      scrollToResultsTopAfterFilter();
-    },
-    [scrollToResultsTopAfterFilter]
-  );
-
   const resetFiltersAndScroll = useCallback(() => {
     resetFilters();
-    scrollToResultsTopAfterFilter();
-  }, [resetFilters, scrollToResultsTopAfterFilter]);
+  }, [resetFilters]);
 
   const retryForYouFeed = useCallback(() => {
     refetchRecommendations();
@@ -279,24 +273,27 @@ const OpportunitiesPage = () => {
   };
 
   const filterProps = {
+    loading,
     hasActiveFilters,
     searchInput,
     setSearchInput,
     cityFilter,
-    setCityFilter: updateFilterAndScroll(setCityFilter),
+    setCityFilter,
     cityOptions,
     typeFilter,
-    setTypeFilter: updateFilterAndScroll(setTypeFilter),
+    setTypeFilter,
     statusFilter,
-    setStatusFilter: updateFilterAndScroll(setStatusFilter),
+    setStatusFilter,
     sourceFilter,
-    setSourceFilter: updateFilterAndScroll(setSourceFilter),
+    setSourceFilter,
     sourceOptions,
     facets,
     workModeFilter,
-    setWorkModeFilter: updateFilterAndScroll(setWorkModeFilter),
+    setWorkModeFilter,
     experienceFilter,
-    setExperienceFilter: updateFilterAndScroll(setExperienceFilter),
+    setExperienceFilter,
+    datePostedFilter,
+    setDatePostedFilter,
     opportunities,
     resetFilters: resetFiltersAndScroll,
   };

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import logging
 import re
 import time
@@ -63,20 +64,170 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         raw_text = re.sub(r"\s*```$", "", raw_text).strip()
 
     try:
-        parsed = json.loads(raw_text)
+        parsed = _loads_json_with_minimal_repairs(raw_text)
     except json.JSONDecodeError:
         start = raw_text.find("{")
         end = raw_text.rfind("}")
-        if start < 0 or end <= start:
+        if start < 0:
+            recovered = _recover_single_string_payload(raw_text)
+            if recovered:
+                return recovered
             raise LLMProviderError(f"LLM JSON parse failed; response_prefix={raw_text[:240]!r}")
+        candidate_text = raw_text[start : end + 1] if end > start else raw_text[start:]
         try:
-            parsed = json.loads(raw_text[start : end + 1])
+            parsed = _loads_json_with_minimal_repairs(candidate_text)
         except json.JSONDecodeError as exc:
+            recovered = _recover_single_string_payload(candidate_text)
+            if recovered:
+                return recovered
             raise LLMProviderError(f"LLM JSON parse failed; response_prefix={raw_text[:240]!r}") from exc
 
     if not isinstance(parsed, dict):
         raise LLMProviderError("LLM JSON response must be an object.")
     return parsed
+
+
+def _loads_json_with_minimal_repairs(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        # LLMs sometimes emit invalid JSON escapes, especially for French
+        # apostrophes: "d\'experience". JSON valid escapes are limited to
+        # \" \\ \/ \b \f \n \r \t and \uXXXX, so remove only backslashes
+        # before non-JSON escape characters after strict parsing has failed.
+        repaired = re.sub(r'\\(?!["\\/bfnrtu])', "", value)
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            control_repaired = _escape_control_chars_inside_json_strings(repaired)
+            if control_repaired == repaired:
+                raise
+            return json.loads(control_repaired)
+
+
+def _escape_control_chars_inside_json_strings(value: str) -> str:
+    """
+    Escape literal control characters emitted inside JSON strings.
+
+    Gemini occasionally returns a JSON object where a string value contains a
+    literal newline instead of "\\n". Strict JSON rejects that with
+    "Invalid control character". This repair keeps structure outside strings
+    untouched and only escapes control characters while inside a string.
+    """
+    output: list[str] = []
+    in_string = False
+    escaped = False
+
+    for char in str(value or ""):
+        if escaped:
+            output.append(char)
+            escaped = False
+            continue
+
+        if char == "\\" and in_string:
+            output.append(char)
+            escaped = True
+            continue
+
+        if char == '"':
+            output.append(char)
+            in_string = not in_string
+            continue
+
+        if in_string:
+            if char == "\n":
+                output.append("\\n")
+                continue
+            if char == "\r":
+                output.append("\\r")
+                continue
+            if char == "\t":
+                output.append("\\t")
+                continue
+            if ord(char) < 32:
+                output.append(" ")
+                continue
+
+        output.append(char)
+
+    return "".join(output)
+
+
+def _recover_single_string_payload(value: str) -> dict[str, Any]:
+    """
+    Recover action responses where the provider produced one large JSON string
+    field with invalid escaping. This is intentionally narrow: it only supports
+    known assistant payload fields and returns the raw text as content.
+    """
+    text = str(value or "")
+    for key in ("optimization_markdown", "analysis_markdown", "summary_markdown", "cover_letter_markdown", "interview_markdown"):
+        marker = f'"{key}"'
+        key_index = text.find(marker)
+        if key_index < 0:
+            continue
+
+        colon_index = text.find(":", key_index + len(marker))
+        if colon_index < 0:
+            continue
+
+        quote_index = text.find('"', colon_index + 1)
+        if quote_index < 0:
+            continue
+
+        raw_value = text[quote_index + 1 :]
+        for end_marker in ('",\n  "next_step"', '",\n "next_step"', '", "next_step"'):
+            marker_index = raw_value.find(end_marker)
+            if marker_index >= 0:
+                raw_value = raw_value[:marker_index]
+                break
+        else:
+            raw_value = raw_value.rstrip()
+            if raw_value.endswith('"}'):
+                raw_value = raw_value[:-2]
+            elif raw_value.endswith('"'):
+                raw_value = raw_value[:-1]
+
+        if not raw_value.strip():
+            continue
+
+        content = _decode_loose_json_string(raw_value)
+        next_step = ""
+        next_step_match = re.search(r'"next_step"\s*:\s*"((?:\\.|[^"\\])*)"', text, flags=re.DOTALL)
+        if next_step_match:
+            next_step = _decode_loose_json_string(next_step_match.group(1))
+        return {key: content.strip(), "next_step": next_step.strip()}
+
+    return {}
+
+
+def _decode_loose_json_string(value: str) -> str:
+    repaired = re.sub(r'\\(?!["\\/bfnrtu])', "", str(value or ""))
+    try:
+        return json.loads(f'"{repaired}"')
+    except json.JSONDecodeError:
+        return (
+            repaired
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\\\", "\\")
+        )
+
+
+def _schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a Gemini responseSchema-compatible subset of JSON Schema."""
+    cleaned = copy.deepcopy(schema)
+
+    def strip_unsupported(value: Any) -> Any:
+        if isinstance(value, dict):
+            value.pop("additionalProperties", None)
+            return {key: strip_unsupported(child) for key, child in value.items()}
+        if isinstance(value, list):
+            return [strip_unsupported(item) for item in value]
+        return value
+
+    return strip_unsupported(cleaned)
 
 
 class LLMProvider(Protocol):
@@ -112,7 +263,7 @@ class GeminiProvider:
             },
         }
         if schema:
-            payload["generationConfig"]["responseSchema"] = schema
+            payload["generationConfig"]["responseSchema"] = _schema_for_gemini(schema)
 
         try:
             response = requests.post(
@@ -139,11 +290,17 @@ class GeminiProvider:
         try:
             data = response.json()
             candidate = data["candidates"][0]
+            finish_reason = str(candidate.get("finishReason") or "unknown")
             parts = candidate["content"].get("parts", [])
             text = "\n".join(str(part.get("text") or "") for part in parts if isinstance(part, dict))
             if not text.strip():
-                finish_reason = str(candidate.get("finishReason") or "unknown")
                 raise LLMProviderError(f"Gemini response had no text part; finishReason={finish_reason}")
+            if finish_reason and finish_reason.upper() != "STOP":
+                logger.warning(
+                    "Gemini response finishReason=%s text_prefix=%r",
+                    finish_reason,
+                    text[:180],
+                )
             parsed = _extract_json_object(text)
         except LLMProviderError:
             raise
@@ -317,7 +474,7 @@ def _gemini_provider(model: str | None = None) -> GeminiProvider:
         base_url=str(getattr(settings, "GEMINI_API_BASE_URL", "") or "").rstrip("/"),
         timeout_seconds=float(getattr(settings, "GEMINI_TIMEOUT_SECONDS", 20.0)),
         temperature=float(getattr(settings, "GEMINI_TEMPERATURE", 0.1)),
-        max_output_tokens=int(getattr(settings, "GEMINI_MAX_OUTPUT_TOKENS", 1200)),
+        max_output_tokens=int(getattr(settings, "GEMINI_MAX_OUTPUT_TOKENS", 2500)),
     )
 
 

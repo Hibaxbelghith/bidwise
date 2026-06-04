@@ -13,9 +13,8 @@ logger = logging.getLogger(__name__)
 BENCHMARK_QUERIES = [
     {"query": "data engineer python sql", "expected_types": {TypeOpportunite.EMPLOI, TypeOpportunite.STAGE}},
     {"query": "stage developpeur web", "expected_types": {TypeOpportunite.STAGE}},
-    {"query": "appel d offres consultation", "expected_types": {TypeOpportunite.PROJET, TypeOpportunite.FINANCEMENT}},
-    {"query": "financement projet innovation", "expected_types": {TypeOpportunite.FINANCEMENT, TypeOpportunite.PROJET}},
-    {"query": "research assistant opportunity", "expected_types": {TypeOpportunite.RECHERCHE, TypeOpportunite.STAGE}},
+    {"query": "appel d offres consultation", "expected_types": {TypeOpportunite.PROJET}},
+    {"query": "marches publics cahier des charges", "expected_types": {TypeOpportunite.PROJET}},
 ]
 
 

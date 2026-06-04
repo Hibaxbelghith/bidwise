@@ -2,9 +2,7 @@ export const TYPE_OPTIONS = [
   { value: 'EMPLOI', label: 'Job' },
   { value: 'STAGE', label: 'Internship' },
   { value: 'SAISONNIER', label: 'Seasonal' },
-  { value: 'RECHERCHE', label: 'Research' },
-  { value: 'PROJET', label: 'Project' },
-  { value: 'FINANCEMENT', label: 'Funding' },
+  { value: 'PROJET', label: 'Calls for tender' },
 ];
 
 export const STATUS_OPTIONS = [

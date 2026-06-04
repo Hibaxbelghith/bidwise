@@ -247,10 +247,8 @@ export const formatSimilarityScore = (rawScore) => {
   const percentage = Math.round(clamped * 100);
   let label = 'Related';
 
-  if (percentage >= 80) {
-    label = 'Very relevant';
-  } else if (percentage >= 60) {
-    label = 'Relevant';
+  if (percentage >= 75) {
+    label = 'Strong match';
   }
 
   return {

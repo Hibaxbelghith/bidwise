@@ -9,9 +9,7 @@ class TypeOpportunite(models.TextChoices):
     EMPLOI = "EMPLOI", "Emploi"
     STAGE = "STAGE", "Stage"
     SAISONNIER = "SAISONNIER", "Saisonnier"
-    PROJET = "PROJET", "Projet"
-    FINANCEMENT = "FINANCEMENT", "Financement"
-    RECHERCHE = "RECHERCHE", "Recherche"
+    PROJET = "PROJET", "Calls for tender"
 
 class StatutOpportunite(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
@@ -38,7 +36,7 @@ class SourceOpportunite(models.Model):
         choices=[
             ("SITE_EMPLOI", "Site d'emploi"),
             ("SITE_STAGE", "Site de stage"),
-            ("PORTAIL_PROJET", "Portail de projets"),
+            ("PORTAIL_PROJET", "Calls for tender portal"),
             ("AUTRE", "Autre"),
         ]
     )

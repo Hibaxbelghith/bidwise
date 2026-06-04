@@ -1,4 +1,6 @@
-import { BriefcaseBusiness, ChevronDown, MapPin, Search, SlidersHorizontal } from 'lucide-react';
+import { useMemo, useState } from 'react';
+
+import { CalendarDays, ChevronDown, MapPin, Search, SlidersHorizontal } from 'lucide-react';
 
 import { Button } from '../../../../components/ui/button.jsx';
 import { Input } from '../../../../components/ui/input.jsx';
@@ -9,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../components/ui/select.jsx';
-import { STATUS_OPTIONS, TYPE_OPTIONS } from '../../constants/opportunityOptions.js';
+import { TYPE_OPTIONS } from '../../constants/opportunityOptions.js';
 
 const WORK_MODE_OPTIONS = [
   { value: 'REMOTE', label: 'Remote' },
@@ -22,6 +24,15 @@ const EXPERIENCE_OPTIONS = [
   { value: 'junior', label: 'Junior' },
   { value: 'mid', label: 'Mid' },
   { value: 'senior', label: 'Senior' },
+];
+
+const DATE_POSTED_OPTIONS = [
+  { value: 'all', label: 'Any time' },
+  { value: 'day', label: 'Last day' },
+  { value: '3days', label: 'Last 3 days' },
+  { value: 'week', label: 'Last week' },
+  { value: '2weeks', label: 'Last 2 weeks' },
+  { value: 'month', label: 'Last month' },
 ];
 
 const countBy = (items, getKey) =>
@@ -39,6 +50,14 @@ const facetCountsByKey = (items = []) =>
     if (item?.id != null) accumulator[String(item.id)] = Number(item.count) || 0;
     return accumulator;
   }, {});
+
+const facetOptionsByKey = (items = []) =>
+  items
+    .map((item) => ({
+      key: String(item?.key || '').trim(),
+      count: Number(item?.count) || 0,
+    }))
+    .filter((item) => item.key);
 
 const inferWorkMode = (opportunity) => {
   const normalized = String(opportunity?.normalized_work_mode || '').trim().toUpperCase();
@@ -90,6 +109,16 @@ const FilterPill = ({ active, children, count, onClick }) => (
   </button>
 );
 
+const FilterPillSkeleton = () => (
+  <div className="flex w-full items-center justify-between gap-3 rounded-md border border-neutral-200 bg-white px-3 py-2">
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <span className="h-3 w-3 rounded border border-neutral-200 bg-neutral-100" />
+      <span className="h-4 w-24 animate-pulse rounded bg-neutral-100" />
+    </span>
+    <span className="h-5 w-8 animate-pulse rounded-full bg-neutral-100" />
+  </div>
+);
+
 const FilterGroup = ({ title, children }) => (
   <div className="space-y-2">
     <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-700">{title}</h2>
@@ -97,14 +126,95 @@ const FilterGroup = ({ title, children }) => (
   </div>
 );
 
+const LocationFilterInput = ({ cityFilter, locationOptions, setCityFilter }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const normalizedFilter = cityFilter.trim().toLowerCase();
+  const visibleOptions = useMemo(() => {
+    if (!normalizedFilter) return locationOptions;
+    return locationOptions.filter((location) => location.key.toLowerCase().includes(normalizedFilter));
+  }, [locationOptions, normalizedFilter]);
+
+  return (
+    <div className="relative">
+      <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
+      <Input
+        type="text"
+        placeholder="Location"
+        value={cityFilter}
+        className="h-11 bg-white pl-9 pr-9 text-neutral-900 placeholder:text-neutral-500"
+        autoComplete="off"
+        aria-expanded={isOpen}
+        aria-controls="city-filter-options"
+        onFocus={() => setIsOpen(true)}
+        onChange={(event) => {
+          setCityFilter(event.target.value);
+          setIsOpen(true);
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setIsOpen(false), 120);
+        }}
+      />
+      <button
+        type="button"
+        aria-label="Toggle location options"
+        className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          setIsOpen((value) => !value);
+        }}
+      >
+        <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && locationOptions.length > 0 ? (
+        <div
+          id="city-filter-options"
+          role="listbox"
+          className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-40 max-h-72 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg"
+        >
+          {visibleOptions.length > 0 ? (
+            visibleOptions.map((location) => (
+              <button
+                key={location.key}
+                type="button"
+                role="option"
+                aria-selected={cityFilter === location.key}
+                className={[
+                  'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors',
+                  cityFilter === location.key
+                    ? 'bg-blue-50 text-blue-800'
+                    : 'text-neutral-800 hover:bg-neutral-50',
+                ].join(' ')}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  setCityFilter(location.key);
+                  setIsOpen(false);
+                }}
+              >
+                <span className="truncate font-medium">{location.key}</span>
+                {location.count ? (
+                  <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-600">
+                    {location.count}
+                  </span>
+                ) : null}
+              </button>
+            ))
+          ) : (
+            <p className="px-3 py-2 text-sm text-neutral-500">No locations found</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const SidebarFilters = ({
+  loading,
   opportunities,
   facets,
   sourceOptions,
   typeFilter,
   setTypeFilter,
-  statusFilter,
-  setStatusFilter,
   sourceFilter,
   setSourceFilter,
   workModeFilter,
@@ -115,9 +225,7 @@ const SidebarFilters = ({
   const typeCounts = Object.keys(facets?.types || {}).length
     ? facetCountsByKey(facets.types)
     : countBy(opportunities, (item) => item?.type_opportunite);
-  const statusCounts = Object.keys(facets?.statuses || {}).length
-    ? facetCountsByKey(facets.statuses)
-    : countBy(opportunities, (item) => item?.statut);
+  const showTypeSkeleton = loading && !Object.keys(facets?.types || {}).length;
   const workModeCounts = Object.keys(facets?.work_modes || {}).length
     ? facetCountsByKey(facets.work_modes)
     : countBy(opportunities, inferWorkMode);
@@ -142,16 +250,20 @@ const SidebarFilters = ({
   return (
     <div className="space-y-6">
       <FilterGroup title="Opportunity types">
-        {TYPE_OPTIONS.map((option) => (
-          <FilterPill
-            key={option.value}
-            active={typeFilter === option.value}
-            count={typeCounts[option.value] || 0}
-            onClick={() => handleTypeClick(option.value)}
-          >
-            {option.label}
-          </FilterPill>
-        ))}
+        {showTypeSkeleton ? (
+          TYPE_OPTIONS.map((option) => <FilterPillSkeleton key={option.value} />)
+        ) : (
+          TYPE_OPTIONS.map((option) => (
+            <FilterPill
+              key={option.value}
+              active={typeFilter === option.value}
+              count={typeCounts[option.value] || 0}
+              onClick={() => handleTypeClick(option.value)}
+            >
+              {option.label}
+            </FilterPill>
+          ))
+        )}
       </FilterGroup>
 
       {showRoleFilters ? (
@@ -184,7 +296,7 @@ const SidebarFilters = ({
         </>
       ) : null}
 
-      <FilterGroup title="Scraping sources">
+      <FilterGroup title="Sources">
         {sourceOptions.length > 0 ? (
           sourceOptions.map((source) => (
             <FilterPill
@@ -197,23 +309,12 @@ const SidebarFilters = ({
             </FilterPill>
           ))
         ) : (
-          <p className="rounded-md border border-dashed border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
-            Sources will appear as soon as the index responds.
-          </p>
+          <>
+            <FilterPillSkeleton />
+            <FilterPillSkeleton />
+            <FilterPillSkeleton />
+          </>
         )}
-      </FilterGroup>
-
-      <FilterGroup title="Status">
-        {STATUS_OPTIONS.map((option) => (
-          <FilterPill
-            key={option.value}
-            active={statusFilter === option.value}
-            count={statusCounts[option.value] || 0}
-            onClick={() => setStatusFilter(statusFilter === option.value ? '' : option.value)}
-          >
-            {option.label}
-          </FilterPill>
-        ))}
       </FilterGroup>
     </div>
   );
@@ -221,6 +322,7 @@ const SidebarFilters = ({
 
 const OpportunitiesBrowseFilters = ({
   variant = 'toolbar',
+  loading,
   hasActiveFilters,
   searchInput,
   setSearchInput,
@@ -229,8 +331,6 @@ const OpportunitiesBrowseFilters = ({
   cityOptions,
   typeFilter,
   setTypeFilter,
-  statusFilter,
-  setStatusFilter,
   sourceFilter,
   setSourceFilter,
   sourceOptions,
@@ -239,17 +339,18 @@ const OpportunitiesBrowseFilters = ({
   setWorkModeFilter,
   experienceFilter,
   setExperienceFilter,
+  datePostedFilter,
+  setDatePostedFilter,
   opportunities,
   resetFilters,
 }) => {
   const sidebarProps = {
+    loading,
     opportunities,
     facets,
     sourceOptions,
     typeFilter,
     setTypeFilter,
-    statusFilter,
-    setStatusFilter,
     sourceFilter,
     setSourceFilter,
     workModeFilter,
@@ -257,6 +358,10 @@ const OpportunitiesBrowseFilters = ({
     experienceFilter,
     setExperienceFilter,
   };
+  const facetLocationOptions = facetOptionsByKey(facets?.locations);
+  const locationOptions = facetLocationOptions.length
+    ? facetLocationOptions
+    : cityOptions.map((city) => ({ key: city, count: 0 }));
 
   if (variant === 'sidebar') {
     return (
@@ -295,41 +400,24 @@ const OpportunitiesBrowseFilters = ({
             />
           </div>
 
-          <div className="relative">
-            <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
-            <Input
-              type="text"
-              placeholder="Location"
-              value={cityFilter}
-              list="city-filter-options"
-              className="h-11 bg-white pl-9 text-neutral-900 placeholder:text-neutral-500"
-              onChange={(event) => setCityFilter(event.target.value)}
-            />
-            <datalist id="city-filter-options">
-              {cityOptions.map((city) => (
-                <option key={city} value={city} />
-              ))}
-            </datalist>
-          </div>
+          <LocationFilterInput
+            cityFilter={cityFilter}
+            locationOptions={locationOptions}
+            setCityFilter={setCityFilter}
+          />
 
           <Select
-            value={typeFilter || 'all'}
+            value={datePostedFilter || ''}
             onValueChange={(value) => {
-              const nextValue = value === 'all' ? '' : value;
-              setTypeFilter(nextValue);
-              if (!['EMPLOI', 'STAGE'].includes(nextValue)) {
-                setWorkModeFilter('');
-                setExperienceFilter('');
-              }
+              setDatePostedFilter(value === 'all' ? '' : value);
             }}
           >
             <SelectTrigger className="h-11 bg-white">
-              <BriefcaseBusiness className="h-4 w-4 text-neutral-500" />
-              <SelectValue placeholder="All types" />
+              <CalendarDays className="h-4 w-4 text-neutral-500" />
+              <SelectValue placeholder="Date posted" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              {TYPE_OPTIONS.map((option) => (
+              {DATE_POSTED_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

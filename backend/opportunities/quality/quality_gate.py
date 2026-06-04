@@ -78,6 +78,8 @@ def evaluate_opportunity(opportunity: Any) -> Any:
         contract_type=_as_text(_get(opportunity, "contract_type")),
         availability=_as_text(_get(opportunity, "availability")),
         education_level=_as_text(_get(opportunity, "education_level")),
+        experience_min=_get(opportunity, "experience_min"),
+        experience_max=_get(opportunity, "experience_max"),
         type_opportunite=_as_text(_get(opportunity, "type_opportunite") or _get(opportunity, "type")),
         date_limite=_get(opportunity, "date_limite"),
         extra_data=_get(opportunity, "extra_data"),

@@ -143,6 +143,7 @@ export const listOpportunities = async ({
   source = '',
   workMode = '',
   experienceLevel = '',
+  datePosted = '',
   sort = 'quality',
   ordering = '',
   sourceCap = 0,
@@ -162,6 +163,7 @@ export const listOpportunities = async ({
   if (source) params.source = source;
   if (workMode) params.work_mode = workMode;
   if (experienceLevel) params.experience_level = experienceLevel;
+  if (datePosted) params.date_posted = datePosted;
   if (ordering) {
     params.ordering = ordering;
   } else if (sort) {
@@ -244,4 +246,38 @@ export const getSimilarOpportunities = async (id, k = 5) => {
     { params: { k: safeK } },
   );
   return normalizeArray(data).map(normalizeOpportunity);
+};
+
+export const getResumeMatch = async (opportunityId) => {
+  if (!opportunityId) {
+    throw new Error('Opportunity id is required');
+  }
+
+  const response = await api.get(`${OPPORTUNITIES_ENDPOINT}${opportunityId}/resume-match/`);
+  return normalizeObject(response.data);
+};
+
+export const generateResumeMatchAnalysis = async (opportunityId) => {
+  if (!opportunityId) {
+    throw new Error('Opportunity id is required');
+  }
+
+  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${opportunityId}/resume-match/actions/`, {
+    action: 'full_fit_analysis',
+  });
+  return normalizeObject(response.data);
+};
+
+export const generateResumeMatchAction = async (opportunityId, action) => {
+  if (!opportunityId) {
+    throw new Error('Opportunity id is required');
+  }
+  if (!action) {
+    throw new Error('Resume match action is required');
+  }
+
+  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${opportunityId}/resume-match/actions/`, {
+    action,
+  });
+  return normalizeObject(response.data);
 };

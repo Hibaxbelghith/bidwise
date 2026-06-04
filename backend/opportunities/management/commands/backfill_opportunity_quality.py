@@ -252,6 +252,8 @@ class Command(BaseCommand):
                 contract_type=getattr(opportunity, "contract_type", ""),
                 availability=getattr(opportunity, "availability", ""),
                 education_level=getattr(opportunity, "education_level", ""),
+                experience_min=getattr(opportunity, "experience_min", None),
+                experience_max=getattr(opportunity, "experience_max", None),
                 type_opportunite=getattr(opportunity, "type_opportunite", ""),
                 date_publication=getattr(opportunity, "date_publication", None),
                 date_limite=getattr(opportunity, "date_limite", None),

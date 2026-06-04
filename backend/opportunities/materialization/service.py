@@ -902,6 +902,8 @@ def materialize_opportunity(normalized_data: dict[str, Any]) -> Opportunite:
             contract_type=contract_type,
             availability=availability,
             education_level=education_level,
+            experience_min=experience_min,
+            experience_max=experience_max,
             type_opportunite=normalized_data.get("type_opportunite"),
             date_publication=date_publication,
             date_limite=normalized_data.get("date_limite"),

@@ -34,9 +34,7 @@ const statusLabels = {
   EMPLOI: 'Emplois',
   STAGE: 'Stages',
   SAISONNIER: 'Saisonniers',
-  PROJET: 'Projets',
-  FINANCEMENT: 'Financements',
-  RECHERCHE: 'Recherche',
+  PROJET: 'Calls for tender',
 };
 
 const formatPercent = (value) => `${percentFormatter.format(Number(value || 0))}%`;
