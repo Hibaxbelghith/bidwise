@@ -60,7 +60,7 @@ DEFAULT_RECOMMENDATIONS = 10
 MIN_MATCH_SCORE = 0.1
 RECOMMENDATIONS_CACHE_TTL_SECONDS = 15 * 60
 RESUME_MATCH_LLM_CACHE_TTL_SECONDS = 24 * 60 * 60
-RESUME_MATCH_LLM_PROMPT_VERSION = 16
+RESUME_MATCH_LLM_PROMPT_VERSION = 24
 SHOW_RECENT_FALLBACK_SETTING = "RECOMMENDATION_SHOW_RECENT_FALLBACK"
 BUSINESS_RERANK_CANDIDATES = 50
 JOBBERT_RETRIEVAL_CANDIDATES = 2500
@@ -1197,7 +1197,7 @@ def resume_match_action_view(request, opportunity_id):
                 {
                     "status": "fallback",
                     "source": "llm",
-                    "error": str(exc),
+                    "error": "This AI action is temporarily unavailable. Please try again.",
                     "evidence": evidence,
                     "analysis": None,
                 },
@@ -1206,7 +1206,7 @@ def resume_match_action_view(request, opportunity_id):
         response_payload = {
             "status": "fallback",
             "source": "deterministic",
-            "error": str(exc),
+            "error": "Full AI analysis is temporarily unavailable. Showing the quick BidWise analysis instead.",
             "evidence": evidence,
             "analysis": deterministic,
         }

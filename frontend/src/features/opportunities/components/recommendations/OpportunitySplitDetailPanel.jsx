@@ -37,12 +37,16 @@ const waitForMinimumDelay = async (startedAt, minimumDelay = RESUME_MATCH_MIN_TH
   }
 };
 
-const waitForResumeMatchReady = async (opportunityId) => {
+const waitForResumeMatchReady = async (opportunityId, expectedResumeId = null) => {
   let latestMatch = null;
 
   for (let attempt = 0; attempt < RESUME_READY_MAX_POLLS; attempt += 1) {
     latestMatch = await getResumeMatch(opportunityId);
-    if (latestMatch?.has_resume !== false && latestMatch?.status === 'READY') {
+    const activeResumeId = latestMatch?.evidence?.resume?.id ?? latestMatch?.resume?.id ?? null;
+    const expectedResumeIsActive =
+      !expectedResumeId || String(activeResumeId || '') === String(expectedResumeId);
+
+    if (expectedResumeIsActive && latestMatch?.has_resume !== false && latestMatch?.status === 'READY') {
       return latestMatch;
     }
 
@@ -61,6 +65,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarError, setSimilarError] = useState(null);
   const [showResumeMatch, setShowResumeMatch] = useState(false);
+  const [resumeMatchOpportunityId, setResumeMatchOpportunityId] = useState(null);
   const [resumeMatch, setResumeMatch] = useState(null);
   const [resumeMatchLoading, setResumeMatchLoading] = useState(false);
   const [resumeMatchError, setResumeMatchError] = useState('');
@@ -72,11 +77,16 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const [resumeMatchActionError, setResumeMatchActionError] = useState('');
   const [resumeUploadState, setResumeUploadState] = useState({ status: 'idle', resume: null, error: '' });
   const scrollContainerRef = useRef(null);
+  const resumeMatchRequestIdRef = useRef(0);
+  const opportunityIdRef = useRef(opportunity?.id);
+  opportunityIdRef.current = opportunity?.id;
 
   useEffect(() => {
+    resumeMatchRequestIdRef.current += 1;
     setIsDescriptionExpanded(false);
     setShowAllSkills(false);
     setShowResumeMatch(false);
+    setResumeMatchOpportunityId(null);
     setResumeMatch(null);
     setResumeMatchLoading(false);
     setResumeMatchError('');
@@ -159,11 +169,15 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
     window.open(viewModel.sourceUrl, '_blank', 'noopener,noreferrer');
   };
 
-  const runResumeMatchAiAnalysis = async (startedAt = Date.now()) => {
+  const runResumeMatchAiAnalysis = async (
+    startedAt = Date.now(),
+    requestId = resumeMatchRequestIdRef.current,
+  ) => {
     try {
       setResumeMatchLoading(true);
       const data = await generateResumeMatchAnalysis(opportunity.id);
       await waitForMinimumDelay(startedAt);
+      if (requestId !== resumeMatchRequestIdRef.current) return;
       if (data?.status === 'fallback' || data?.source === 'deterministic') {
         setResumeMatch({
           ...(data?.evidence || {}),
@@ -177,12 +191,14 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
         setResumeMatchAiAnalysis(data);
       }
     } catch (error) {
+      if (requestId !== resumeMatchRequestIdRef.current) return;
       console.log('Failed to generate resume match analysis', error);
 
       try {
         const fallbackStartedAt = Date.now();
         const fallback = await getResumeMatch(opportunity.id);
         await waitForMinimumDelay(fallbackStartedAt, 500);
+        if (requestId !== resumeMatchRequestIdRef.current) return;
         setResumeMatch(fallback);
         setResumeMatchAiError(
           error?.response?.data?.detail || 'The full AI analysis is not available right now. Showing the quick BidWise analysis instead.',
@@ -192,43 +208,51 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
         setResumeMatchError('Could not analyze your resume right now.');
       }
     } finally {
-      setResumeMatchLoading(false);
+      if (requestId === resumeMatchRequestIdRef.current) {
+        setResumeMatchLoading(false);
+      }
     }
   };
 
   const handleResumeMatch = async () => {
-    setShowResumeMatch(true);
-
-    if (!opportunity?.id || resumeMatchLoading || resumeMatchAiLoading) {
+    if (!opportunity?.id) {
       return;
     }
 
+    const requestId = resumeMatchRequestIdRef.current + 1;
+    resumeMatchRequestIdRef.current = requestId;
+    setResumeMatchError('');
+    setResumeMatch(null);
+    setResumeMatchAiAnalysis(null);
+    setResumeMatchAiError('');
+    setResumeMatchActionResults([]);
+    setResumeMatchActionLoading('');
+    setResumeMatchActionError('');
+    setResumeUploadState({ status: 'idle', resume: null, error: '' });
+    setResumeMatchOpportunityId(opportunity.id);
+    setResumeMatchLoading(true);
+    setShowResumeMatch(true);
+
     try {
       const startedAt = Date.now();
-      setResumeMatchError('');
-      setResumeMatch(null);
-      setResumeMatchAiAnalysis(null);
-      setResumeMatchAiError('');
-      setResumeMatchActionResults([]);
-      setResumeMatchActionLoading('');
-      setResumeMatchActionError('');
-      setResumeUploadState({ status: 'idle', resume: null, error: '' });
-
       const initialMatch = await getResumeMatch(opportunity.id);
+      if (requestId !== resumeMatchRequestIdRef.current) return;
       setResumeMatch(initialMatch);
 
       if (initialMatch?.has_resume === false || initialMatch?.status !== 'READY') {
         return;
       }
 
-      await runResumeMatchAiAnalysis(startedAt);
+      await runResumeMatchAiAnalysis(startedAt, requestId);
     } catch (error) {
+      if (requestId !== resumeMatchRequestIdRef.current) return;
       console.log('Failed to generate resume match analysis', error);
 
       try {
         const fallbackStartedAt = Date.now();
         const fallback = await getResumeMatch(opportunity.id);
         await waitForMinimumDelay(fallbackStartedAt, 500);
+        if (requestId !== resumeMatchRequestIdRef.current) return;
         setResumeMatch(fallback);
         setResumeMatchAiError(
           error?.response?.data?.detail || 'The full AI analysis is not available right now. Showing the quick BidWise analysis instead.',
@@ -238,7 +262,9 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
         setResumeMatchError('Could not analyze your resume right now.');
       }
     } finally {
-      setResumeMatchLoading(false);
+      if (requestId === resumeMatchRequestIdRef.current) {
+        setResumeMatchLoading(false);
+      }
     }
   };
 
@@ -247,12 +273,21 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
       return;
     }
 
+    const requestOpportunityId = opportunity.id;
+    const requestId = resumeMatchRequestIdRef.current;
+
     try {
       const startedAt = Date.now();
       setResumeMatchActionLoading(action);
       setResumeMatchActionError('');
       const data = await generateResumeMatchAction(opportunity.id, action);
       await waitForMinimumDelay(startedAt);
+      if (
+        requestId !== resumeMatchRequestIdRef.current ||
+        requestOpportunityId !== opportunityIdRef.current
+      ) {
+        return;
+      }
       if (data?.status === 'fallback') {
         setResumeMatchActionError(data?.error || 'Could not run this AI action right now.');
         return;
@@ -266,12 +301,23 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
         },
       ]);
     } catch (error) {
+      if (
+        requestId !== resumeMatchRequestIdRef.current ||
+        requestOpportunityId !== opportunityIdRef.current
+      ) {
+        return;
+      }
       console.log('Failed to run resume match action', error);
       setResumeMatchActionError(
         error?.response?.data?.detail || 'Could not run this AI action right now.',
       );
     } finally {
-      setResumeMatchActionLoading('');
+      if (
+        requestId === resumeMatchRequestIdRef.current &&
+        requestOpportunityId === opportunityIdRef.current
+      ) {
+        setResumeMatchActionLoading('');
+      }
     }
   };
 
@@ -311,6 +357,8 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const handleConfirmResumeUpload = async () => {
     const resumeId = resumeUploadState.resume?.id;
     if (!resumeId) return;
+    const requestId = resumeMatchRequestIdRef.current + 1;
+    resumeMatchRequestIdRef.current = requestId;
 
     try {
       setResumeUploadState((previous) => ({ ...previous, status: 'confirming', error: '' }));
@@ -329,9 +377,12 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
       setResumeMatchActionError('');
       setResumeMatchLoading(true);
 
-      const readyMatch = await waitForResumeMatchReady(opportunity.id);
+      const readyMatch = await waitForResumeMatchReady(opportunity.id, resumeId);
+      if (requestId !== resumeMatchRequestIdRef.current) return;
       if (readyMatch?.status !== 'READY') {
-        setResumeMatch(readyMatch || {
+        const activeResumeId = readyMatch?.evidence?.resume?.id ?? readyMatch?.resume?.id ?? null;
+        const expectedResumeIsActive = String(activeResumeId || '') === String(resumeId);
+        setResumeMatch(expectedResumeIsActive && readyMatch ? readyMatch : {
           has_resume: true,
           status: 'PROCESSING',
           can_generate_ai_analysis: false,
@@ -348,7 +399,13 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
 
       setResumeMatch(readyMatch);
       setResumeUploadState({ status: 'idle', resume: readyMatch?.resume || data?.resume || resumeUploadState.resume, error: '' });
-      await runResumeMatchAiAnalysis(Date.now());
+      localStorage.setItem('bidwise_resume_updated_at', String(Date.now()));
+      window.dispatchEvent(
+        new CustomEvent('bidwise:resume-updated', {
+          detail: { resume: data?.resume || resumeUploadState.resume || null },
+        }),
+      );
+      await runResumeMatchAiAnalysis(Date.now(), requestId);
     } catch (error) {
       console.log('Failed to confirm resume from assistant', error);
       setResumeMatchLoading(false);
@@ -440,8 +497,9 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
             <RecommendationInsightPanel recommendation={viewModel.recommendation} context="detail" />
           ) : null}
 
-          {showResumeMatch ? (
+          {showResumeMatch && resumeMatchOpportunityId === opportunity.id ? (
             <ResumeMatchPanel
+              key={opportunity.id}
               resumeMatch={resumeMatch}
               loading={resumeMatchLoading}
               error={resumeMatchError}

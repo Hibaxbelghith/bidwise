@@ -33,6 +33,30 @@ READY_STATUS = "READY"
 NO_RESUME_STATUS = "NO_RESUME"
 RESUME_PROCESSING_STATUS = "RESUME_PROCESSING"
 RESUME_NOT_READY_STATUS = "RESUME_NOT_READY"
+_LOW_VALUE_KEYWORDS = frozenset(
+    {
+        "equipe",
+        "travail",
+        "poste",
+        "profil",
+        "candidat",
+        "entreprise",
+        "societe",
+        "motivated",
+        "dynamique",
+        "rigoureux",
+        "serieux",
+        "autonome",
+        "organise",
+        "disponible",
+        "polyvalent",
+        "proactif",
+        "esprit",
+        "sens",
+        "capacite",
+        "aptitude",
+    }
+)
 
 
 def build_resume_match_evidence(*, user: Any | None = None, profile: Any | None = None, opportunity: Any) -> dict[str, Any]:
@@ -234,10 +258,10 @@ def _build_match_payload(
     resume_payload: dict[str, Any],
     opportunity_payload: dict[str, Any],
 ) -> dict[str, Any]:
-    resume_keywords = _resume_keyword_values(profile_payload, resume_payload)
-    opportunity_keywords = _opportunity_keyword_values(opportunity_payload)
-    matching_keywords = _matching_values(resume_keywords, opportunity_keywords)
-    missing_keywords = _missing_values(resume_keywords, opportunity_keywords)
+    ats_resume_keywords = _resume_ats_keyword_values(profile_payload, resume_payload)
+    opportunity_keywords = _opportunity_ats_keyword_values(opportunity_payload)
+    matching_keywords = _matching_values(ats_resume_keywords, opportunity_keywords)
+    missing_keywords = _missing_values(ats_resume_keywords, opportunity_keywords)
     prioritized_gaps = _prioritize_missing_keywords(missing_keywords, opportunity_payload)
 
     role_alignment = _role_alignment(profile_payload, resume_payload, opportunity_payload)
@@ -279,7 +303,7 @@ def _build_match_payload(
         "location_alignment": location_alignment,
         "contract_alignment": contract_alignment,
         "matching_skills": _matching_values(
-            resume_payload.get("skills", []) + profile_payload.get("skills", []),
+            ats_resume_keywords,
             opportunity_payload.get("skills", []),
         )[:MAX_ITEMS],
         "matching_keywords": matching_keywords[:MAX_ITEMS],
@@ -325,32 +349,24 @@ def _empty_match_payload() -> dict[str, Any]:
     }
 
 
-def _resume_keyword_values(profile_payload: dict[str, Any], resume_payload: dict[str, Any]) -> list[str]:
-    return _merge_unique(
-        profile_payload.get("target_roles"),
-        profile_payload.get("skills"),
-        profile_payload.get("all_skills"),
-        profile_payload.get("interests"),
-        resume_payload.get("canonical_role"),
-        resume_payload.get("target_roles"),
+def _resume_ats_keyword_values(profile_payload: dict[str, Any], resume_payload: dict[str, Any]) -> list[str]:
+    cv_keywords = _merge_unique(
         resume_payload.get("skills"),
         resume_payload.get("tools"),
-        resume_payload.get("domains"),
-        resume_payload.get("business_families"),
+    )
+    if cv_keywords:
+        return cv_keywords
+    return _merge_unique(
+        profile_payload.get("skills"),
+        profile_payload.get("all_skills"),
     )
 
 
-def _opportunity_keyword_values(opportunity_payload: dict[str, Any]) -> list[str]:
+def _opportunity_ats_keyword_values(opportunity_payload: dict[str, Any]) -> list[str]:
     return _merge_unique(
-        opportunity_payload.get("canonical_role"),
-        opportunity_payload.get("target_roles"),
-        opportunity_payload.get("title"),
         opportunity_payload.get("skills"),
         opportunity_payload.get("tools"),
         opportunity_payload.get("domains"),
-        opportunity_payload.get("requirements"),
-        opportunity_payload.get("responsibilities"),
-        opportunity_payload.get("business_families"),
     )
 
 
@@ -480,7 +496,7 @@ def _strong_fit_evidence(
     if matching_keywords:
         items.append({
             "title": "Relevant keywords",
-            "evidence": f"Your resume/profile already shows: {', '.join(matching_keywords[:6])}.",
+            "evidence": f"Your resume already shows: {', '.join(matching_keywords[:6])}.",
         })
     if seniority_alignment.get("level") == "compatible":
         items.append({"title": "Experience fit", "evidence": seniority_alignment.get("reason", "")})
@@ -771,29 +787,7 @@ def _dedupe(values: Any) -> list[str]:
 
 
 def _is_low_value_keyword(value: Any) -> bool:
-    key = _normalize(value)
-    return key in {
-        "equipe",
-        "travail",
-        "poste",
-        "profil",
-        "candidat",
-        "entreprise",
-        "societe",
-        "motivated",
-        "dynamique",
-        "rigoureux",
-        "serieux",
-        "autonome",
-        "organise",
-        "disponible",
-        "polyvalent",
-        "proactif",
-        "esprit",
-        "sens",
-        "capacite",
-        "aptitude",
-    }
+    return _normalize(value) in _LOW_VALUE_KEYWORDS
 
 
 def _excerpt(value: Any, *, max_chars: int = MAX_TEXT_EXCERPT_CHARS) -> str:

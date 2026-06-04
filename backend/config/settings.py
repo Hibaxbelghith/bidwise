@@ -303,6 +303,7 @@ else:
 
 # Google OAuth2
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
+GOOGLE_ID_TOKEN_CLOCK_SKEW_SECONDS = int(os.getenv('GOOGLE_ID_TOKEN_CLOCK_SKEW_SECONDS', '30'))
 
 # Embeddings
 OPPORTUNITY_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

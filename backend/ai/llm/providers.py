@@ -307,6 +307,8 @@ class GeminiProvider:
                     finish_reason,
                     text[:180],
                 )
+            if finish_reason.upper() == "MAX_TOKENS":
+                raise LLMTransientProviderError("Gemini response was truncated before completion.")
             parsed = _extract_json_object(text)
         except LLMProviderError:
             raise
@@ -430,6 +432,12 @@ class FallbackLLMProvider:
                         continue
                     break
                 except LLMProviderUnavailable as exc:
+                    errors.append(
+                        f"{getattr(provider, 'provider_name', 'unknown')}:{getattr(provider, 'model', '')}:"
+                        f"{exc.__class__.__name__}:{exc}"
+                    )
+                    break
+                except LLMProviderError as exc:
                     errors.append(
                         f"{getattr(provider, 'provider_name', 'unknown')}:{getattr(provider, 'model', '')}:"
                         f"{exc.__class__.__name__}:{exc}"

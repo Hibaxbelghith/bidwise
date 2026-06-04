@@ -291,6 +291,8 @@ You are BidWise AI, a senior recruitment and ATS (Applicant Tracking System) exp
 ABSOLUTE RULE: Use ONLY the structured data provided below.
 Never invent experience, certifications, tools, or achievements.
 If information is missing, write "not visible in resume".
+Profile-declared skills and target roles are preferences only. Never present
+them as skills or experience demonstrated by the resume.
 
 LANGUAGE RULE:
 - Write the entire Markdown output in English only.
@@ -303,7 +305,7 @@ CANDIDATE DATA
 ==================================================
 Target role: {_list(profile.get("target_roles"))}
 Level: {_text(profile.get("experience_level"))} - {_text(profile.get("experience_years"))} years
-Profile skills: {_list(profile.get("skills"))}
+Profile-declared skills (context only, not resume evidence): {_list(profile.get("skills"))}
 Preferred locations: {_list(profile.get("locations"))}
 Contract types sought: {_list(profile.get("employment_types"))}
 
@@ -448,6 +450,8 @@ Your task: produce concrete CV optimization suggestions tailored to this job pos
 ABSOLUTE RULES:
 - Use only the structured data provided below.
 - Never invent experience, certifications, tools, degrees, or achievements.
+- Profile-declared skills and target roles are preferences only. Never include
+  them as CV skills unless they are also visible in the resume signals.
 - For any critical technology absent from the resume, suggest honest wording only:
   "exposure", "basic knowledge", "personal project", or "academic project" -
   only if the provided data supports it. Otherwise write "add only if true".
@@ -467,7 +471,7 @@ CANDIDATE DATA
 ==================================================
 Target role: {_list(profile.get("target_roles"))}
 Level: {_text(profile.get("experience_level"))} - {_text(profile.get("experience_years"))} years
-Profile skills: {_list(profile.get("skills"))}
+Profile-declared skills (context only, not resume evidence): {_list(profile.get("skills"))}
 Preferred locations: {_list(profile.get("locations"))}
 Contract types sought: {_list(profile.get("employment_types"))}
 
@@ -565,6 +569,8 @@ Your task: rewrite the professional summary for this resume and job opportunity.
 ABSOLUTE RULES:
 - Use only the structured evidence below.
 - Never invent experience, certifications, tools, achievements, or years of experience.
+- Profile-declared skills and target roles are preferences only. Never include
+  them in the rewritten summary unless they are also visible in the resume signals.
 - If a skill is missing, do not claim mastery. Use honest wording such as "exposure to" only if supported.
 - Write in English only.
 - Do not use contractions.
@@ -576,7 +582,7 @@ CANDIDATE DATA
 ==================================================
 Target role: {_list(profile.get("target_roles"))}
 Level: {_text(profile.get("experience_level"))} - {_text(profile.get("experience_years"))} years
-Profile skills: {_list(profile.get("skills"))}
+Profile-declared skills (context only, not resume evidence): {_list(profile.get("skills"))}
 
 Resume signals:
 - Canonical role: {_text(resume.get("canonical_role"))}
@@ -620,6 +626,9 @@ Write one polished 3 to 4 line summary tailored to the job.
 
 ## More cautious version
 Write one honest version for cases where some job keywords are not strongly proven in the resume.
+When the candidate is changing careers, connect only genuine transferable skills
+from the resume to the target role and clearly state that direct experience is not yet proven.
+It must still be tailored to the target role and must not simply repeat the original resume summary.
 
 ## ATS keywords to include
 List 5 to 8 keywords that are safe to include based on the resume evidence.
@@ -690,27 +699,36 @@ Return only a valid JSON object with:
 
 The interview_markdown field must contain exactly these Markdown sections.
 Maximum 450 words total. Be concise and avoid long examples.
+Use real newline characters between every heading and paragraph.
+Never output literal "\\n" text.
 
 ## 1. Technical questions - based on your gaps
 Generate 2 questions the interviewer will likely ask about the critical gaps.
-For each question:
-- Bold title: the technology or skill being tested
-- The exact question
-- Why this question: which gap it targets, in one sentence
-- How to answer honestly: one short answer strategy
+Use this exact format for each question:
+### Technology or skill being tested
+**Question:** The exact question
+**Why this question:** Which gap it targets, in one sentence
+**How to answer honestly:** One short answer strategy
 
 ## 2. Behavioral questions - based on the role
 Generate 2 questions about soft skills and work style relevant to this role.
 Each question must reference a specific responsibility from the job posting.
-Format: question + STAR method hint (Situation, Task, Action, Result).
+Use this exact format for each question:
+### Behavioral skill being tested
+**Question:** The exact question
+**STAR hint:** A concise Situation, Task, Action, Result answer direction
 
 ## 3. Questions to ask the interviewer
 Generate 2 smart questions the candidate should ask to show genuine interest
 and technical depth. Based only on the job description and company data.
+Format each question as a Markdown bullet beginning with "- ".
 
 ## 4. Red flags to prepare for
 List 2 potential red flags the recruiter may raise based on the gaps,
 with a short honest response strategy for each.
+Use this exact format for each red flag:
+### Potential red flag
+**Response strategy:** A short honest response strategy
 
 ## 5. One-line preparation tip
 One concrete action to take in the 48 hours before the interview.
@@ -749,6 +767,8 @@ Your task: write a tailored, ATS-strong motivation letter for this job opportuni
 ABSOLUTE RULES:
 - Use only the structured evidence below.
 - Never invent employment history, certifications, achievements, tools, salary, or personal details.
+- Profile-declared skills and target roles are preferences only. Never claim
+  them in the letter unless they are also visible in the resume signals.
 - If name, email, phone, portfolio, or date are not visible, use placeholders.
 - If a skill is absent from the resume, do not claim mastery. Use honest framing instead.
 - Write in English only. No contractions.
@@ -800,7 +820,7 @@ CANDIDATE DATA
 ==================================================
 Target role: {_list(profile.get("target_roles"))}
 Level: {_text(profile.get("experience_level"))} - {_text(profile.get("experience_years"))} years
-Skills: {_list(profile.get("skills"))}
+Profile-declared skills (context only, not resume evidence): {_list(profile.get("skills"))}
 Locations: {_list(profile.get("locations"))}
 
 Resume signals:
@@ -973,7 +993,6 @@ def _normalize_cover_letter_payload(
             sorted(str(key) for key in payload.keys()),
         )
         raise ResumeMatchLLMError("Cover letter LLM payload is missing cover letter content.")
-
     next_step = str(payload.get("next_step") or "").strip()
     return {
         "status": "ready",
@@ -1024,7 +1043,7 @@ def _extract_analysis_markdown(payload: dict[str, Any]) -> str:
     ):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return _normalize_generated_markdown(value)
 
     section_markdown = _sectioned_payload_to_markdown(payload)
     if section_markdown:
@@ -1041,7 +1060,7 @@ def _extract_summary_markdown(payload: dict[str, Any]) -> str:
     for key in ("summary_markdown", "analysis_markdown", "markdown", "content", "message"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return _normalize_generated_markdown(value)
     return ""
 
 
@@ -1049,7 +1068,7 @@ def _extract_cover_letter_markdown(payload: dict[str, Any]) -> str:
     for key in ("cover_letter_markdown", "analysis_markdown", "markdown", "content", "message"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return _normalize_generated_markdown(value)
     return ""
 
 
@@ -1057,15 +1076,51 @@ def _extract_interview_markdown(payload: dict[str, Any]) -> str:
     for key in ("interview_markdown", "analysis_markdown", "markdown", "content", "message"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return _normalize_generated_markdown(value)
     return ""
+
+
+def _normalize_generated_markdown(value: str) -> str:
+    markdown = value.strip()
+    if "\\n" in markdown:
+        markdown = markdown.replace("\\r\\n", "\n").replace("\\n", "\n")
+    markdown = re.sub(r"(?<!\n)(##\s+)", r"\n\n\1", markdown)
+    section_titles = (
+        "1. Global verdict",
+        "2. Where you are a strong fit",
+        "3. What to watch out for",
+        "4. ATS analysis",
+        "5. Next step",
+        "Updated headline",
+        "Updated summary",
+        "Updated core skills section",
+        "Resume bullets to strengthen this application",
+        "Honest wording for missing or partial skills",
+        "ATS cleanup notes",
+        "Best next move",
+        "Recommended professional summary",
+        "More cautious version",
+        "ATS keywords to include",
+        "Words to avoid",
+        "Cover Letter",
+        "Short version for online applications",
+        "Personalization notes",
+    )
+    for title in section_titles:
+        markdown = re.sub(
+            rf"(?im)^(?:##\s*)?{re.escape(title)}\s*",
+            f"## {title}\n",
+            markdown,
+        )
+    markdown = re.sub(r"\n{3,}", "\n\n", markdown)
+    return markdown
 
 
 def _extract_optimization_markdown(payload: dict[str, Any]) -> str:
     for key in ("optimization_markdown", "analysis_markdown", "markdown", "content", "message"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return _normalize_generated_markdown(value)
 
     sections = []
     headline_options = _first_list(payload, ("headline_options", "headlines"))
@@ -1237,14 +1292,14 @@ def _dict(value: Any) -> dict[str, Any]:
 
 def _text(value: Any) -> str:
     if value in (None, ""):
-        return "non visible dans le CV"
+        return "not visible in resume"
     text = str(value).strip()
-    return text or "non visible dans le CV"
+    return text or "not visible in resume"
 
 
 def _list(value: Any) -> str:
     if value in (None, ""):
-        return "non visible dans le CV"
+        return "not visible in resume"
     if isinstance(value, str):
         items = [value]
     elif isinstance(value, (list, tuple, set)):
@@ -1252,7 +1307,7 @@ def _list(value: Any) -> str:
     else:
         items = [str(value).strip()]
     if not items:
-        return "non visible dans le CV"
+        return "not visible in resume"
     return ", ".join(items)
 
 
@@ -1272,6 +1327,6 @@ def _nested(value: dict[str, Any], *keys: str) -> str:
     current: Any = value
     for key in keys:
         if not isinstance(current, dict):
-            return "non visible dans le CV"
+            return "not visible in resume"
         current = current.get(key)
     return _text(current)

@@ -1593,6 +1593,14 @@ class GoogleAuthViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("error", response.data)
 
+    @override_settings(GOOGLE_ID_TOKEN_CLOCK_SKEW_SECONDS=45)
+    @patch("users.google_auth.google_id_token.verify_oauth2_token")
+    def test_google_auth_allows_configured_clock_skew(self, mock_verify):
+        mock_verify.return_value = self.valid_idinfo
+        response = self.client.post(self.url, {"id_token": "valid-token"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(mock_verify.call_args.kwargs["clock_skew_in_seconds"], 45)
+
     @patch("users.google_auth.google_id_token.verify_oauth2_token")
     def test_google_auth_network_error(self, mock_verify):
         mock_verify.side_effect = Exception("Network error")

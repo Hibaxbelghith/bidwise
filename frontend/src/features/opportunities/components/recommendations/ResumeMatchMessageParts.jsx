@@ -1,6 +1,14 @@
 import { Check, Copy, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+const ANALYSIS_STEPS = [
+  { icon: "📄", text: "Reading resume" },
+  { icon: "", text: "Comparing with job description" },
+  { icon: "", text: "Checking keyword matches" },
+  { icon: "", text: "Evaluating experience fit" },
+  { icon: "", text: "Preparing insights" },
+];
+
 const escapeHtml = (value) =>
   String(value || '')
     .replace(/&/g, '&amp;')
@@ -65,28 +73,29 @@ const sleep = (duration) => new Promise((resolve) => {
 });
 
 const useStreamingMarkdown = (markdown, { enabled = true, speed = 45 } = {}) => {
-  const [visibleMarkdown, setVisibleMarkdown] = useState(enabled ? '' : markdown || '');
+  const [streamState, setStreamState] = useState(() => ({
+    source: String(markdown || ''),
+    visible: enabled ? '' : String(markdown || ''),
+  }));
 
   useEffect(() => {
     const fullText = String(markdown || '');
     if (!enabled || !fullText) {
-      setVisibleMarkdown(fullText);
+      setStreamState({ source: fullText, visible: fullText });
       return undefined;
     }
 
     let isCancelled = false;
-    const chunks = fullText.split(/(\n+)/).filter((chunk) => chunk !== '');
+    const chunks = fullText.match(/[^\n]*\n+|[^\n]+$/g) || [fullText];
 
     const run = async () => {
-      setVisibleMarkdown('');
+      setStreamState({ source: fullText, visible: '' });
       let output = '';
       for (const chunk of chunks) {
         if (isCancelled) return;
         output += chunk;
-        setVisibleMarkdown(output);
-        if (!/^\n+$/.test(chunk)) {
-          await sleep(Math.min(120, Math.max(24, speed + Math.round(chunk.length / 8))));
-        }
+        setStreamState({ source: fullText, visible: output });
+        await sleep(Math.min(120, Math.max(24, speed + Math.round(chunk.length / 8))));
       }
     };
 
@@ -96,7 +105,8 @@ const useStreamingMarkdown = (markdown, { enabled = true, speed = 45 } = {}) => 
     };
   }, [markdown, enabled, speed]);
 
-  return visibleMarkdown;
+  const currentSource = String(markdown || '');
+  return streamState.source === currentSource ? streamState.visible : '';
 };
 
 export const StreamingMarkdownMessage = ({ markdown, stream = true }) => {
@@ -126,20 +136,12 @@ export const SimpleLoader = ({ text = "Thinking" }) => {
 
 // Professional job analysis loader
 export const JobAnalysisLoader = ({ step = "Analyzing resume" }) => {
-  const steps = [
-    { icon: "📄", text: "Reading resume" },
-    { icon: "", text: "Comparing with job description" },
-    { icon: "", text: "Checking keyword matches" },
-    { icon: "", text: "Evaluating experience fit" },
-    { icon: "", text: "Preparing insights" },
-  ];
-  
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     const stepInterval = setInterval(() => {
-      setCurrentStep((prev) => (prev + 1) % steps.length);
+      setCurrentStep((prev) => (prev + 1) % ANALYSIS_STEPS.length);
     }, 1800);
     
     const progressInterval = setInterval(() => {
@@ -153,13 +155,13 @@ export const JobAnalysisLoader = ({ step = "Analyzing resume" }) => {
       clearInterval(stepInterval);
       clearInterval(progressInterval);
     };
-  }, [steps.length]);
+  }, []);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-gray-500">{steps[currentStep].icon}</span>
-        <span className="text-gray-700">{steps[currentStep].text}</span>
+        <span className="text-gray-500">{ANALYSIS_STEPS[currentStep].icon}</span>
+        <span className="text-gray-700">{ANALYSIS_STEPS[currentStep].text}</span>
         <div className="flex gap-0.5">
           <span className="h-1 w-1 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
           <span className="h-1 w-1 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />

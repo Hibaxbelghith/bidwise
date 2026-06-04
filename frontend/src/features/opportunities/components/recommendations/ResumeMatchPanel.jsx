@@ -121,15 +121,14 @@ const ResumeMatchPanel = ({
   const fallbackMessage = isAiFallback && resumeMatchReady && !hasNoResume
     ? aiAnalysis?.error || 'Full AI analysis is not available right now. Showing quick analysis instead.'
     : '';
-  const shouldShowDeterministic = Boolean(deterministicMarkdown) && resumeMatchReady && !hasNoResume && !aiMarkdown && !aiLoading;
-  const statusMessage = getStatusMessage(resumeMatch);
-  const canGenerateAiAnalysis =
-    Boolean(resumeMatch?.can_generate_ai_analysis) &&
+  const shouldShowDeterministic =
+    Boolean(deterministicMarkdown) &&
     resumeMatchReady &&
     !hasNoResume &&
+    !aiMarkdown &&
     !aiLoading &&
-    (!aiAnalysis || isAiFallback) &&
-    !aiAnalysis?.analysis_markdown;
+    !loading;
+  const statusMessage = getStatusMessage(resumeMatch);
   const uploadBusy =
     uploadState?.status === 'uploading' ||
     uploadState?.status === 'confirming' ||
@@ -340,7 +339,7 @@ const ResumeMatchPanel = ({
                 ) : null}
 
                 {/* Loading */}
-                {!hasNoResume && (loading || uploadProcessing) && (
+                {!hasNoResume && (loading || uploadProcessing) && !aiMarkdown && !shouldShowDeterministic && (
                   <ThinkingLoader label="BidWise AI is reading your resume" />
                 )}
 
@@ -408,10 +407,7 @@ const ResumeMatchPanel = ({
                       </div>
                     </div>
                     <div className="rounded-2xl rounded-tl-md bg-white px-5 py-4 shadow-sm ring-1 ring-emerald-100">
-                      <div className="-mr-2 -mt-2 mb-1 flex items-center justify-between gap-3">
-                        <span className="text-[11px] font-medium text-emerald-700">
-                          {ACTION_LABELS[message.action] || 'AI assistant action'}
-                        </span>
+                      <div className="-mr-2 -mt-2 mb-1 flex justify-end">
                         <CopyMessageButton markdown={message.markdown} />
                       </div>
                       <StreamingMarkdownMessage markdown={message.markdown} />
@@ -442,7 +438,7 @@ const ResumeMatchPanel = ({
                   </div>
                 )}
 
-                {aiMarkdown && !isAiFallback && (
+                {resumeMatchReady && !hasNoResume && (aiMarkdown || shouldShowDeterministic) && (
                   <div className="mt-4 space-y-2">
                     {ACTION_SUGGESTIONS.map((suggestion) => (
                       <button
@@ -470,18 +466,7 @@ const ResumeMatchPanel = ({
           </div>
         </div>
 
-        {/* Footer - Sticky, always visible */}
-        {canGenerateAiAnalysis ? (
-        <footer className="sticky bottom-0 z-10 border-t border-gray-100 bg-white px-5 py-3">
-            <Button
-              type="button"
-              className="w-full justify-center gap-2 rounded-lg bg-blue-600 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-              onClick={onGenerateAnalysis}
-            >
-              Generate full AI analysis
-            </Button>
-        </footer>
-        ) : null}
+        {/* Gemini-first flow runs automatically; follow-up suggestions appear inline after analysis. */}
       </section>
     </div>
   );

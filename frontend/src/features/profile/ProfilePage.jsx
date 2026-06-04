@@ -240,6 +240,22 @@ const Profile = () => {
 		return result;
 	};
 
+	useEffect(() => {
+		const refreshResumeState = () => {
+			handleResumeChanged({ preserveDraft: true });
+		};
+
+		window.addEventListener('bidwise:resume-updated', refreshResumeState);
+		if (localStorage.getItem('bidwise_resume_updated_at')) {
+			localStorage.removeItem('bidwise_resume_updated_at');
+			refreshResumeState();
+		}
+
+		return () => {
+			window.removeEventListener('bidwise:resume-updated', refreshResumeState);
+		};
+	}, []);
+
 	const handleChange = (field, value) => {
 		setFormData((prev) => ({ ...prev, [field]: value }));
 		setFieldErrors((prev) => ({ ...prev, [field]: '' }));
