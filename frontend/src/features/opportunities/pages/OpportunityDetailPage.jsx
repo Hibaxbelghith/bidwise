@@ -12,6 +12,7 @@ import OpportunityHeader from '../components/detail/OpportunityHeader.jsx';
 import OpportunityMeta from '../components/detail/OpportunityMeta.jsx';
 import OpportunitySimilarSection from '../components/detail/OpportunitySimilarSection.jsx';
 import OpportunitySkillsSection from '../components/detail/OpportunitySkillsSection.jsx';
+import OpportunityAssistantCard from '../components/recommendations/OpportunityAssistantCard.jsx';
 import RecommendationInsightPanel, {
   RecommendationInsightSkeleton,
 } from '../components/recommendations/RecommendationInsightPanel.jsx';
@@ -186,6 +187,12 @@ const OpportunityDetailPage = () => {
           </aside>
         </div>
       </main>
+
+      <OpportunityAssistantCard
+        opportunityId={id}
+        locked={!isUserAuthenticated}
+        floating
+      />
 
       <OpportunityActionBar
         isUserAuthenticated={isUserAuthenticated}

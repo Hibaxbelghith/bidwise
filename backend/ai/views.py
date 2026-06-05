@@ -67,8 +67,20 @@ ASSISTANT_QUESTION_MAX_CHARS = 500
 ASSISTANT_HISTORY_MAX_MESSAGES = 4
 ASSISTANT_HISTORY_MAX_CHARS = 1800
 OPPORTUNITY_ASSISTANT_CACHE_TTL_SECONDS = 24 * 60 * 60
-OPPORTUNITY_ASSISTANT_VERSION = 11
+OPPORTUNITY_ASSISTANT_VERSION = 12
 APPLICATION_ACTION_INTENTS = (
+    (
+        "full_fit_analysis",
+        (
+            "is my resume a good match",
+            "resume a good match",
+            "cv good match",
+            "cv match",
+            "mon cv correspond",
+            "mon cv est il compatible",
+            "est ce que mon cv correspond",
+        ),
+    ),
     (
         "generate_cover_letter",
         (
@@ -1158,6 +1170,8 @@ def _detect_application_action(question):
 
 
 def _generate_application_action_response(action, evidence):
+    if action == "full_fit_analysis":
+        return generate_resume_match_analysis(evidence)
     if action == "optimize_cv":
         return generate_resume_optimization(evidence)
     if action == "rewrite_summary":

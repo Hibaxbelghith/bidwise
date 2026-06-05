@@ -297,3 +297,38 @@ class OpportunityAssistantQuestionViewTests(APITestCase):
         self.assertEqual(response.data["action"], "interview_prep")
         generate_interview_prep.assert_called_once()
         answer_question.assert_not_called()
+
+    @patch("ai.views.build_resume_match_evidence")
+    @patch("ai.views.answer_opportunity_question")
+    @patch("ai.views.generate_resume_match_analysis")
+    def test_routes_resume_match_question_to_full_fit_analysis(
+        self,
+        generate_resume_match_analysis,
+        answer_question,
+        build_evidence,
+    ):
+        self.client.force_authenticate(self.user)
+        build_evidence.return_value = {
+            "status": READY_STATUS,
+            "has_resume": True,
+            "resume": {"id": 14, "updated_at": "2026-06-05T10:00:00Z"},
+            "match": {},
+            "opportunity": {},
+        }
+        generate_resume_match_analysis.return_value = {
+            "analysis_markdown": "## 1. Global verdict\nStrong match.",
+            "provider": "gemini",
+            "model": "gemini-test",
+        }
+
+        response = self.client.post(
+            self.url,
+            {"question": "Is my resume a good match for this role?"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["source"], "resume_action")
+        self.assertEqual(response.data["action"], "full_fit_analysis")
+        generate_resume_match_analysis.assert_called_once()
+        answer_question.assert_not_called()

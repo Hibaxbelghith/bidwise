@@ -352,7 +352,43 @@ Si le CV est encore en traitement :
 
 ## 10. UX
 
-L'assistant est integre dans le panneau opportunite.
+L'assistant est integre dans deux contextes de la plateforme.
+
+### Dans For You
+
+Dans la page "For You", BidWise AI est integre au panneau de detail des recommandations.
+
+Ce contexte contient :
+
+- l'offre selectionnee ;
+- le score affiche dans "Your fit" ;
+- les raisons de recommandation ;
+- les gaps ;
+- le CV actif ;
+- les actions de candidature.
+
+L'utilisateur peut donc demander une analyse personnalisee de son CV, comprendre pourquoi l'offre est recommandee et generer des contenus de candidature.
+
+### Dans Explore / page detail
+
+Dans les pages detail des offres Explore, BidWise AI est accessible via un bouton flottant "BidWise AI".
+
+Ce choix UX permet :
+
+- de garder l'assistant visible pendant le scroll ;
+- de ne pas pousser la description de l'offre vers le bas ;
+- de poser des questions tout en lisant l'offre ;
+- de rendre l'assistant disponible sur toutes les offres, pas seulement sur les recommandations For You.
+
+Si l'utilisateur n'est pas connecte, une card verrouillee invite a se connecter :
+
+```text
+Sign in to ask BidWise AI
+```
+
+Dans ce contexte Explore, le score de recommandation "Your fit" peut etre absent si l'offre n'a pas ete chargee depuis le moteur For You. Dans ce cas, l'assistant dit clairement que le recommendation score n'est pas disponible dans ce contexte, au lieu d'inventer une valeur.
+
+### Experience de conversation
 
 Il propose :
 
@@ -363,6 +399,8 @@ Il propose :
 - bouton copier ;
 - loading state ;
 - suggestions d'actions ;
+- bouton flottant sur les pages detail ;
+- card verrouillee pour les visiteurs non connectes ;
 - fake streaming cote React pour rendre l'attente plus naturelle.
 
 ## 11. Scenarios de demonstration
@@ -415,7 +453,19 @@ Attendu :
 
 L'assistant appelle le prompt specialise d'optimisation CV et produit une reponse ATS-friendly.
 
-### Scenario 5 - Lettre de motivation
+### Scenario 5 - Analyse CV depuis une suggestion
+
+Question :
+
+```text
+Is my resume a good match for this role?
+```
+
+Attendu :
+
+L'assistant declenche la vraie analyse CV vs offre et retourne le verdict global, les points forts, les gaps, le score ATS et la prochaine action.
+
+### Scenario 6 - Lettre de motivation
 
 Question :
 
@@ -427,7 +477,7 @@ Attendu :
 
 L'assistant genere une lettre longue et une version courte.
 
-### Scenario 6 - Entretien
+### Scenario 7 - Entretien
 
 Question :
 
@@ -439,7 +489,7 @@ Attendu :
 
 L'assistant produit des questions techniques, comportementales, des questions a poser au recruteur et des red flags a preparer.
 
-### Scenario 7 - Information indisponible
+### Scenario 8 - Information indisponible
 
 Question :
 
@@ -450,6 +500,18 @@ Does this company use Kubernetes?
 Attendu :
 
 Si Kubernetes n'est pas mentionne dans l'offre, l'assistant dit que l'information n'est pas disponible.
+
+### Scenario 9 - Explore sans score For You
+
+Question :
+
+```text
+What is the recommendation score shown in Your fit?
+```
+
+Attendu :
+
+Si l'offre est consultee depuis Explore sans contexte de recommandation charge, l'assistant explique que le recommendation score n'est pas disponible dans ce contexte. Il peut toutefois repondre sur l'offre, le score ATS et l'analyse CV vs offre.
 
 ## 12. Reponses courtes pour le jury
 
@@ -484,6 +546,10 @@ Les erreurs LLM sont interceptees. L'utilisateur recoit un message propre. Les a
 ### Pourquoi le chatbot comprend le francais mais repond en anglais ?
 
 Pour garder l'application coherente en anglais tout en supportant des utilisateurs qui posent naturellement des questions en francais, arabe ou langage mixte.
+
+### Le chatbot est-il limite a la page For You ?
+
+Non. Le chatbot est disponible dans For You et dans les pages detail des offres Explore. Dans For You, il dispose du contexte de recommandation personnalise. Dans Explore, il agit comme assistant d'offre et de candidature, avec un bouton flottant visible pendant la lecture de l'offre.
 
 ## 13. Limites connues
 
