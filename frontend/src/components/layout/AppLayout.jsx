@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.jsx';
-import { Bell, Building2, LogOut, Search, ShieldCheck, User } from 'lucide-react';
+import {
+  Bell,
+  Building2,
+  ChevronDown,
+  LogOut,
+  Mail,
+  MessageCircle,
+  Search,
+  Settings,
+  ShieldCheck,
+  User,
+} from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext.jsx';
 import {
   getProfileCompletionScore,
@@ -37,8 +48,10 @@ const AppLayout = () => {
   const [showProfileTooltip, setShowProfileTooltip] = useState(false);
   const [hasUserVisitedProfile, setHasUserVisitedProfile] = useState(false);
   const [isLogoutPending, setIsLogoutPending] = useState(false);
+  const [isOrganizationAccountMenuOpen, setIsOrganizationAccountMenuOpen] = useState(false);
   const tooltipRef = useRef(null);
   const hoverTimeoutRef = useRef(null);
+  const organizationAccountMenuRef = useRef(null);
   
   const isHome = location.pathname === '/';
   const isOrganizationLanding = location.pathname === '/organizations';
@@ -48,6 +61,7 @@ const AppLayout = () => {
     location.pathname.startsWith('/dashboard-admin') || location.pathname.startsWith('/admin');
   const isAdmin = Boolean(user?.is_admin || user?.is_staff || user?.is_superuser);
   const isOrganizationAccount = user?.account_type === 'organization';
+  const isOrganizationWorkspace = isOrganizationSurface && isOrganizationAccount;
   const dashboardPath = isOrganizationAccount ? '/organization/dashboard' : '/dashboard';
   const dashboardLabel = isOrganizationAccount ? 'Organization Dashboard' : 'My Dashboard';
   const profileCompletionScore = getProfileCompletionScore(user);
@@ -95,6 +109,19 @@ const AppLayout = () => {
       markProfileVisited();
     }
   }, [location.pathname, user?.id, hasUserVisitedProfile, markProfileVisited]);
+
+  useEffect(() => {
+    if (!isOrganizationAccountMenuOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!organizationAccountMenuRef.current?.contains(event.target)) {
+        setIsOrganizationAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isOrganizationAccountMenuOpen]);
 
   // Gestion du hover avec délai pour éviter les clignotements
   const handleMouseEnter = () => {
@@ -159,6 +186,8 @@ const AppLayout = () => {
     location.pathname !== '/profile' && 
     !location.pathname.startsWith('/onboarding');
 
+  const shouldShowFooter = !isOrganizationSurface && !isAdminRoute;
+
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: animationStyles }} />
@@ -172,10 +201,10 @@ const AppLayout = () => {
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               <div className="flex h-16 items-center justify-between">
                 <Link to="/" className="flex items-center gap-2">
-                  <img src="/favicon.png" alt="BidWise Logo" className="h-8 w-auto object-contain" />
+                  <img src="/BidWise Logo.svg" alt="BidWise Logo" width="190" height="50"/>
                 </Link>
 
-                {!isHome && (
+                {!isHome && !isOrganizationSurface && (
                   <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">
                     <Link
                       to="/opportunities"
@@ -234,16 +263,71 @@ const AppLayout = () => {
                         />
                       ) : isAuthenticated ? (
                         <>
-                          <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-                            <Bell className="h-5 w-5" aria-hidden="true" />
-                            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
-                          </Button>
-                          {isAdminRoute ? (
+                          {isOrganizationWorkspace ? (
+                            <>
+                              <Button variant="ghost" size="icon" className="relative" aria-label="Messages">
+                                <Mail className="h-5 w-5" aria-hidden="true" />
+                                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
+                              </Button>
+                              <div className="relative" ref={organizationAccountMenuRef}>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-9 items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-800 hover:bg-neutral-50"
+                                  onClick={() => setIsOrganizationAccountMenuOpen((previous) => !previous)}
+                                >
+                                  <User className="h-4 w-4" aria-hidden="true" />
+                                  <span className="hidden max-w-[220px] truncate sm:inline">{user?.email}</span>
+                                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                                </button>
+                                {isOrganizationAccountMenuOpen ? (
+                                  <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-neutral-200 bg-white py-2 shadow-lg shadow-neutral-950/10">
+                                    <div className="border-b border-neutral-100 px-4 py-3">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                                        Organization account
+                                      </p>
+                                      <p className="mt-1 truncate text-sm font-medium text-neutral-950">{user?.email}</p>
+                                    </div>
+                                    <Link
+                                      to="/organization/create-account"
+                                      className="flex items-center gap-3 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-neutral-950"
+                                      onClick={() => setIsOrganizationAccountMenuOpen(false)}
+                                    >
+                                      <Settings className="h-4 w-4" aria-hidden="true" />
+                                      Account settings
+                                    </Link>
+                                    <Link
+                                      to="/organizations"
+                                      className="flex items-center gap-3 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-neutral-950"
+                                      onClick={() => setIsOrganizationAccountMenuOpen(false)}
+                                    >
+                                      <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                                      Contact us
+                                    </Link>
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50 hover:text-neutral-950 disabled:opacity-50"
+                                      onClick={handleLogout}
+                                      disabled={isLogoutPending}
+                                    >
+                                      <LogOut className="h-4 w-4" aria-hidden="true" />
+                                      Logout
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+                                <Bell className="h-5 w-5" aria-hidden="true" />
+                                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
+                              </Button>
+                              {isAdminRoute ? (
                             <span className="hidden items-center gap-2 rounded-md border border-neutral-200 px-3 py-1.5 text-sm font-medium text-neutral-700 lg:inline-flex">
                               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                               Admin Panel
                             </span>
-                          ) : (
+                              ) : (
                             <div className="relative">
                               <button
                                 type="button"
@@ -300,16 +384,18 @@ const AppLayout = () => {
                                 </div>
                               )}
                             </div>
+                              )}
+                              <Button
+                                className="cursor-pointer"
+                                variant="outline"
+                                onClick={handleLogout}
+                                disabled={isLogoutPending}
+                              >
+                                <LogOut className="mr-2 h-4 w-4" />
+                                Logout
+                              </Button>
+                            </>
                           )}
-                          <Button
-                            className="cursor-pointer"
-                            variant="outline"
-                            onClick={handleLogout}
-                            disabled={isLogoutPending}
-                          >
-                            <LogOut className="mr-2 h-4 w-4" />
-                            Logout
-                          </Button>
                         </>
                       ) : (
                         <Button variant="outline" asChild>
@@ -328,13 +414,13 @@ const AppLayout = () => {
           <Outlet />
         </main>
 
-        {!isOrganizationLanding ? (
+        {shouldShowFooter ? (
           <footer className="mt-20 border-t border-neutral-200 bg-white" role="contentinfo">
             <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
               <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <img src="/favicon.png" alt="BidWise Logo" className="h-8 w-auto object-contain" />
+                    <img src="/BidWise Logo.png" alt="BidWise Logo" className="h-16 w-auto object-contain" />
                   </div>
                   <p className="text-sm text-neutral-600">
                     Discover and track professional opportunities with ease.

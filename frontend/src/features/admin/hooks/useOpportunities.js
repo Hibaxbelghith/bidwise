@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
+  approveOrganizationOpportunity,
   deleteOpportunity,
   getOpportunities,
   getSources,
+  rejectOrganizationOpportunity,
 } from '../services/adminService.js';
 import { useDebouncedValue } from './useDebounce.js';
 import { usePagination } from './usePagination.js';
@@ -24,6 +26,9 @@ const normalizeSources = (data) => {
     const id = item?.id;
     const name = item?.nom;
     if (id == null || !name || seenIds.has(id)) return false;
+    const normalizedName = String(name).toLowerCase();
+    if (normalizedName.includes('benchmark')) return false;
+    if (normalizedName.includes('recommendation')) return false;
     seenIds.add(id);
     return true;
   });
@@ -67,6 +72,7 @@ export const useOpportunities = () => {
   const [error, setError] = useState('');
   const [sourcesError, setSourcesError] = useState('');
   const [deletingId, setDeletingId] = useState(null);
+  const [moderatingId, setModeratingId] = useState(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
@@ -217,6 +223,50 @@ export const useOpportunities = () => {
     }
   };
 
+  const updateOpportunityInState = (updatedOpportunity) => {
+    if (!updatedOpportunity?.id) return;
+    setOpportunities((items) => (
+      items.map((item) => (item.id === updatedOpportunity.id ? updatedOpportunity : item))
+    ));
+    setSelectedOpportunity((current) => (
+      current?.id === updatedOpportunity.id ? updatedOpportunity : current
+    ));
+  };
+
+  const handleApprove = async (opportunity) => {
+    const note = window.prompt(`Approve "${opportunity.title}"? Optional note:`, '') ?? null;
+    if (note === null) return;
+
+    try {
+      setModeratingId(opportunity.id);
+      setError('');
+      const { data } = await approveOrganizationOpportunity(opportunity.id, note);
+      updateOpportunityInState(data?.opportunity);
+      setReloadKey((currentKey) => currentKey + 1);
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Unable to approve opportunity.');
+    } finally {
+      setModeratingId(null);
+    }
+  };
+
+  const handleReject = async (opportunity) => {
+    const note = window.prompt(`Reject "${opportunity.title}"? Optional note:`, '') ?? null;
+    if (note === null) return;
+
+    try {
+      setModeratingId(opportunity.id);
+      setError('');
+      const { data } = await rejectOrganizationOpportunity(opportunity.id, note);
+      updateOpportunityInState(data?.opportunity);
+      setReloadKey((currentKey) => currentKey + 1);
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Unable to reject opportunity.');
+    } finally {
+      setModeratingId(null);
+    }
+  };
+
   return {
     opportunities,
     sources,
@@ -231,6 +281,7 @@ export const useOpportunities = () => {
     error,
     sourcesError,
     deletingId,
+    moderatingId,
     selectedOpportunity,
     sectionRef,
     totalPages,
@@ -244,5 +295,7 @@ export const useOpportunities = () => {
     handleSearchSubmit,
     handleSourceChange,
     handleDelete,
+    handleApprove,
+    handleReject,
   };
 };

@@ -29,6 +29,8 @@ const statusLabels = {
   POSTULEE_EXTERNEMENT: 'Postulees',
   ABANDONNEE: 'Abandonnees',
   ACTIVE: 'Actives',
+  PENDING_REVIEW: 'Pending review',
+  REJECTED: 'Rejected',
   EXPIREE: 'Expirees',
   ARCHIVEE: 'Archivees',
   EMPLOI: 'Emplois',

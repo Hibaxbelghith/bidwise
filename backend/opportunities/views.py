@@ -1,13 +1,19 @@
 import logging
+import secrets
 import time
+from pathlib import Path
 
 from django.conf import settings
 from django.db import connection
+from django.db.models import Count
+from django.utils import timezone
 from rest_framework import viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, parser_classes, permission_classes, throttle_classes
 from rest_framework.filters import OrderingFilter
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.throttling import ScopedRateThrottle
 from django_filters.rest_framework import DjangoFilterBackend
 
@@ -15,12 +21,25 @@ from .api.services.facets import get_cached_opportunity_facets
 from .api.services.opportunities import build_opportunity_queryset
 from .dataset_metrics import compute_pipeline_metrics
 from .filters import OpportuniteFilterSet
-from .models import SourceOpportunite
+from .models import DateConfidence, Opportunite, SourceOpportunite, StatutOpportunite
+from .moderation_llm import DECISION_APPROVED, classify_opportunity_with_gemini, failed_llm_result
+from .normalization.employment import normalize_contract_types, normalize_schedule, normalize_work_mode
 from .pagination import OpportunityPagination, SimilarityPagination
 from .permissions import IsAdminOrReadOnly, IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly
-from .serializers import OpportuniteSerializer, SimilarOpportunitySerializer, SourceOpportuniteSerializer
+from .serializers import (
+    OpportuniteSerializer,
+    OrganizationOpportunitySerializer,
+    OrganizationTenderDocumentUploadSerializer,
+    OrganizationOpportunityWriteSerializer,
+    SimilarOpportunitySerializer,
+    SourceOpportuniteSerializer,
+)
 from .similarity import find_similar_opportunities_with_fallback
 from .source_cleanup import removed_source_q
+from .throttles import OrganizationOpportunityPostThrottle
+from .turnstile import verify_turnstile_token
+from users.models import OrganizationProfile, Utilisateur
+from users.storage import ProfileResumeStorage
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +49,184 @@ logger = logging.getLogger(__name__)
 @permission_classes([IsAuthenticated])
 def pipeline_metrics_view(request):
     return Response(compute_pipeline_metrics())
+
+
+ORGANIZATION_SOURCE_NAME = "BidWise Organizations"
+ORGANIZATION_SOURCE_URL = "https://bidwise.local/organizations"
+
+
+def _require_organization_profile(request):
+    if request.user.account_type != Utilisateur.AccountType.ORGANIZATION:
+        return None, Response(
+            {"detail": "Organization account required."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        return request.user.organization_profile, None
+    except OrganizationProfile.DoesNotExist:
+        return None, Response(
+            {"detail": "Complete your organization profile before managing opportunities."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+
+def _moderation_payload(validated_data, submitted_data):
+    payload = dict(validated_data)
+    for key in ("contract", "availability", "salary", "experience_min", "experience_max", "skills", "deadline"):
+        if key in submitted_data:
+            payload[key] = submitted_data.get(key)
+    return payload
+
+
+def _client_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.META.get("REMOTE_ADDR")
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([OrganizationOpportunityPostThrottle])
+def organization_opportunities_view(request):
+    organization_profile, error_response = _require_organization_profile(request)
+    if error_response:
+        return error_response
+
+    if request.method == "POST":
+        serializer = OrganizationOpportunityWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        turnstile = verify_turnstile_token(
+            request.data.get("turnstile_token"),
+            remote_ip=_client_ip(request),
+        )
+        if not turnstile.success:
+            return Response(
+                {"turnstile_token": [turnstile.reason]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        source, _created = SourceOpportunite.objects.get_or_create(
+            nom=ORGANIZATION_SOURCE_NAME,
+            defaults={
+                "url": ORGANIZATION_SOURCE_URL,
+                "type_source": "AUTRE",
+            },
+        )
+
+        contract = data.get("contract", "")
+        availability = data.get("availability", "")
+        moderation_payload = _moderation_payload(data, request.data)
+        try:
+            llm_moderation_result = classify_opportunity_with_gemini(moderation_payload)
+        except Exception:  # pragma: no cover - defensive guard for provider integration failures.
+            logger.exception("Unexpected LLM moderation failure; keeping opportunity for admin review.")
+            llm_moderation_result = failed_llm_result(
+                "LLM moderation failed unexpectedly; kept for admin review.",
+            )
+        extra_data = {"published_by": "organization"}
+        if data.get("internship_details"):
+            extra_data["internship_details"] = data["internship_details"]
+        if data.get("seasonal_details"):
+            extra_data["seasonal_details"] = data["seasonal_details"]
+        if data.get("project_details"):
+            extra_data.update(data["project_details"])
+            extra_data["project_details"] = data["project_details"]
+        opportunity_status = (
+            StatutOpportunite.ACTIVE
+            if llm_moderation_result.decision == DECISION_APPROVED
+            else StatutOpportunite.PENDING_REVIEW
+        )
+        extra_data["moderation"] = {
+            "llm": llm_moderation_result.to_dict(),
+            "final_decision": llm_moderation_result.decision,
+            "final_status": opportunity_status,
+        }
+
+        opportunity = Opportunite.objects.create(
+            titre=data["title"],
+            description=data["description"],
+            description_html="",
+            organisation_nom=(
+                data.get("project_details", {}).get("public_buyer")
+                or organization_profile.organization_name
+            ),
+            ville=data["location"],
+            contract_type=contract,
+            normalized_contract_types=normalize_contract_types(contract),
+            availability=availability,
+            normalized_work_mode=normalize_work_mode(availability),
+            normalized_schedule=normalize_schedule([availability, contract]),
+            experience_min=data.get("experience_min"),
+            experience_max=data.get("experience_max"),
+            education_level=data.get("education_level", ""),
+            salary=data.get("salary", ""),
+            skills=data.get("skills", []),
+            raw_skills=data.get("skills", []),
+            type_opportunite=data["type"],
+            statut=opportunity_status,
+            date_publication=timezone.localdate(),
+            date_limite=data.get("deadline"),
+            date_confidence=DateConfidence.EXACT,
+            source=source,
+            organisation=request.user,
+            extra_data=extra_data,
+        )
+        opportunity = (
+            Opportunite.objects
+            .filter(pk=opportunity.pk)
+            .annotate(applications_count=Count("candidatures"))
+            .get()
+        )
+        return Response(
+            OrganizationOpportunitySerializer(opportunity).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    opportunities = (
+        Opportunite.objects
+        .filter(organisation=request.user)
+        .annotate(applications_count=Count("candidatures"))
+        .order_by("-date_creation", "-id")
+    )
+    serializer = OrganizationOpportunitySerializer(opportunities, many=True)
+    return Response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def organization_tender_document_upload_view(request):
+    _organization_profile, error_response = _require_organization_profile(request)
+    if error_response:
+        return error_response
+
+    serializer = OrganizationTenderDocumentUploadSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    uploaded_file = serializer.validated_data["file"]
+    doc_type = serializer.validated_data["type"]
+    label = serializer.validated_data.get("label") or Path(uploaded_file.name or "Document").stem
+    extension = Path(uploaded_file.name or "").suffix.lower()
+    storage = ProfileResumeStorage()
+    storage_name = (
+        f"organization_tender_documents/"
+        f"{request.user.pk}/"
+        f"{secrets.token_hex(16)}{extension}"
+    )
+    saved_name = storage.save(storage_name, uploaded_file)
+
+    return Response(
+        {
+            "type": doc_type,
+            "label": label,
+            "url": storage.url(saved_name),
+            "filename": Path(uploaded_file.name or saved_name).name,
+            "size": getattr(uploaded_file, "size", 0),
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 class OpportuniteViewSet(viewsets.ModelViewSet):

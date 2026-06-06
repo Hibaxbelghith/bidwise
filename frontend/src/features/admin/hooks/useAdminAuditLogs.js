@@ -15,6 +15,8 @@ export const AUDIT_ACTION_OPTIONS = [
   { value: 'REACTIVATE', label: 'Reactivations' },
   { value: 'TOGGLE_ADMIN', label: 'Role changes' },
   { value: 'TOGGLE_ACTIVE', label: 'Active status changes' },
+  { value: 'APPROVE_ORG_OPPORTUNITY', label: 'Opportunity approvals' },
+  { value: 'REJECT_ORG_OPPORTUNITY', label: 'Opportunity rejections' },
 ];
 
 export const useAdminAuditLogs = ({ action, page, pageSize }) => {

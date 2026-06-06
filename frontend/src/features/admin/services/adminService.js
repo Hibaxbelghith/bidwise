@@ -22,7 +22,17 @@ export const getSources = ({ signal } = {}) => adminApi.get('/sources/', { signa
 
 export const deleteOpportunity = (id) => adminApi.delete(`/admin/opportunities/${id}/`);
 
+export const approveOrganizationOpportunity = (id, note = '') => (
+  adminApi.post(`/admin/organization-opportunities/${id}/approve/`, { note })
+);
+
+export const rejectOrganizationOpportunity = (id, note = '') => (
+  adminApi.post(`/admin/organization-opportunities/${id}/reject/`, { note })
+);
+
 export const fetchAdminDashboard = getDashboard;
 export const fetchAdminOpportunities = getOpportunities;
 export const fetchAdminSources = getSources;
 export const deleteAdminOpportunity = deleteOpportunity;
+export const approveAdminOrganizationOpportunity = approveOrganizationOpportunity;
+export const rejectAdminOrganizationOpportunity = rejectOrganizationOpportunity;

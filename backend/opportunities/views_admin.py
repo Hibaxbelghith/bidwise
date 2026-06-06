@@ -8,6 +8,7 @@ from django.db.models import DateTimeField, Max, OuterRef, Subquery
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.conf import settings
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.timezone import now
 from django_filters import rest_framework as django_filters
@@ -47,22 +48,48 @@ User = get_user_model()
 
 class AdminOpportunitySerializer(serializers.ModelSerializer):
     title = serializers.CharField(source="titre", read_only=True)
+    description = serializers.CharField(read_only=True)
+    type = serializers.CharField(source="type_opportunite", read_only=True)
     source = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(source="date_creation", read_only=True)
     status = serializers.SerializerMethodField()
     url = serializers.URLField(source="source_item_url", read_only=True, allow_null=True)
     company_name = serializers.CharField(source="organisation_nom", read_only=True)
+    organization_email = serializers.EmailField(source="organisation.email", read_only=True, allow_null=True)
+    location = serializers.CharField(source="ville", read_only=True)
+    contract = serializers.CharField(source="contract_type", read_only=True)
+    availability = serializers.CharField(read_only=True)
+    salary = serializers.CharField(read_only=True)
+    experience_min = serializers.IntegerField(read_only=True, allow_null=True)
+    experience_max = serializers.IntegerField(read_only=True, allow_null=True)
+    skills = serializers.ListField(child=serializers.CharField(), read_only=True)
+    opportunity_details = serializers.SerializerMethodField()
+    published_by = serializers.SerializerMethodField()
+    moderation_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunite
         fields = [
             "id",
             "title",
+            "description",
+            "type",
             "source",
             "created_at",
             "status",
             "url",
             "company_name",
+            "organization_email",
+            "location",
+            "contract",
+            "availability",
+            "salary",
+            "experience_min",
+            "experience_max",
+            "skills",
+            "opportunity_details",
+            "published_by",
+            "moderation_summary",
         ]
         read_only_fields = fields
 
@@ -77,8 +104,80 @@ class AdminOpportunitySerializer(serializers.ModelSerializer):
         }
 
     def get_status(self, obj):
-        value = getattr(obj, "statut", "")
-        return str(value).lower()
+        return getattr(obj, "statut", "") or ""
+
+    def get_published_by(self, obj):
+        extra_data = getattr(obj, "extra_data", None)
+        if isinstance(extra_data, dict):
+            return extra_data.get("published_by") or "scraper"
+        return "scraper"
+
+    def get_opportunity_details(self, obj):
+        extra_data = getattr(obj, "extra_data", None)
+        if not isinstance(extra_data, dict):
+            return {}
+        details = {}
+        for key in ("project_details", "internship_details", "seasonal_details"):
+            if isinstance(extra_data.get(key), dict):
+                details[key] = extra_data[key]
+        return details
+
+    def get_moderation_summary(self, obj):
+        extra_data = getattr(obj, "extra_data", None)
+        if not isinstance(extra_data, dict):
+            return None
+        moderation = extra_data.get("moderation")
+        if not isinstance(moderation, dict):
+            return None
+
+        llm = moderation.get("llm") if isinstance(moderation.get("llm"), dict) else {}
+        return {
+            "final_decision": moderation.get("final_decision"),
+            "final_status": moderation.get("final_status"),
+            "category": llm.get("category"),
+            "decision": llm.get("decision"),
+            "confidence": llm.get("confidence"),
+            "reason": llm.get("reason"),
+            "provider": llm.get("provider"),
+            "model": llm.get("model"),
+        }
+
+
+class AdminPendingOrganizationOpportunitySerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source="titre", read_only=True)
+    type = serializers.CharField(source="type_opportunite", read_only=True)
+    status = serializers.CharField(source="statut", read_only=True)
+    organization_name = serializers.CharField(source="organisation_nom", read_only=True)
+    organization_email = serializers.EmailField(source="organisation.email", read_only=True, allow_null=True)
+    location = serializers.CharField(source="ville", read_only=True)
+    created_at = serializers.DateTimeField(source="date_creation", read_only=True)
+    moderation = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Opportunite
+        fields = [
+            "id",
+            "title",
+            "type",
+            "status",
+            "organization_name",
+            "organization_email",
+            "location",
+            "created_at",
+            "moderation",
+        ]
+        read_only_fields = fields
+
+    def get_moderation(self, obj):
+        extra_data = getattr(obj, "extra_data", None)
+        if not isinstance(extra_data, dict):
+            return {}
+        moderation = extra_data.get("moderation")
+        return moderation if isinstance(moderation, dict) else {}
+
+
+class AdminOrganizationOpportunityDecisionSerializer(serializers.Serializer):
+    note = serializers.CharField(max_length=500, required=False, allow_blank=True, trim_whitespace=True)
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -231,6 +330,209 @@ class AdminOpportunityViewSet(
             queryset = queryset.filter(source_id=source)
 
         return queryset
+
+
+class AdminPendingOrganizationOpportunitiesView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        queryset = (
+            Opportunite.objects
+            .select_related("organisation", "source")
+            .filter(statut=StatutOpportunite.PENDING_REVIEW)
+            .filter(extra_data__published_by="organization")
+            .order_by("-date_creation", "-id")
+        )
+        serializer = AdminPendingOrganizationOpportunitySerializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+class AdminOrganizationOpportunityDecisionView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, pk, decision):
+        serializer = AdminOrganizationOpportunityDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        note = serializer.validated_data.get("note", "")
+        opportunity = get_object_or_404(
+            Opportunite.objects.select_related("organisation", "source"),
+            pk=pk,
+        )
+
+        extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+        if extra_data.get("published_by") != "organization":
+            return Response(
+                {"detail": "Only organization-published opportunities can be moderated here."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if decision == "approve":
+            return self._approve(request, opportunity, extra_data, note)
+        if decision == "reject":
+            return self._reject(request, opportunity, extra_data, note)
+
+        return Response({"detail": "Unsupported moderation decision."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _approve(self, request, opportunity, extra_data, note):
+        if opportunity.statut == StatutOpportunite.ACTIVE:
+            self._record_admin_decision(
+                request=request,
+                opportunity=opportunity,
+                extra_data=extra_data,
+                action="approved",
+                note=note,
+                before_status=opportunity.statut,
+                after_status=opportunity.statut,
+                audit_action=AuditLog.Action.APPROVE_ORG_OPPORTUNITY,
+                message="Organization opportunity was already approved.",
+            )
+            return Response(
+                {
+                    "detail": "Opportunity is already approved.",
+                    "opportunity": AdminOpportunitySerializer(opportunity).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if opportunity.statut in {StatutOpportunite.ARCHIVEE, StatutOpportunite.REJECTED}:
+            return Response(
+                {"detail": "Archived or rejected opportunities cannot be approved from moderation."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        before_status = opportunity.statut
+        opportunity.statut = StatutOpportunite.ACTIVE
+        self._record_admin_decision(
+            request=request,
+            opportunity=opportunity,
+            extra_data=extra_data,
+            action="approved",
+            note=note,
+            before_status=before_status,
+            after_status=StatutOpportunite.ACTIVE,
+            audit_action=AuditLog.Action.APPROVE_ORG_OPPORTUNITY,
+            message="Organization opportunity approved for publication.",
+        )
+        opportunity.save(update_fields=["statut", "extra_data"])
+        return Response(
+            {
+                "detail": "Opportunity approved and published.",
+                "opportunity": AdminOpportunitySerializer(opportunity).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def _reject(self, request, opportunity, extra_data, note):
+        if opportunity.statut == StatutOpportunite.REJECTED:
+            self._record_admin_decision(
+                request=request,
+                opportunity=opportunity,
+                extra_data=extra_data,
+                action="rejected",
+                note=note,
+                before_status=opportunity.statut,
+                after_status=opportunity.statut,
+                audit_action=AuditLog.Action.REJECT_ORG_OPPORTUNITY,
+                message="Organization opportunity was already rejected.",
+            )
+            return Response(
+                {
+                    "detail": "Opportunity is already rejected.",
+                    "opportunity": AdminOpportunitySerializer(opportunity).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        before_status = opportunity.statut
+        opportunity.statut = StatutOpportunite.REJECTED
+        self._record_admin_decision(
+            request=request,
+            opportunity=opportunity,
+            extra_data=extra_data,
+            action="rejected",
+            note=note,
+            before_status=before_status,
+            after_status=StatutOpportunite.REJECTED,
+            audit_action=AuditLog.Action.REJECT_ORG_OPPORTUNITY,
+            message="Organization opportunity rejected.",
+        )
+        opportunity.save(update_fields=["statut", "extra_data"])
+        return Response(
+            {
+                "detail": "Opportunity rejected.",
+                "opportunity": AdminOpportunitySerializer(opportunity).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def _record_admin_decision(
+        self,
+        *,
+        request,
+        opportunity,
+        extra_data,
+        action,
+        note,
+        before_status,
+        after_status,
+        audit_action,
+        message,
+    ):
+        moderation = extra_data.get("moderation")
+        if not isinstance(moderation, dict):
+            moderation = {}
+            extra_data["moderation"] = moderation
+
+        decided_at = timezone.now()
+        admin_decision = {
+            "action": action,
+            "note": note,
+            "admin_id": request.user.pk,
+            "admin_email": request.user.email,
+            "decided_at": decided_at.isoformat(),
+            "before_status": before_status,
+            "after_status": after_status,
+        }
+        moderation["admin_decision"] = admin_decision
+        moderation["final_status"] = after_status
+        if action == "approved":
+            moderation["final_decision"] = "approved"
+        elif action == "rejected":
+            moderation["final_decision"] = "rejected"
+        opportunity.extra_data = extra_data
+        organization_profile = getattr(opportunity.organisation, "organization_profile", None)
+
+        AuditLog.objects.create(
+            actor=request.user,
+            target=opportunity.organisation,
+            action=audit_action,
+            metadata={
+                "message": message,
+                "opportunity_id": opportunity.pk,
+                "opportunity_title": opportunity.titre,
+                "organization_email": opportunity.organisation.email if opportunity.organisation else "",
+                "organization_name": (
+                    getattr(organization_profile, "organization_name", "")
+                    or opportunity.organisation_nom
+                    or ""
+                ),
+                "organization_phone": getattr(organization_profile, "phone", "") or "",
+                "organization_type": getattr(organization_profile, "organization_type", "") or "",
+                "organization_website": getattr(organization_profile, "website", "") or "",
+                "organization_contact_name": " ".join(
+                    part
+                    for part in [
+                        getattr(organization_profile, "first_name", ""),
+                        getattr(organization_profile, "last_name", ""),
+                    ]
+                    if part
+                ),
+                "before_status": before_status,
+                "after_status": after_status,
+                "decision": action,
+                "note": note,
+            },
+        )
 
 
 class AdminUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -975,6 +1277,7 @@ def get_platform_statistics():
             "active": active_opportunities_count,
             "expired": opportunities.filter(statut=StatutOpportunite.EXPIREE).count(),
             "archived": opportunities.filter(statut=StatutOpportunite.ARCHIVEE).count(),
+            "rejected": opportunities.filter(statut=StatutOpportunite.REJECTED).count(),
             "created_today": _count_today(opportunities, "date_creation", today),
             "created_7_days": _count_since(opportunities, "date_creation", start_7_days),
             "created_30_days": _count_since(opportunities, "date_creation", start_30_days),

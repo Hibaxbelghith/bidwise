@@ -271,6 +271,7 @@ REST_FRAMEWORK = {
         'profile_suggestions': os.getenv('PROFILE_SUGGESTIONS_RATE', '120/min'),
         'resume_match_ai': '5/min',
         'opportunity_assistant': os.getenv('OPPORTUNITY_ASSISTANT_RATE', '10/min'),
+        'organization_opportunity_post': os.getenv('ORGANIZATION_OPPORTUNITY_POST_RATE', '5/hour'),
     },
 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -378,6 +379,9 @@ GEMINI_API_BASE_URL = os.getenv(
 GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20.0"))
 GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.1"))
 GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "4000"))
+
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
+TURNSTILE_TIMEOUT_SECONDS = float(os.getenv("TURNSTILE_TIMEOUT_SECONDS", "4.0"))
 LLM_PROVIDER_MAX_RETRIES = int(os.getenv("LLM_PROVIDER_MAX_RETRIES", "1"))
 LLM_PROVIDER_RETRY_DELAY_SECONDS = float(os.getenv("LLM_PROVIDER_RETRY_DELAY_SECONDS", "5.0"))
 LLM_PROVIDER_RETRY_BACKOFF_FACTOR = float(os.getenv("LLM_PROVIDER_RETRY_BACKOFF_FACTOR", "2.0"))

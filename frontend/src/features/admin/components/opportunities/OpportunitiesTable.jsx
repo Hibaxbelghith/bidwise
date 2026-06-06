@@ -11,7 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../components/ui/table.jsx';
-import { formatDate, getSourceName, sourceClassName, statusClassName } from './opportunity.Utils.js';
+import {
+  formatDate,
+  originClassName,
+  originLabel,
+  statusClassName,
+  statusLabel,
+  typeLabel,
+} from './opportunity.Utils.js';
 
 const SkeletonRow = () => (
   <TableRow>
@@ -63,7 +70,8 @@ const OpportunitiesTable = ({
         <TableHeader>
           <TableRow className="bg-neutral-50">
             <TableHead className="px-4 py-3">Title</TableHead>
-            <TableHead className="px-4 py-3">Source</TableHead>
+            <TableHead className="px-4 py-3">Type</TableHead>
+            <TableHead className="px-4 py-3">Origin</TableHead>
             <TableHead className="px-4 py-3">Date</TableHead>
             <TableHead className="px-4 py-3">Status</TableHead>
             <TableHead className="px-4 py-3 text-right">Actions</TableHead>
@@ -97,15 +105,21 @@ const OpportunitiesTable = ({
                   </div>
                 </TableCell>
                 <TableCell className="px-4 py-3">
-                  <Badge variant="outline" className={sourceClassName(opportunity.source)}>
-                    {getSourceName(opportunity.source) || 'unknown'}
+                  <Badge variant="secondary">{typeLabel(opportunity.type)}</Badge>
+                </TableCell>
+                <TableCell className="px-4 py-3">
+                  <Badge variant="outline" className={originClassName(opportunity)}>
+                    {originLabel(opportunity)}
                   </Badge>
                 </TableCell>
                 <TableCell className="px-4 py-3 text-neutral-600">{formatDate(opportunity.created_at)}</TableCell>
                 <TableCell className="px-4 py-3">
                   <Badge variant="outline" className={statusClassName(opportunity.status)}>
-                    {opportunity.status || 'unknown'}
+                    {statusLabel(opportunity.status)}
                   </Badge>
+                  {opportunity.moderation_summary?.final_status === 'PENDING_REVIEW' ? (
+                    <p className="mt-1 text-xs font-medium text-blue-700">Review needed</p>
+                  ) : null}
                 </TableCell>
                 <TableCell className="px-4 py-3">
                   <div className="flex justify-end gap-2">

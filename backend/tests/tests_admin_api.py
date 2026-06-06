@@ -96,13 +96,68 @@ class AdminApiTests(APITestCase):
                 "type_source": "SITE_EMPLOI",
             },
         )
-        self.assertEqual(result["status"], "active")
+        self.assertEqual(result["type"], TypeOpportunite.EMPLOI)
+        self.assertEqual(result["status"], StatutOpportunite.ACTIVE)
         self.assertEqual(result["url"], self.opportunity.source_item_url)
         self.assertEqual(result["company_name"], "BidWise")
+        self.assertEqual(result["published_by"], "scraper")
+        self.assertIsNone(result["organization_email"])
+        self.assertIsNone(result["moderation_summary"])
 
         delete_response = self.client.delete(f"/api/admin/opportunities/{self.opportunity.id}/")
         self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Opportunite.objects.filter(id=self.opportunity.id).exists())
+
+    def test_admin_opportunities_include_organization_moderation_summary(self):
+        self.client.force_authenticate(self.admin)
+        organization = User.objects.create_user(
+            username="org@example.com",
+            email="org@example.com",
+            password="password",
+            account_type=User.AccountType.ORGANIZATION,
+        )
+        pending = Opportunite.objects.create(
+            titre="PFE Platform Engineer",
+            description="Ambiguous organization post",
+            organisation_nom="Acme Tunisia",
+            type_opportunite=TypeOpportunite.EMPLOI,
+            statut=StatutOpportunite.PENDING_REVIEW,
+            date_publication=date.today(),
+            source=self.keejob,
+            organisation=organization,
+            extra_data={
+                "published_by": "organization",
+                "moderation": {
+                    "llm": {
+                        "skipped": False,
+                        "category": "scam",
+                        "decision": "rejected",
+                        "confidence": 0.9,
+                        "reason": "The candidate is asked to pay money before starting.",
+                        "provider": "gemini",
+                        "model": "gemini-test",
+                    },
+                    "final_decision": "rejected",
+                    "final_status": StatutOpportunite.PENDING_REVIEW,
+                },
+            },
+        )
+
+        response = self.client.get("/api/admin/opportunities/", {"search": "PFE"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        result = response.data["results"][0]
+        self.assertEqual(result["id"], pending.id)
+        self.assertEqual(result["type"], TypeOpportunite.EMPLOI)
+        self.assertEqual(result["status"], StatutOpportunite.PENDING_REVIEW)
+        self.assertEqual(result["published_by"], "organization")
+        self.assertEqual(result["organization_email"], "org@example.com")
+        self.assertEqual(result["moderation_summary"]["final_decision"], "rejected")
+        self.assertEqual(result["moderation_summary"]["category"], "scam")
+        self.assertEqual(result["moderation_summary"]["decision"], "rejected")
+        self.assertEqual(result["moderation_summary"]["confidence"], 0.9)
+        self.assertEqual(result["moderation_summary"]["provider"], "gemini")
 
     def test_admin_can_toggle_user_admin_and_active_flags(self):
         self.client.force_authenticate(self.admin)

@@ -2,6 +2,7 @@ export const ORGANIZATION_AUTH_INTENT = 'organization';
 export const ORGANIZATION_LOGIN_PATH = `/login?intent=${ORGANIZATION_AUTH_INTENT}`;
 export const ORGANIZATION_CREATE_ACCOUNT_PATH = '/organization/create-account';
 export const ORGANIZATION_DASHBOARD_PATH = '/organization/dashboard';
+export const ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH = '/organization/post/submitted';
 
 export const ORGANIZATION_TYPES = [
   { value: 'company', label: 'Company' },

@@ -7,6 +7,8 @@ export const TYPE_OPTIONS = [
 
 export const STATUS_OPTIONS = [
   { value: 'ACTIVE', label: 'Active' },
+  { value: 'PENDING_REVIEW', label: 'Pending review' },
+  { value: 'REJECTED', label: 'Rejected' },
   { value: 'EXPIREE', label: 'Expired' },
   { value: 'ARCHIVEE', label: 'Archived' },
 ];

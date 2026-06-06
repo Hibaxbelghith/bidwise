@@ -766,6 +766,8 @@ class AuditLog(models.Model):
         REACTIVATE    = "REACTIVATE", "Reactivate user"
         TOGGLE_ADMIN  = "TOGGLE_ADMIN","Toggle admin privilege"
         TOGGLE_ACTIVE = "TOGGLE_ACTIVE","Toggle active status"
+        APPROVE_ORG_OPPORTUNITY = "APPROVE_ORG_OPPORTUNITY", "Approve organization opportunity"
+        REJECT_ORG_OPPORTUNITY = "REJECT_ORG_OPPORTUNITY", "Reject organization opportunity"
  
     # ── Champs ──────────────────────────────────────────────────────────────
     actor = models.ForeignKey(

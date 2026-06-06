@@ -17,6 +17,7 @@ const AdminOpportunitiesContent = ({
   error,
   sourcesError,
   deletingId,
+  moderatingId,
   selectedOpportunity,
   sectionRef,
   totalPages,
@@ -30,6 +31,8 @@ const AdminOpportunitiesContent = ({
   handleSearchSubmit,
   handleSourceChange,
   handleDelete,
+  handleApprove,
+  handleReject,
 }) => (
   <section ref={sectionRef} className="bg-neutral-50" aria-labelledby="admin-opportunities-heading">
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -77,7 +80,10 @@ const AdminOpportunitiesContent = ({
 
     <OpportunityModal
       opportunity={selectedOpportunity}
+      isModerating={moderatingId === selectedOpportunity?.id}
       onClose={() => setSelectedOpportunity(null)}
+      onApprove={handleApprove}
+      onReject={handleReject}
     />
   </section>
 );

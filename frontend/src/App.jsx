@@ -20,6 +20,13 @@ import OrganizationRoute from './features/organization/OrganizationRoute.jsx';
 import OrganizationLandingPage from './features/organization/pages/OrganizationLandingPage.jsx';
 import CreateOrganizationAccountPage from './features/organization/pages/CreateOrganizationAccountPage.jsx';
 import OrganizationDashboardPage from './features/organization/pages/OrganizationDashboardPage.jsx';
+import OrganizationDashboardLegacyPage from './features/organization/pages/OrganizationDashboardLegacyPage.jsx';
+import OrganizationInternshipPostPage from './features/organization/pages/OrganizationInternshipPostPage.jsx';
+import OrganizationJobPostPage from './features/organization/pages/OrganizationJobPostPage.jsx';
+import OrganizationOpportunityPostPage from './features/organization/pages/OrganizationOpportunityPostPage.jsx';
+import OrganizationOpportunitySubmittedPage from './features/organization/pages/OrganizationOpportunitySubmittedPage.jsx';
+import OrganizationSeasonalPostPage from './features/organization/pages/OrganizationSeasonalPostPage.jsx';
+import OrganizationTenderPostPage from './features/organization/pages/OrganizationTenderPostPage.jsx';
 
 import './App.css';
 
@@ -30,7 +37,6 @@ const App = () => (
       <Route element={<AppLayout />}>
         <Route path="/" element={<Home />} />
         <Route path="/organizations" element={<OrganizationLandingPage />} />
-        <Route path="/organization/post" element={<Navigate to="/organizations" replace />} />
         <Route path="/opportunities" element={<OpportunitiesBrowse />} />
         <Route path="/opportunities/:id" element={<OpportunityDetail />} />
         <Route element={<ProtectedRoute />}>
@@ -42,6 +48,15 @@ const App = () => (
         </Route>
         <Route element={<OrganizationRoute requireOrganizationAccount />}>
           <Route path="/organization/dashboard" element={<OrganizationDashboardPage />} />
+          <Route path="/organization/post" element={<OrganizationOpportunityPostPage />} />
+          <Route path="/organization/post/job" element={<OrganizationJobPostPage />} />
+          <Route path="/organization/post/internship" element={<OrganizationInternshipPostPage />} />
+          <Route path="/organization/post/seasonal" element={<OrganizationSeasonalPostPage />} />
+          <Route path="/organization/post/call-for-tender" element={<OrganizationTenderPostPage />} />
+          <Route path="/organization/post/submitted" element={<OrganizationOpportunitySubmittedPage />} />
+          <Route path="/organization/opportunity-submitted" element={<OrganizationOpportunitySubmittedPage />} />
+          <Route path="/organization/submitted" element={<OrganizationOpportunitySubmittedPage />} />
+          <Route path="/organization/dashboard-legacy" element={<OrganizationDashboardLegacyPage />} />
         </Route>
 
       </Route>

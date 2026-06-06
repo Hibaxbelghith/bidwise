@@ -13,6 +13,8 @@ class TypeOpportunite(models.TextChoices):
 
 class StatutOpportunite(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
+    PENDING_REVIEW = "PENDING_REVIEW", "Pending review"
+    REJECTED = "REJECTED", "Rejected"
     EXPIREE = "EXPIREE", "Expirée"
     ARCHIVEE = "ARCHIVEE", "Archivée"
 

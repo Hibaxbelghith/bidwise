@@ -220,7 +220,7 @@ const OTPLogin = () => {
             className="mb-4 inline-flex items-center gap-2"
             aria-label="BidWise home"
           >
-            <img src="/icon.png" alt="BidWise Logo" className="h-12 w-auto object-contain" />
+            <img src="/BidWise Icon.png" alt="BidWise Logo" className="h-32 w-auto object-contain" />
           </Link>
           {step === 1 ? (
             <>
