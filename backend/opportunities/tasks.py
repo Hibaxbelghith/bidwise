@@ -1,10 +1,14 @@
 import logging
 import uuid
+from datetime import timezone as datetime_timezone
 
 from celery import shared_task
 from django.conf import settings
 from django.core.management import call_command
+from django.core.mail import send_mail
 from django.db import close_old_connections
+from django.db import transaction
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
 from .locks import (
@@ -39,6 +43,11 @@ from .models import (
     RawOpportunite,
     RawOpportuniteProcessingStatus,
 )
+from .organization_expiration import expire_due_organization_opportunities
+from .organization_notification_emails import (
+    build_admin_approved_email,
+    build_admin_rejected_email,
+)
 from .processing import process_pending_raw_opportunities
 
 
@@ -47,6 +56,172 @@ MAX_FAILED_PAGES = 3
 MATERIALIZATION_BATCH_SIZE = 100
 MATERIALIZATION_RETRIGGER_COUNTDOWN_SECONDS = 2
 EMBEDDING_RETRIGGER_COUNTDOWN_SECONDS = 10
+DECISION_EMAIL_PROCESSING_STALE_SECONDS = 15 * 60
+
+
+def _is_recent_processing_notification(notification):
+    if notification.get("status") != "processing":
+        return False
+    started_at = parse_datetime(str(notification.get("started_at") or ""))
+    if started_at is None:
+        return False
+    if timezone.is_naive(started_at):
+        started_at = timezone.make_aware(started_at, timezone=datetime_timezone.utc)
+    return (timezone.now() - started_at).total_seconds() < DECISION_EMAIL_PROCESSING_STALE_SECONDS
+
+
+@shared_task(
+    bind=True,
+    name="opportunities.send_organization_admin_decision_email",
+    max_retries=3,
+)
+def send_organization_admin_decision_email_task(
+    self,
+    opportunity_id,
+    decision,
+    decision_id,
+):
+    if decision not in {"approved", "rejected"}:
+        logger.warning(
+            "Organization decision email skipped opportunity_id=%s invalid_decision=%s",
+            opportunity_id,
+            decision,
+        )
+        return {"status": "skipped", "reason": "invalid_decision"}
+
+    try:
+        with transaction.atomic():
+            opportunity = (
+                Opportunite.objects.select_for_update()
+                .filter(pk=opportunity_id)
+                .first()
+            )
+            if opportunity is None or opportunity.organisation is None:
+                return {"status": "skipped", "reason": "opportunity_or_recipient_missing"}
+
+            extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+            moderation = extra_data.get("moderation")
+            moderation = moderation if isinstance(moderation, dict) else {}
+            admin_decision = moderation.get("admin_decision")
+            admin_decision = admin_decision if isinstance(admin_decision, dict) else {}
+
+            if (
+                admin_decision.get("action") != decision
+                or admin_decision.get("decided_at") != decision_id
+            ):
+                return {"status": "skipped", "reason": "stale_decision"}
+
+            notification = admin_decision.get("email_notification")
+            notification = notification if isinstance(notification, dict) else {}
+            if notification.get("sent_at"):
+                return {"status": "skipped", "reason": "already_sent"}
+            if _is_recent_processing_notification(notification):
+                return {"status": "skipped", "reason": "already_processing"}
+
+            recipient = str(opportunity.organisation.email or "").strip()
+            if not recipient:
+                return {"status": "skipped", "reason": "recipient_missing"}
+
+            notification.update({
+                "status": "processing",
+                "task_id": self.request.id or "",
+                "started_at": timezone.now().isoformat(),
+            })
+            admin_decision["email_notification"] = notification
+            moderation["admin_decision"] = admin_decision
+            extra_data["moderation"] = moderation
+            opportunity.extra_data = extra_data
+            opportunity.save(update_fields=["extra_data"])
+
+            if decision == "approved":
+                email = build_admin_approved_email(opportunity)
+            else:
+                email = build_admin_rejected_email(
+                    opportunity,
+                    admin_note=admin_decision.get("note", ""),
+                )
+
+        send_mail(
+            subject=email.subject,
+            message=email.plaintext,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+            html_message=email.html,
+        )
+
+        with transaction.atomic():
+            opportunity = Opportunite.objects.select_for_update().get(pk=opportunity_id)
+            extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+            moderation = extra_data.get("moderation")
+            moderation = moderation if isinstance(moderation, dict) else {}
+            admin_decision = moderation.get("admin_decision")
+            admin_decision = admin_decision if isinstance(admin_decision, dict) else {}
+            if (
+                admin_decision.get("action") == decision
+                and admin_decision.get("decided_at") == decision_id
+            ):
+                notification = admin_decision.get("email_notification") or {}
+                notification.update({
+                    "status": "sent",
+                    "sent_at": timezone.now().isoformat(),
+                    "recipient": recipient,
+                })
+                admin_decision["email_notification"] = notification
+                moderation["admin_decision"] = admin_decision
+                extra_data["moderation"] = moderation
+                opportunity.extra_data = extra_data
+                opportunity.save(update_fields=["extra_data"])
+
+        logger.info(
+            "Organization decision email sent opportunity_id=%s decision=%s recipient=%s",
+            opportunity_id,
+            decision,
+            recipient,
+        )
+        return {"status": "sent", "opportunity_id": opportunity_id, "decision": decision}
+    except Exception as exc:
+        with transaction.atomic():
+            opportunity = Opportunite.objects.select_for_update().filter(pk=opportunity_id).first()
+            if opportunity is not None:
+                extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+                moderation = extra_data.get("moderation")
+                moderation = moderation if isinstance(moderation, dict) else {}
+                admin_decision = moderation.get("admin_decision")
+                admin_decision = admin_decision if isinstance(admin_decision, dict) else {}
+                if (
+                    admin_decision.get("action") == decision
+                    and admin_decision.get("decided_at") == decision_id
+                ):
+                    notification = admin_decision.get("email_notification") or {}
+                    notification.update({
+                        "status": "failed",
+                        "last_error_at": timezone.now().isoformat(),
+                    })
+                    admin_decision["email_notification"] = notification
+                    moderation["admin_decision"] = admin_decision
+                    extra_data["moderation"] = moderation
+                    opportunity.extra_data = extra_data
+                    opportunity.save(update_fields=["extra_data"])
+        logger.exception(
+            "Organization decision email failed opportunity_id=%s decision=%s",
+            opportunity_id,
+            decision,
+        )
+        countdown = min(30 * (2 ** int(self.request.retries or 0)), 300)
+        raise self.retry(exc=exc, countdown=countdown)
+
+
+@shared_task(name="opportunities.expire_organization_opportunities")
+def expire_organization_opportunities_task():
+    result = expire_due_organization_opportunities()
+    logger.info(
+        "Organization opportunity expiration completed inspected=%s expired=%s by_reason=%s",
+        result["inspected"],
+        result["expired"],
+        result["by_reason"],
+    )
+    return result
 
 
 def _cleanup_stale_running_runs(source, *, finished_at):

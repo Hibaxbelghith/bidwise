@@ -18,7 +18,7 @@ const formatFileSize = (bytes) => {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-const TenderDocumentsEditor = ({ documents, error, onChange }) => {
+const TenderDocumentsEditor = ({ documents, error, onChange, onUploadingChange }) => {
   const [uploadingType, setUploadingType] = useState('');
   const [fileErrors, setFileErrors] = useState({});
 
@@ -49,6 +49,7 @@ const TenderDocumentsEditor = ({ documents, error, onChange }) => {
 
     clearFileError(document.type);
     setUploadingType(document.type);
+    onUploadingChange?.(true);
     try {
       const uploaded = await uploadOrganizationTenderDocument({
         file,
@@ -69,6 +70,7 @@ const TenderDocumentsEditor = ({ documents, error, onChange }) => {
       }));
     } finally {
       setUploadingType('');
+      onUploadingChange?.(false);
     }
   };
 

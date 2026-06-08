@@ -23,6 +23,12 @@ import {
   getSkills,
 } from '../utils/opportunityHelpers.js';
 
+const WORK_MODE_LABELS = {
+  REMOTE: 'Remote',
+  HYBRID: 'Hybrid',
+  ON_SITE: 'On site',
+};
+
 const getExtraData = (opportunity) =>
   opportunity?.extra_data && typeof opportunity.extra_data === 'object' ? opportunity.extra_data : {};
 
@@ -86,7 +92,9 @@ export const buildOpportunityDetailViewModel = (opportunity) => {
     locationLabel: String(opportunity.ville || '').trim(),
     projectRegionLabel: String(extraData.region || extraData.region_execution || opportunity.ville || '').trim(),
     contractLabel: String(opportunity.contract_type || '').trim(),
-    availabilityLabel: String(opportunity.availability || '').trim(),
+    availabilityLabel:
+      WORK_MODE_LABELS[String(opportunity.normalized_work_mode || opportunity.availability || '').trim().toUpperCase()] ||
+      String(opportunity.availability || '').trim(),
     educationLabel: String(opportunity.education_level || '').trim(),
     experienceLabel: formatExperienceLabel(opportunity),
     projectProcedureLabel: String(structuredProjectData.procedure || extraData.procedure || '').trim(),

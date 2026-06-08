@@ -3,6 +3,7 @@ import csv
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Avg, Count, Q, Sum
 from django.db.models import DateTimeField, Max, OuterRef, Subquery
 from django.db.models.functions import TruncDate
@@ -39,6 +40,7 @@ from .models import (
     StatutOpportunite,
 )
 from .source_cleanup import REMOVED_SOURCE_KEYS, removed_source_q
+from .tasks import send_organization_admin_decision_email_task
 from .services.scheduler_monitoring import get_scheduler_decision_snapshots
 from .utils.images import DEFAULT_COMPANY_LOGO_URL
 
@@ -52,6 +54,7 @@ class AdminOpportunitySerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="type_opportunite", read_only=True)
     source = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(source="date_creation", read_only=True)
+    published_at = serializers.DateField(source="date_publication", read_only=True)
     status = serializers.SerializerMethodField()
     url = serializers.URLField(source="source_item_url", read_only=True, allow_null=True)
     company_name = serializers.CharField(source="organisation_nom", read_only=True)
@@ -76,6 +79,7 @@ class AdminOpportunitySerializer(serializers.ModelSerializer):
             "type",
             "source",
             "created_at",
+            "published_at",
             "status",
             "url",
             "company_name",
@@ -400,20 +404,28 @@ class AdminOrganizationOpportunityDecisionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        before_status = opportunity.statut
-        opportunity.statut = StatutOpportunite.ACTIVE
-        self._record_admin_decision(
-            request=request,
-            opportunity=opportunity,
-            extra_data=extra_data,
-            action="approved",
-            note=note,
-            before_status=before_status,
-            after_status=StatutOpportunite.ACTIVE,
-            audit_action=AuditLog.Action.APPROVE_ORG_OPPORTUNITY,
-            message="Organization opportunity approved for publication.",
-        )
-        opportunity.save(update_fields=["statut", "extra_data"])
+        with transaction.atomic():
+            before_status = opportunity.statut
+            opportunity.statut = StatutOpportunite.ACTIVE
+            admin_decision = self._record_admin_decision(
+                request=request,
+                opportunity=opportunity,
+                extra_data=extra_data,
+                action="approved",
+                note=note,
+                before_status=before_status,
+                after_status=StatutOpportunite.ACTIVE,
+                audit_action=AuditLog.Action.APPROVE_ORG_OPPORTUNITY,
+                message="Organization opportunity approved for publication.",
+            )
+            opportunity.save(update_fields=["statut", "extra_data"])
+            transaction.on_commit(
+                lambda: send_organization_admin_decision_email_task.delay(
+                    opportunity.pk,
+                    "approved",
+                    admin_decision["decided_at"],
+                )
+            )
         return Response(
             {
                 "detail": "Opportunity approved and published.",
@@ -443,20 +455,28 @@ class AdminOrganizationOpportunityDecisionView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        before_status = opportunity.statut
-        opportunity.statut = StatutOpportunite.REJECTED
-        self._record_admin_decision(
-            request=request,
-            opportunity=opportunity,
-            extra_data=extra_data,
-            action="rejected",
-            note=note,
-            before_status=before_status,
-            after_status=StatutOpportunite.REJECTED,
-            audit_action=AuditLog.Action.REJECT_ORG_OPPORTUNITY,
-            message="Organization opportunity rejected.",
-        )
-        opportunity.save(update_fields=["statut", "extra_data"])
+        with transaction.atomic():
+            before_status = opportunity.statut
+            opportunity.statut = StatutOpportunite.REJECTED
+            admin_decision = self._record_admin_decision(
+                request=request,
+                opportunity=opportunity,
+                extra_data=extra_data,
+                action="rejected",
+                note=note,
+                before_status=before_status,
+                after_status=StatutOpportunite.REJECTED,
+                audit_action=AuditLog.Action.REJECT_ORG_OPPORTUNITY,
+                message="Organization opportunity rejected.",
+            )
+            opportunity.save(update_fields=["statut", "extra_data"])
+            transaction.on_commit(
+                lambda: send_organization_admin_decision_email_task.delay(
+                    opportunity.pk,
+                    "rejected",
+                    admin_decision["decided_at"],
+                )
+            )
         return Response(
             {
                 "detail": "Opportunity rejected.",
@@ -501,6 +521,9 @@ class AdminOrganizationOpportunityDecisionView(APIView):
             moderation["final_decision"] = "rejected"
         opportunity.extra_data = extra_data
         organization_profile = getattr(opportunity.organisation, "organization_profile", None)
+        llm_moderation = moderation.get("llm")
+        if not isinstance(llm_moderation, dict):
+            llm_moderation = {}
 
         AuditLog.objects.create(
             actor=request.user,
@@ -531,8 +554,13 @@ class AdminOrganizationOpportunityDecisionView(APIView):
                 "after_status": after_status,
                 "decision": action,
                 "note": note,
+                "ai_category": llm_moderation.get("category", ""),
+                "ai_decision": llm_moderation.get("decision", ""),
+                "ai_confidence": llm_moderation.get("confidence"),
+                "ai_explanation": llm_moderation.get("reason", ""),
             },
         )
+        return admin_decision
 
 
 class AdminUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):

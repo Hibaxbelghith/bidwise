@@ -60,6 +60,8 @@ export const statusLabel = (status) => {
   if (value === 'ACTIVE') return 'Active';
   if (value === 'PENDING_REVIEW') return 'Pending';
   if (value === 'REJECTED') return 'Rejected';
+  if (value === 'SUSPENDUE') return 'Suspended';
+  if (value === 'FERMEE') return 'Closed';
   if (value === 'EXPIRED' || value === 'EXPIREE') return 'Expired';
   if (value === 'ARCHIVED' || value === 'ARCHIVEE') return 'Archived';
   return status || 'Unknown';

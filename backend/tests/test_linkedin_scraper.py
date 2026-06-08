@@ -317,6 +317,65 @@ def test_parse_linkedin_detail_html_without_css_classes():
     assert "script" not in parsed["description_html"].lower()
 
 
+def test_linkedin_jsonld_valid_through_sets_future_deadline_and_stays_active():
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "JobPosting",
+            "title": "Backend Engineer",
+            "datePosted": "2026-06-01T08:00:00Z",
+            "validThrough": "2026-07-15T23:59:59Z",
+            "description": "Build reliable APIs.",
+            "hiringOrganization": {"@type": "Organization", "name": "ACME"}
+          }
+        </script>
+      </head>
+      <body><h1>Backend Engineer</h1></body>
+    </html>
+    """
+
+    parsed = parse_linkedin_job_detail_html(html)
+
+    assert parsed["deadline"] == "2026-07-15"
+    assert parsed["status"] == "ACTIVE"
+
+
+def test_linkedin_closed_applications_text_sets_expired_status():
+    html = """
+    <section>
+      <h1>Backend Engineer</h1>
+      <a href="https://www.linkedin.com/company/example/">Example Inc</a>
+      <div data-testid="expandable-text-box"><p>Build APIs.</p></div>
+      <figure class="closed-job">
+        <figcaption>Les candidatures ne sont plus acceptées</figcaption>
+      </figure>
+    </section>
+    """
+
+    parsed = parse_linkedin_job_detail_html(html)
+
+    assert parsed["status"] == "EXPIREE"
+    assert parsed["deadline"] is None
+
+
+def test_linkedin_without_deadline_or_closed_signal_stays_active():
+    parsed = parse_linkedin_job_detail_html(
+        """
+        <section>
+          <h1>Backend Engineer</h1>
+          <a href="https://www.linkedin.com/company/example/">Example Inc</a>
+          <div data-testid="expandable-text-box"><p>Build APIs.</p></div>
+        </section>
+        """
+    )
+
+    assert parsed["status"] == "ACTIVE"
+    assert parsed["deadline"] is None
+
+
 def test_parse_linkedin_job_alias_uses_detail_parser():
     parsed = parse_linkedin_job(
         """

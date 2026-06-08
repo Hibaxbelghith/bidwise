@@ -29,12 +29,26 @@ const ensureTurnstileScript = () =>
     document.head.appendChild(script);
   });
 
-const TurnstileChallenge = ({ onVerify, onExpire, resetSignal = 0 }) => {
+const STATUS_COPY = {
+  loading: 'Loading the security check...',
+  checking: 'Checking your browser automatically...',
+  verified: 'Security check completed.',
+  expired: 'Security check expired. Verifying again...',
+  error: 'Security check unavailable. Refresh the page and try again.',
+};
+
+const TurnstileChallenge = ({ onVerify, onExpire, onStatusChange, resetSignal = 0 }) => {
   const containerRef = useRef(null);
   const widgetIdRef = useRef(null);
   const onVerifyRef = useRef(onVerify);
   const onExpireRef = useRef(onExpire);
   const [loadError, setLoadError] = useState('');
+  const [status, setStatus] = useState('loading');
+
+  const updateStatus = (nextStatus) => {
+    setStatus(nextStatus);
+    onStatusChange?.(nextStatus);
+  };
 
   useEffect(() => {
     onVerifyRef.current = onVerify;
@@ -46,6 +60,7 @@ const TurnstileChallenge = ({ onVerify, onExpire, resetSignal = 0 }) => {
 
     let isMounted = true;
     setLoadError('');
+    updateStatus('loading');
 
     ensureTurnstileScript()
       .then((turnstile) => {
@@ -54,13 +69,19 @@ const TurnstileChallenge = ({ onVerify, onExpire, resetSignal = 0 }) => {
           turnstile.remove(widgetIdRef.current);
           widgetIdRef.current = null;
         }
+        updateStatus('checking');
         widgetIdRef.current = turnstile.render(containerRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
-          callback: (token) => onVerifyRef.current?.(token),
+          callback: (token) => {
+            updateStatus('verified');
+            onVerifyRef.current?.(token);
+          },
           'expired-callback': () => {
+            updateStatus('expired');
             onExpireRef.current?.();
           },
           'error-callback': () => {
+            updateStatus('error');
             onExpireRef.current?.();
           },
         });
@@ -68,6 +89,7 @@ const TurnstileChallenge = ({ onVerify, onExpire, resetSignal = 0 }) => {
       .catch(() => {
         if (isMounted) {
           setLoadError('Anti-bot check could not load. Please refresh and try again.');
+          updateStatus('error');
           onExpireRef.current?.();
         }
       });
@@ -87,8 +109,10 @@ const TurnstileChallenge = ({ onVerify, onExpire, resetSignal = 0 }) => {
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-      <p className="mb-3 text-sm font-semibold text-neutral-900">Anti-bot verification</p>
       <div ref={containerRef} />
+      <p className={`mt-2 text-sm ${status === 'verified' ? 'text-emerald-700' : 'text-neutral-600'}`}>
+        {STATUS_COPY[status]}
+      </p>
       {loadError ? <p className="mt-2 text-sm text-red-600">{loadError}</p> : null}
     </div>
   );

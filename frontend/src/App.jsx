@@ -24,6 +24,7 @@ import OrganizationDashboardLegacyPage from './features/organization/pages/Organ
 import OrganizationInternshipPostPage from './features/organization/pages/OrganizationInternshipPostPage.jsx';
 import OrganizationJobPostPage from './features/organization/pages/OrganizationJobPostPage.jsx';
 import OrganizationOpportunityPostPage from './features/organization/pages/OrganizationOpportunityPostPage.jsx';
+import OrganizationOpportunityDetailPage from './features/organization/pages/OrganizationOpportunityDetailPage.jsx';
 import OrganizationOpportunitySubmittedPage from './features/organization/pages/OrganizationOpportunitySubmittedPage.jsx';
 import OrganizationSeasonalPostPage from './features/organization/pages/OrganizationSeasonalPostPage.jsx';
 import OrganizationTenderPostPage from './features/organization/pages/OrganizationTenderPostPage.jsx';
@@ -48,11 +49,16 @@ const App = () => (
         </Route>
         <Route element={<OrganizationRoute requireOrganizationAccount />}>
           <Route path="/organization/dashboard" element={<OrganizationDashboardPage />} />
+          <Route path="/organization/opportunities/:opportunityId" element={<OrganizationOpportunityDetailPage />} />
           <Route path="/organization/post" element={<OrganizationOpportunityPostPage />} />
           <Route path="/organization/post/job" element={<OrganizationJobPostPage />} />
+          <Route path="/organization/post/job/:opportunityId/edit" element={<OrganizationJobPostPage />} />
           <Route path="/organization/post/internship" element={<OrganizationInternshipPostPage />} />
+          <Route path="/organization/post/internship/:opportunityId/edit" element={<OrganizationInternshipPostPage />} />
           <Route path="/organization/post/seasonal" element={<OrganizationSeasonalPostPage />} />
+          <Route path="/organization/post/seasonal/:opportunityId/edit" element={<OrganizationSeasonalPostPage />} />
           <Route path="/organization/post/call-for-tender" element={<OrganizationTenderPostPage />} />
+          <Route path="/organization/post/call-for-tender/:opportunityId/edit" element={<OrganizationTenderPostPage />} />
           <Route path="/organization/post/submitted" element={<OrganizationOpportunitySubmittedPage />} />
           <Route path="/organization/opportunity-submitted" element={<OrganizationOpportunitySubmittedPage />} />
           <Route path="/organization/submitted" element={<OrganizationOpportunitySubmittedPage />} />

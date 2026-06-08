@@ -72,7 +72,7 @@ const OpportunitiesTable = ({
             <TableHead className="px-4 py-3">Title</TableHead>
             <TableHead className="px-4 py-3">Type</TableHead>
             <TableHead className="px-4 py-3">Origin</TableHead>
-            <TableHead className="px-4 py-3">Date</TableHead>
+            <TableHead className="px-4 py-3">Published</TableHead>
             <TableHead className="px-4 py-3">Status</TableHead>
             <TableHead className="px-4 py-3 text-right">Actions</TableHead>
           </TableRow>
@@ -112,7 +112,9 @@ const OpportunitiesTable = ({
                     {originLabel(opportunity)}
                   </Badge>
                 </TableCell>
-                <TableCell className="px-4 py-3 text-neutral-600">{formatDate(opportunity.created_at)}</TableCell>
+                <TableCell className="px-4 py-3 text-neutral-600">
+                  {formatDate(opportunity.published_at || opportunity.created_at)}
+                </TableCell>
                 <TableCell className="px-4 py-3">
                   <Badge variant="outline" className={statusClassName(opportunity.status)}>
                     {statusLabel(opportunity.status)}

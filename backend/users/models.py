@@ -768,6 +768,10 @@ class AuditLog(models.Model):
         TOGGLE_ACTIVE = "TOGGLE_ACTIVE","Toggle active status"
         APPROVE_ORG_OPPORTUNITY = "APPROVE_ORG_OPPORTUNITY", "Approve organization opportunity"
         REJECT_ORG_OPPORTUNITY = "REJECT_ORG_OPPORTUNITY", "Reject organization opportunity"
+        UPDATE_ORG_OPPORTUNITY = "UPDATE_ORG_OPPORTUNITY", "Update organization opportunity"
+        SUSPEND_ORG_OPPORTUNITY = "SUSPEND_ORG_OPPORTUNITY", "Suspend organization opportunity"
+        ACTIVATE_ORG_OPPORTUNITY = "ACTIVATE_ORG_OPPORTUNITY", "Activate organization opportunity"
+        CLOSE_ORG_OPPORTUNITY = "CLOSE_ORG_OPPORTUNITY", "Close organization opportunity"
  
     # ── Champs ──────────────────────────────────────────────────────────────
     actor = models.ForeignKey(

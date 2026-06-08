@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from unittest.mock import patch
 
+from django.core import mail
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -19,6 +20,7 @@ from opportunities.moderation_llm import (
     DECISION_REJECTED,
     ModerationLLMResult,
 )
+from opportunities.tasks import send_organization_admin_decision_email_task
 from users.models import AuditLog, OrganizationProfile, Utilisateur
 
 
@@ -166,6 +168,918 @@ class OrganizationOpportunitiesAPITests(APITestCase):
         self.assertEqual(item["experience_max"], 5)
         self.assertEqual(item["skills"], ["Java", "SQL"])
         self.assertEqual(item["applications_count"], 1)
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_organization_can_partially_update_own_opportunity(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.94,
+            reason="The updated content describes a legitimate professional role.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            extra_data={
+                "published_by": "organization",
+                "moderation": {
+                    "llm": {
+                        "category": CATEGORY_UNCLEAR,
+                        "decision": DECISION_PENDING_REVIEW,
+                        "confidence": 0.6,
+                        "reason": "Previous content required review.",
+                    },
+                    "final_decision": DECISION_PENDING_REVIEW,
+                    "final_status": StatutOpportunite.PENDING_REVIEW,
+                },
+            },
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {
+                "title": "Senior Java Developer",
+                "experience_min": 5,
+                "experience_max": 8,
+                "skills": ["Java", "Spring", "Java"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.titre, "Senior Java Developer")
+        self.assertEqual(opportunity.description, "Build and maintain internal applications.")
+        self.assertEqual(opportunity.experience_min, 5)
+        self.assertEqual(opportunity.experience_max, 8)
+        self.assertEqual(opportunity.skills, ["Java", "Spring"])
+        self.assertEqual(opportunity.statut, StatutOpportunite.ACTIVE)
+        moderation = opportunity.extra_data["moderation"]
+        self.assertEqual(moderation["final_decision"], DECISION_APPROVED)
+        self.assertEqual(len(moderation["history"]), 1)
+        self.assertEqual(
+            moderation["last_update"]["changed_fields"],
+            ["experience_max", "experience_min", "skills", "title"],
+        )
+        audit = AuditLog.objects.get(
+            action=AuditLog.Action.UPDATE_ORG_OPPORTUNITY,
+            metadata__opportunity_id=opportunity.id,
+        )
+        self.assertEqual(audit.metadata["ai_category"], CATEGORY_LEGITIMATE)
+        self.assertEqual(audit.metadata["after_status"], StatutOpportunite.ACTIVE)
+        self.assertIn("title", audit.metadata["changed_fields"])
+
+    def test_organization_can_retrieve_complete_own_opportunity(self):
+        project_details = {
+            "public_buyer": "Municipality of Test",
+            "region_execution": "Tunis",
+            "procedure": "Appel d'offres ouvert",
+            "deadline_time": "10:00",
+            "lots": [{"lot": "Lot 1", "objet": "IT equipment", "quantite": "1"}],
+            "documents": [
+                {
+                    "type": "cahier_des_charges",
+                    "url": "https://example.com/specifications.pdf",
+                    "label": "Cahier des charges",
+                }
+            ],
+        }
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Acquisition of IT equipment",
+            description="Complete public tender description for professional IT equipment.",
+            type_opportunite=TypeOpportunite.PROJET,
+            extra_data={"published_by": "organization", "project_details": project_details},
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.get(f"{self.url}{opportunity.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["description"], opportunity.description)
+        self.assertEqual(response.data["project_details"]["public_buyer"], "Municipality of Test")
+        self.assertEqual(len(response.data["project_details"]["lots"]), 1)
+        self.assertEqual(len(response.data["project_details"]["documents"]), 1)
+        self.assertIn("internship_details", response.data)
+        self.assertIn("seasonal_details", response.data)
+
+    def test_organization_cannot_retrieve_another_organizations_opportunity(self):
+        opportunity = self.create_opportunity(owner=self.other_organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.get(f"{self.url}{opportunity.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_partial_update_revalidates_complete_opportunity(self):
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"experience_min": 10},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("experience_max", response.data)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.experience_min, 2)
+        self.assertEqual(opportunity.statut, StatutOpportunite.ACTIVE)
+
+    def test_organization_cannot_update_another_organizations_opportunity(self):
+        opportunity = self.create_opportunity(owner=self.other_organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"title": "Unauthorized title change"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.titre, "Junior Java Developer")
+
+    def test_candidate_cannot_update_organization_opportunity(self):
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.candidate)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"title": "Unauthorized title change"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_update_rejects_immutable_and_unknown_fields(self):
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {
+                "type": TypeOpportunite.STAGE,
+                "status": StatutOpportunite.ACTIVE,
+                "extra_data": {"moderation": {}},
+                "unexpected": "value",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("immutable_fields", response.data)
+        self.assertIn("unknown_fields", response.data)
+
+    def test_closed_archived_or_expired_opportunity_cannot_be_updated(self):
+        closed = self.create_opportunity(
+            owner=self.organization,
+            title="Closed opportunity",
+            statut=StatutOpportunite.FERMEE,
+        )
+        archived = self.create_opportunity(
+            owner=self.organization,
+            title="Archived opportunity",
+            statut=StatutOpportunite.ARCHIVEE,
+        )
+        expired = self.create_opportunity(
+            owner=self.organization,
+            title="Expired opportunity",
+            statut=StatutOpportunite.EXPIREE,
+        )
+        self.client.force_authenticate(self.organization)
+
+        closed_response = self.client.patch(
+            f"{self.url}{closed.id}/",
+            {"title": "Updated closed opportunity"},
+            format="json",
+        )
+        archived_response = self.client.patch(
+            f"{self.url}{archived.id}/",
+            {"title": "Updated archived opportunity"},
+            format="json",
+        )
+        expired_response = self.client.patch(
+            f"{self.url}{expired.id}/",
+            {"title": "Updated expired opportunity"},
+            format="json",
+        )
+
+        self.assertEqual(closed_response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(archived_response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(expired_response.status_code, status.HTTP_409_CONFLICT)
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_suspended_opportunity_can_be_updated_without_becoming_public(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.95,
+            reason="The updated content describes a legitimate professional role.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Suspended role",
+            statut=StatutOpportunite.SUSPENDUE,
+            extra_data={
+                "published_by": "organization",
+                "organization_status": {
+                    "suspended_from": StatutOpportunite.PENDING_REVIEW,
+                },
+            },
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"title": "Updated suspended role"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.SUSPENDUE)
+        self.assertEqual(
+            opportunity.extra_data["organization_status"]["suspended_from"],
+            StatutOpportunite.ACTIVE,
+        )
+        self.assertEqual(
+            opportunity.extra_data["moderation"]["activation_status"],
+            StatutOpportunite.ACTIVE,
+        )
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_rejected_opportunity_update_always_requires_admin_review(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.99,
+            reason="The corrected content describes a legitimate professional role.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Rejected role",
+            statut=StatutOpportunite.REJECTED,
+            extra_data={"published_by": "organization"},
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"title": "Corrected rejected role"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.PENDING_REVIEW)
+        self.assertEqual(
+            opportunity.extra_data["moderation"]["llm"]["decision"],
+            DECISION_APPROVED,
+        )
+        self.assertTrue(
+            opportunity.extra_data["moderation"]["last_update"]["requires_admin_review"],
+        )
+        audit = AuditLog.objects.filter(
+            action=AuditLog.Action.UPDATE_ORG_OPPORTUNITY,
+            metadata__opportunity_id=opportunity.id,
+        ).latest("created_at")
+        self.assertEqual(audit.metadata["before_status"], StatutOpportunite.REJECTED)
+        self.assertEqual(audit.metadata["after_status"], StatutOpportunite.PENDING_REVIEW)
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_partial_update_preserves_internship_details(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.92,
+            reason="The content describes a legitimate internship.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        start_date = (date.today() + timedelta(days=20)).isoformat()
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Data Internship",
+            type_opportunite=TypeOpportunite.STAGE,
+            contract_type="Internship",
+            experience_min=None,
+            experience_max=None,
+            extra_data={
+                "published_by": "organization",
+                "internship_details": {
+                    "internship_type": "GRADUATION_PROJECT",
+                    "duration": "4_6_MONTHS",
+                    "start_date": start_date,
+                },
+            },
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"description": "Join our data team for a supervised graduation internship using Python and SQL."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(
+            opportunity.extra_data["internship_details"]["internship_type"],
+            "GRADUATION_PROJECT",
+        )
+        self.assertEqual(opportunity.contract_type, "Internship")
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_partial_update_preserves_seasonal_details(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.9,
+            reason="The content describes a legitimate seasonal role.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        start_date = (date.today() + timedelta(days=20)).isoformat()
+        end_date = (date.today() + timedelta(days=80)).isoformat()
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Summer Assistant",
+            type_opportunite=TypeOpportunite.SAISONNIER,
+            contract_type="Seasonal",
+            experience_min=None,
+            experience_max=None,
+            extra_data={
+                "published_by": "organization",
+                "seasonal_details": {
+                    "season": "SUMMER",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            },
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"salary": "950 TND"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.salary, "950 TND")
+        self.assertEqual(opportunity.extra_data["seasonal_details"]["season"], "SUMMER")
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_partial_update_preserves_tender_documents_and_lots(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.91,
+            reason="The content describes a legitimate public tender.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        deadline = date.today() + timedelta(days=30)
+        project_details = {
+            "public_buyer": "Municipality of Test",
+            "region_execution": "Tunis",
+            "procedure": "Appel d'offres ouvert",
+            "deadline_time": "10:00",
+            "number_of_lots": "1",
+            "lots": [
+                {
+                    "lot": "Lot 1",
+                    "objet": "IT equipment",
+                    "quantite": "1",
+                    "region": "Tunis",
+                    "caution": "1000 TND",
+                }
+            ],
+            "documents": [
+                {
+                    "type": "cahier_des_charges",
+                    "url": "https://example.com/specifications.pdf",
+                    "label": "Cahier des charges",
+                }
+            ],
+        }
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Acquisition of IT equipment",
+            type_opportunite=TypeOpportunite.PROJET,
+            contract_type="",
+            availability="",
+            experience_min=None,
+            experience_max=None,
+            education_level="",
+            skills=[],
+            date_limite=deadline,
+            extra_data={
+                "published_by": "organization",
+                "project_details": project_details,
+            },
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"description": "Open public tender for the acquisition and delivery of professional IT equipment."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        details = opportunity.extra_data["project_details"]
+        self.assertEqual(details["public_buyer"], "Municipality of Test")
+        self.assertEqual(len(details["lots"]), 1)
+        self.assertEqual(len(details["documents"]), 1)
+        self.assertEqual(opportunity.organisation_nom, "Municipality of Test")
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_suspicious_update_remains_pending_review(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_SCAM,
+            decision=DECISION_REJECTED,
+            confidence=1.0,
+            reason="The candidate is asked to pay a registration fee.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {
+                "description": (
+                    "Remote assistant role. Candidates must pay a registration fee "
+                    "before receiving access to the work platform."
+                )
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.PENDING_REVIEW)
+        self.assertEqual(opportunity.extra_data["moderation"]["final_decision"], DECISION_REJECTED)
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_update_llm_failure_falls_back_to_pending_review(self, mock_moderation):
+        mock_moderation.side_effect = Exception("Gemini timeout")
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"title": "Updated Java Developer"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.PENDING_REVIEW)
+        self.assertEqual(
+            opportunity.extra_data["moderation"]["final_decision"],
+            DECISION_PENDING_REVIEW,
+        )
+
+    @override_settings(TURNSTILE_SECRET_KEY="test-secret")
+    def test_update_requires_turnstile_token_when_configured(self):
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"title": "Updated Java Developer"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("turnstile_token", response.data)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.titre, "Junior Java Developer")
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_identical_update_is_idempotent_and_skips_moderation(self, mock_moderation):
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {"title": opportunity.titre},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["detail"], "No changes were needed.")
+        self.assertEqual(response.data["opportunity"]["id"], opportunity.id)
+        mock_moderation.assert_not_called()
+
+    def test_organization_can_suspend_and_activate_active_opportunity(self):
+        opportunity = self.create_opportunity(owner=self.organization)
+        self.client.force_authenticate(self.organization)
+
+        suspend_response = self.client.post(
+            f"{self.url}{opportunity.id}/suspend/",
+            format="json",
+        )
+        self.assertEqual(suspend_response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.SUSPENDUE)
+
+        activate_response = self.client.post(
+            f"{self.url}{opportunity.id}/activate/",
+            format="json",
+        )
+        self.assertEqual(activate_response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.ACTIVE)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditLog.Action.SUSPEND_ORG_OPPORTUNITY,
+                metadata__opportunity_id=opportunity.id,
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=AuditLog.Action.ACTIVATE_ORG_OPPORTUNITY,
+                metadata__opportunity_id=opportunity.id,
+            ).exists()
+        )
+
+    def test_pending_opportunity_returns_to_pending_after_suspension(self):
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Pending opportunity",
+            statut=StatutOpportunite.PENDING_REVIEW,
+        )
+        self.client.force_authenticate(self.organization)
+
+        suspend_response = self.client.post(
+            f"{self.url}{opportunity.id}/suspend/",
+            format="json",
+        )
+        self.assertEqual(suspend_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(suspend_response.data["opportunity"]["status"], StatutOpportunite.SUSPENDUE)
+        self.assertEqual(
+            suspend_response.data["opportunity"]["suspended_from"],
+            StatutOpportunite.PENDING_REVIEW,
+        )
+
+        activate_response = self.client.post(
+            f"{self.url}{opportunity.id}/activate/",
+            format="json",
+        )
+        self.assertEqual(activate_response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.PENDING_REVIEW)
+        self.assertEqual(
+            activate_response.data["opportunity"]["status"],
+            StatutOpportunite.PENDING_REVIEW,
+        )
+
+    def test_closed_opportunity_can_be_reopened_without_bypassing_review(self):
+        self.client.force_authenticate(self.organization)
+        active = self.create_opportunity(
+            owner=self.organization,
+            title="Active opportunity to reopen",
+            statut=StatutOpportunite.ACTIVE,
+        )
+        pending = self.create_opportunity(
+            owner=self.organization,
+            title="Pending opportunity to reopen",
+            statut=StatutOpportunite.PENDING_REVIEW,
+        )
+
+        for opportunity, expected_status in (
+            (active, StatutOpportunite.ACTIVE),
+            (pending, StatutOpportunite.PENDING_REVIEW),
+        ):
+            close_response = self.client.post(
+                f"{self.url}{opportunity.id}/close/",
+                format="json",
+            )
+            self.assertEqual(close_response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                close_response.data["opportunity"]["closed_from"],
+                opportunity.statut,
+            )
+
+            activate_response = self.client.post(
+                f"{self.url}{opportunity.id}/activate/",
+                format="json",
+            )
+            self.assertEqual(activate_response.status_code, status.HTTP_200_OK)
+            opportunity.refresh_from_db()
+            self.assertEqual(opportunity.statut, expected_status)
+
+    def test_closed_opportunity_can_be_suspended(self):
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Closed opportunity to suspend",
+            statut=StatutOpportunite.ACTIVE,
+        )
+        self.client.force_authenticate(self.organization)
+
+        self.client.post(f"{self.url}{opportunity.id}/close/", format="json")
+        suspend_response = self.client.post(
+            f"{self.url}{opportunity.id}/suspend/",
+            format="json",
+        )
+
+        self.assertEqual(suspend_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            suspend_response.data["opportunity"]["status"],
+            StatutOpportunite.SUSPENDUE,
+        )
+        self.assertEqual(
+            suspend_response.data["opportunity"]["suspended_from"],
+            StatutOpportunite.ACTIVE,
+        )
+
+    def test_pending_origin_survives_suspend_close_activate_chain(self):
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Pending chained status opportunity",
+            statut=StatutOpportunite.PENDING_REVIEW,
+        )
+        self.client.force_authenticate(self.organization)
+
+        suspend_response = self.client.post(
+            f"{self.url}{opportunity.id}/suspend/",
+            format="json",
+        )
+        self.assertEqual(suspend_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            suspend_response.data["opportunity"]["suspended_from"],
+            StatutOpportunite.PENDING_REVIEW,
+        )
+
+        close_response = self.client.post(
+            f"{self.url}{opportunity.id}/close/",
+            format="json",
+        )
+        self.assertEqual(close_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            close_response.data["opportunity"]["closed_from"],
+            StatutOpportunite.PENDING_REVIEW,
+        )
+
+        activate_response = self.client.post(
+            f"{self.url}{opportunity.id}/activate/",
+            format="json",
+        )
+        self.assertEqual(activate_response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.statut, StatutOpportunite.PENDING_REVIEW)
+        self.assertEqual(
+            activate_response.data["opportunity"]["status"],
+            StatutOpportunite.PENDING_REVIEW,
+        )
+
+    def test_close_accepts_all_organization_closable_statuses(self):
+        self.client.force_authenticate(self.organization)
+        for index, initial_status in enumerate(
+            [
+                StatutOpportunite.ACTIVE,
+                StatutOpportunite.SUSPENDUE,
+                StatutOpportunite.PENDING_REVIEW,
+                StatutOpportunite.REJECTED,
+            ]
+        ):
+            opportunity = self.create_opportunity(
+                owner=self.organization,
+                title=f"Closable opportunity {index}",
+                statut=initial_status,
+            )
+            response = self.client.post(
+                f"{self.url}{opportunity.id}/close/",
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            opportunity.refresh_from_db()
+            self.assertEqual(opportunity.statut, StatutOpportunite.FERMEE)
+
+            repeated_response = self.client.post(
+                f"{self.url}{opportunity.id}/close/",
+                format="json",
+            )
+            self.assertEqual(repeated_response.status_code, status.HTTP_200_OK)
+
+    def test_status_actions_reject_invalid_transitions_and_other_owner(self):
+        pending = self.create_opportunity(
+            owner=self.organization,
+            title="Pending opportunity",
+            statut=StatutOpportunite.PENDING_REVIEW,
+        )
+        archived = self.create_opportunity(
+            owner=self.organization,
+            title="Archived opportunity status",
+            statut=StatutOpportunite.ARCHIVEE,
+        )
+        other = self.create_opportunity(owner=self.other_organization)
+        self.client.force_authenticate(self.organization)
+
+        self.assertEqual(
+            self.client.post(f"{self.url}{pending.id}/suspend/").status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(
+            self.client.post(f"{self.url}{archived.id}/close/").status_code,
+            status.HTTP_409_CONFLICT,
+        )
+        self.assertEqual(
+            self.client.post(f"{self.url}{other.id}/close/").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_suspended_and_closed_opportunities_are_hidden_from_public_detail(self):
+        suspended = self.create_opportunity(
+            owner=self.organization,
+            title="Suspended opportunity",
+            statut=StatutOpportunite.SUSPENDUE,
+        )
+        closed = self.create_opportunity(
+            owner=self.organization,
+            title="Closed opportunity",
+            statut=StatutOpportunite.FERMEE,
+        )
+
+        self.client.force_authenticate(user=None)
+        suspended_response = self.client.get(f"/api/opportunities/{suspended.id}/")
+        closed_response = self.client.get(f"/api/opportunities/{closed.id}/")
+
+        self.assertEqual(suspended_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(closed_response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_tender_create_rejects_negative_quantity_and_past_dates(self):
+        self.client.force_authenticate(self.organization)
+        past_date = (date.today() - timedelta(days=1)).isoformat()
+        deadline = (date.today() + timedelta(days=20)).isoformat()
+        payload = self.valid_post_payload(
+            title="Acquisition of office equipment",
+            type=TypeOpportunite.PROJET,
+            deadline=deadline,
+            project_details={
+                "public_buyer": "Municipality of Test",
+                "region_execution": "Tunis",
+                "procedure": "Appel d'offres ouvert",
+                "deadline_time": "10:00",
+                "execution_start_date": past_date,
+                "opening_date": past_date,
+                "lots": [
+                    {
+                        "lot": "Lot 1",
+                        "objet": "Office equipment",
+                        "quantite": "-2",
+                        "region": "Tunis",
+                        "caution": "1000 TND",
+                    }
+                ],
+            },
+        )
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("project_details", response.data)
+
+    def test_tender_update_rejects_negative_quantity_and_past_dates(self):
+        deadline = date.today() + timedelta(days=30)
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Acquisition of equipment",
+            type_opportunite=TypeOpportunite.PROJET,
+            date_limite=deadline,
+            extra_data={
+                "published_by": "organization",
+                "project_details": {
+                    "public_buyer": "Municipality of Test",
+                    "region_execution": "Tunis",
+                    "procedure": "Appel d'offres ouvert",
+                    "deadline_time": "10:00",
+                    "lots": [
+                        {
+                            "lot": "Lot 1",
+                            "objet": "Equipment",
+                            "quantite": "1",
+                            "region": "Tunis",
+                            "caution": "1000 TND",
+                        }
+                    ],
+                    "documents": [],
+                },
+            },
+        )
+        self.client.force_authenticate(self.organization)
+        past_date = (date.today() - timedelta(days=1)).isoformat()
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {
+                "project_details": {
+                    "public_buyer": "Municipality of Test",
+                    "region_execution": "Tunis",
+                    "procedure": "Appel d'offres ouvert",
+                    "deadline_time": "10:00",
+                    "execution_start_date": past_date,
+                    "lots": [
+                        {
+                            "lot": "Lot 1",
+                            "objet": "Equipment",
+                            "quantite": "-2",
+                            "region": "Tunis",
+                            "caution": "1000 TND",
+                        }
+                    ],
+                    "documents": [],
+                }
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("project_details", response.data)
+        opportunity.refresh_from_db()
+        self.assertEqual(
+            opportunity.extra_data["project_details"]["lots"][0]["quantite"],
+            "1",
+        )
+
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_tender_update_replaces_document_url(self, mock_moderation):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.93,
+            reason="The updated tender remains legitimate.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        deadline = date.today() + timedelta(days=30)
+        old_url = "https://example.com/old-notice.pdf"
+        new_url = "https://example.com/new-notice.pdf"
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Acquisition of equipment",
+            type_opportunite=TypeOpportunite.PROJET,
+            date_limite=deadline,
+            extra_data={
+                "published_by": "organization",
+                "project_details": {
+                    "public_buyer": "Municipality of Test",
+                    "region_execution": "Tunis",
+                    "procedure": "Appel d'offres ouvert",
+                    "deadline_time": "10:00",
+                    "documents": [
+                        {
+                            "type": "avis_appel_offres",
+                            "url": old_url,
+                            "label": "Old notice",
+                        }
+                    ],
+                    "lots": [],
+                },
+            },
+        )
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.patch(
+            f"{self.url}{opportunity.id}/",
+            {
+                "project_details": {
+                    "public_buyer": "Municipality of Test",
+                    "region_execution": "Tunis",
+                    "procedure": "Appel d'offres ouvert",
+                    "deadline_time": "10:00",
+                    "documents": [
+                        {
+                            "type": "avis_appel_offres",
+                            "url": new_url,
+                            "label": "New notice",
+                        }
+                    ],
+                    "lots": [],
+                }
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        opportunity.refresh_from_db()
+        documents = opportunity.extra_data["project_details"]["documents"]
+        self.assertEqual(documents[0]["url"], new_url)
+        self.assertNotEqual(documents[0]["url"], old_url)
 
     @patch("opportunities.views.classify_opportunity_with_gemini")
     def test_organization_can_create_opportunity(self, mock_moderation):
@@ -874,7 +1788,8 @@ class OrganizationOpportunitiesAPITests(APITestCase):
         self.assertEqual(item["moderation"]["llm"]["category"], CATEGORY_SCAM)
         self.assertEqual(item["moderation"]["llm"]["decision"], DECISION_REJECTED)
 
-    def test_admin_can_approve_pending_organization_opportunity(self):
+    @patch("opportunities.views_admin.send_organization_admin_decision_email_task.delay")
+    def test_admin_can_approve_pending_organization_opportunity(self, mock_email_delay):
         pending = self.create_opportunity(
             owner=self.organization,
             title="Pending review role",
@@ -895,11 +1810,12 @@ class OrganizationOpportunitiesAPITests(APITestCase):
         )
         self.client.force_authenticate(self.admin)
 
-        response = self.client.post(
-            f"/api/admin/organization-opportunities/{pending.id}/approve/",
-            {"note": "Looks legitimate."},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                f"/api/admin/organization-opportunities/{pending.id}/approve/",
+                {"note": "Looks legitimate."},
+                format="json",
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         pending.refresh_from_db()
@@ -917,8 +1833,11 @@ class OrganizationOpportunitiesAPITests(APITestCase):
                 metadata__opportunity_id=pending.id,
             ).exists()
         )
+        mock_email_delay.assert_called_once()
+        self.assertEqual(mock_email_delay.call_args.args[:2], (pending.id, "approved"))
 
-    def test_admin_can_reject_pending_organization_opportunity(self):
+    @patch("opportunities.views_admin.send_organization_admin_decision_email_task.delay")
+    def test_admin_can_reject_pending_organization_opportunity(self, mock_email_delay):
         pending = self.create_opportunity(
             owner=self.organization,
             title="Suspicious organization role",
@@ -939,11 +1858,12 @@ class OrganizationOpportunitiesAPITests(APITestCase):
         )
         self.client.force_authenticate(self.admin)
 
-        response = self.client.post(
-            f"/api/admin/organization-opportunities/{pending.id}/reject/",
-            {"note": "Payment request detected."},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                f"/api/admin/organization-opportunities/{pending.id}/reject/",
+                {"note": "Payment request detected."},
+                format="json",
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         pending.refresh_from_db()
@@ -960,6 +1880,89 @@ class OrganizationOpportunitiesAPITests(APITestCase):
                 action=AuditLog.Action.REJECT_ORG_OPPORTUNITY,
                 metadata__opportunity_id=pending.id,
             ).exists()
+        )
+        mock_email_delay.assert_called_once()
+        self.assertEqual(mock_email_delay.call_args.args[:2], (pending.id, "rejected"))
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="BidWise <test@bidwise.com>",
+        BIDWISE_FRONTEND_URL="http://localhost:5173",
+        BIDWISE_SUPPORT_EMAIL="support@bidwise.test",
+    )
+    def test_rejection_email_uses_admin_note_and_never_exposes_llm_reason(self):
+        decision_id = "2026-06-08T12:00:00+00:00"
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Suspicious remote role",
+            statut=StatutOpportunite.REJECTED,
+            extra_data={
+                "published_by": "organization",
+                "moderation": {
+                    "llm": {
+                        "category": CATEGORY_SCAM,
+                        "reason": "TECHNICAL LLM REASON MUST NEVER BE EXPOSED",
+                    },
+                    "admin_decision": {
+                        "action": "rejected",
+                        "note": "Please remove the payment request and submit again.",
+                        "decided_at": decision_id,
+                    },
+                },
+            },
+        )
+
+        result = send_organization_admin_decision_email_task.apply(
+            args=[opportunity.id, "rejected", decision_id],
+        ).get()
+
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertIn("Please remove the payment request", message.body)
+        self.assertNotIn("TECHNICAL LLM REASON", message.body)
+        self.assertNotIn("TECHNICAL LLM REASON", message.alternatives[0][0])
+        opportunity.refresh_from_db()
+        notification = opportunity.extra_data["moderation"]["admin_decision"]["email_notification"]
+        self.assertEqual(notification["status"], "sent")
+        self.assertEqual(notification["recipient"], "org@example.com")
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="BidWise <test@bidwise.com>",
+        BIDWISE_FRONTEND_URL="http://localhost:5173",
+    )
+    def test_approval_email_is_idempotent_for_the_same_admin_decision(self):
+        decision_id = "2026-06-08T12:30:00+00:00"
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Backend Developer",
+            statut=StatutOpportunite.ACTIVE,
+            extra_data={
+                "published_by": "organization",
+                "moderation": {
+                    "admin_decision": {
+                        "action": "approved",
+                        "note": "",
+                        "decided_at": decision_id,
+                    },
+                },
+            },
+        )
+
+        first = send_organization_admin_decision_email_task.apply(
+            args=[opportunity.id, "approved", decision_id],
+        ).get()
+        second = send_organization_admin_decision_email_task.apply(
+            args=[opportunity.id, "approved", decision_id],
+        ).get()
+
+        self.assertEqual(first["status"], "sent")
+        self.assertEqual(second, {"status": "skipped", "reason": "already_sent"})
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(
+            f"http://localhost:5173/opportunities/{opportunity.id}",
+            mail.outbox[0].body,
         )
 
     def test_candidate_cannot_approve_organization_opportunity(self):

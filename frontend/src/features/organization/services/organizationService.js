@@ -67,8 +67,24 @@ export const listOrganizationOpportunities = async () => {
   return Array.isArray(response.data) ? response.data : [];
 };
 
+export const getOrganizationOpportunity = async (opportunityId, { signal } = {}) => {
+  const response = await api.get(`/organization/opportunities/${opportunityId}/`, { signal });
+  return response.data;
+};
+
 export const createOrganizationOpportunity = async (values) => {
   const response = await api.post('/organization/opportunities/', values);
+  return response.data;
+};
+
+export const updateOrganizationOpportunity = async (opportunityId, values) => {
+  const { type: _immutableType, ...editableValues } = values;
+  const response = await api.patch(`/organization/opportunities/${opportunityId}/`, editableValues);
+  return response.data;
+};
+
+export const changeOrganizationOpportunityStatus = async (opportunityId, action) => {
+  const response = await api.post(`/organization/opportunities/${opportunityId}/${action}/`);
   return response.data;
 };
 

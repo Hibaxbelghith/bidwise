@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -13,12 +13,14 @@ import OpportunityPostLayout from '../components/OpportunityPostLayout.jsx';
 import TenderDocumentsEditor from '../components/TenderDocumentsEditor.jsx';
 import TenderLotsEditor from '../components/TenderLotsEditor.jsx';
 import TurnstileChallenge, { isTurnstileEnabled } from '../components/TurnstileChallenge.jsx';
+import useOrganizationOpportunityEdit, { normalizeOptionValue } from '../hooks/useOrganizationOpportunityEdit.js';
 import { TENDER_DOCUMENT_TYPES, TENDER_PROCEDURE_OPTIONS } from '../opportunityPostConstants.js';
 import { validateTenderPostForm } from '../opportunityPostValidation.js';
 import { ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH } from '../organizationFlow.js';
 import {
   createOrganizationOpportunity,
   parseOrganizationApiError,
+  updateOrganizationOpportunity,
 } from '../services/organizationService.js';
 
 const createInitialValues = (buyer = '') => ({
@@ -105,14 +107,54 @@ const buildPayload = (values, lots, documents) => ({
 const OrganizationTenderPostPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const edit = useOrganizationOpportunityEdit('PROJET');
   const organizationName = user?.organization_profile?.organization_name || '';
   const [values, setValues] = useState(() => createInitialValues(organizationName));
   const [errors, setErrors] = useState({});
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [step, setStep] = useState(1);
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [turnstileStatus, setTurnstileStatus] = useState(isTurnstileEnabled() ? 'loading' : 'disabled');
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+
+  useEffect(() => {
+    if (!edit.opportunity) return;
+    const item = edit.opportunity;
+    const details = item.project_details || {};
+    setValues({
+      ...createInitialValues(organizationName),
+      title: item.title || '',
+      public_buyer: details.public_buyer || organizationName,
+      location: normalizeOptionValue(
+        item.location || details.region_execution,
+        TUNISIAN_LOCATION_OPTIONS,
+      ),
+      procedure: details.procedure || "Appel d'offres ouvert",
+      deadline: item.deadline || '',
+      deadline_time: details.deadline_time || '10:00',
+      description: item.description || '',
+      tender_number: details.tender_number || '',
+      number_of_lots: details.number_of_lots || '',
+      lot_type: details.lot_type || '',
+      price_character: details.price_character || '',
+      delai_validite: details.delai_validite || '',
+      execution_start_date: details.execution_start_date || '',
+      full_address: details.full_address || '',
+      opening_date: details.opening_date || '',
+      opening_time: details.opening_time || '',
+      opening_address: details.opening_address || '',
+      evaluation_methodology: details.evaluation_methodology || '',
+      type_commande: details.type_commande || '',
+      financement: details.financement || '',
+      marche_cadre: Boolean(details.marche_cadre),
+      marche_general: Boolean(details.marche_general),
+      lots: Array.isArray(details.lots) && details.lots.length ? details.lots : createInitialValues().lots,
+      documents: Array.isArray(details.documents) && details.documents.length ? details.documents : createInitialValues().documents,
+    });
+  }, [edit.opportunity, organizationName]);
 
   const updateValue = (field, value) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -132,6 +174,7 @@ const OrganizationTenderPostPage = () => {
   };
 
   const handleNext = () => {
+    setHasAttemptedSubmit(true);
     const validation = validateCurrent();
     const requiredKeys = ['title', 'public_buyer', 'location', 'procedure', 'deadline', 'deadline_time', 'description'];
     const stepErrors = requiredKeys.reduce((accumulator, key) => {
@@ -151,6 +194,7 @@ const OrganizationTenderPostPage = () => {
       handleNext();
       return;
     }
+    setHasAttemptedSubmit(true);
 
     const validation = validateCurrent();
     if (Object.keys(validation.errors).length > 0) return;
@@ -162,13 +206,21 @@ const OrganizationTenderPostPage = () => {
     setIsSubmitting(true);
     setSubmitError('');
     try {
-      await createOrganizationOpportunity({
+      const payload = {
         ...buildPayload(values, validation.lots, validation.documents),
         turnstile_token: turnstileToken,
-      });
-      navigate(ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH, { replace: true });
+      };
+      if (edit.isEditing) {
+        await updateOrganizationOpportunity(edit.opportunityId, payload);
+        navigate('/organization/dashboard', { replace: true });
+      } else {
+        await createOrganizationOpportunity(payload);
+        navigate(ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH, { replace: true });
+      }
     } catch (error) {
-      setSubmitError(parseOrganizationApiError(error).message);
+      const parsed = parseOrganizationApiError(error);
+      setErrors(parsed.fields || {});
+      setSubmitError(parsed.message || 'Unable to save this call for tender.');
       setTurnstileToken('');
       setTurnstileResetKey((value) => value + 1);
     } finally {
@@ -176,11 +228,18 @@ const OrganizationTenderPostPage = () => {
     }
   };
 
+  if (edit.isLoading) {
+    return <section className="flex min-h-[70vh] items-center justify-center text-sm text-neutral-600">Loading opportunity...</section>;
+  }
+  if (edit.loadError) {
+    return <section className="flex min-h-[70vh] items-center justify-center px-4 text-center text-sm text-red-700">{edit.loadError}</section>;
+  }
+
   return (
     <OpportunityPostLayout
-      eyebrow="Create a call for tender"
+      eyebrow={edit.isEditing ? 'Edit call for tender' : 'Create a call for tender'}
       title={step === 1 ? 'Tender essentials' : 'Tender details'}
-      description={step === 1 ? 'Capture the mandatory public tender information first.' : 'Add lots, documents, opening details, and additional procurement data.'}
+      description={edit.isEditing ? 'Update the tender information. All changes are reviewed again before publication.' : step === 1 ? 'Capture the mandatory public tender information first.' : 'Add lots, documents, opening details, and additional procurement data.'}
       headingId="publish-tender-heading"
     >
       <form onSubmit={handleSubmit} className="mt-10 flex flex-1 flex-col">
@@ -340,7 +399,12 @@ const OrganizationTenderPostPage = () => {
               </FieldBlock>
 
               <FieldBlock>
-                <TenderDocumentsEditor documents={values.documents} error={errors.documents} onChange={(documents) => updateValue('documents', documents)} />
+                <TenderDocumentsEditor
+                  documents={values.documents}
+                  error={errors.documents}
+                  onChange={(documents) => updateValue('documents', documents)}
+                  onUploadingChange={setIsUploadingDocument}
+                />
               </FieldBlock>
             </>
           )}
@@ -353,10 +417,11 @@ const OrganizationTenderPostPage = () => {
             <TurnstileChallenge
               onVerify={setTurnstileToken}
               onExpire={() => setTurnstileToken('')}
+              onStatusChange={setTurnstileStatus}
               resetSignal={turnstileResetKey}
             />
           ) : null}
-          <ErrorSummary errors={errors} labels={ERROR_LABELS} />
+          {hasAttemptedSubmit ? <ErrorSummary errors={errors} labels={ERROR_LABELS} /> : null}
         </div>
 
         <div className="sticky bottom-0 mt-10 flex items-center justify-between border-t border-neutral-200 bg-white py-4">
@@ -373,9 +438,9 @@ const OrganizationTenderPostPage = () => {
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </button>
           ) : (
-            <Button type="submit" className="h-11 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800" disabled={isSubmitting}>
+            <Button type="submit" className="h-11 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800" disabled={isSubmitting || isUploadingDocument || (isTurnstileEnabled() && turnstileStatus !== 'verified')}>
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-              Publish tender
+              {isUploadingDocument ? 'Uploading document...' : isSubmitting ? (edit.isEditing ? 'Saving changes...' : 'Publishing...') : edit.isEditing ? 'Save changes' : 'Publish tender'}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Button>
           )}

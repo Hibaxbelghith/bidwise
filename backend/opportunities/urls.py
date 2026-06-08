@@ -4,6 +4,8 @@ from .views import (
     OpportuniteViewSet,
     SourceOpportuniteViewSet,
     organization_opportunities_view,
+    organization_opportunity_detail_view,
+    organization_opportunity_status_action_view,
     organization_tender_document_upload_view,
     pipeline_metrics_view,
 )
@@ -38,6 +40,8 @@ urlpatterns = [
 	path('admin/scheduler-state/', AdminSchedulerStateView.as_view(), name='admin_scheduler_state'),
 	path('metrics/pipeline/', pipeline_metrics_view, name='pipeline_metrics'),
 	path('organization/opportunities/', organization_opportunities_view, name='organization_opportunities'),
+	path('organization/opportunities/<int:pk>/', organization_opportunity_detail_view, name='organization_opportunity_detail'),
+	path('organization/opportunities/<int:pk>/<str:action>/', organization_opportunity_status_action_view, name='organization_opportunity_status_action'),
 	path('organization/opportunities/tender-documents/', organization_tender_document_upload_view, name='organization_tender_document_upload'),
 ]
 urlpatterns += router.urls

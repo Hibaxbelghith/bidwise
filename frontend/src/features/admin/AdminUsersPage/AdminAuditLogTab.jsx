@@ -52,6 +52,26 @@ const ACTION_META = {
     icon: ShieldX,
     className: 'bg-red-50 text-red-700 border-red-200',
   },
+  UPDATE_ORG_OPPORTUNITY: {
+    label: 'Opportunity updated',
+    icon: RotateCcw,
+    className: 'bg-blue-50 text-blue-700 border-blue-200',
+  },
+  SUSPEND_ORG_OPPORTUNITY: {
+    label: 'Opportunity suspended',
+    icon: RotateCcw,
+    className: 'bg-amber-50 text-amber-700 border-amber-200',
+  },
+  ACTIVATE_ORG_OPPORTUNITY: {
+    label: 'Opportunity activated',
+    icon: CheckCircle2,
+    className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  },
+  CLOSE_ORG_OPPORTUNITY: {
+    label: 'Opportunity closed',
+    icon: ShieldX,
+    className: 'bg-red-50 text-red-700 border-red-200',
+  },
 };
 
 const PAGE_SIZE = 25;
@@ -61,6 +81,8 @@ const statusLabel = (status) => {
   if (value === 'ACTIVE') return 'Active';
   if (value === 'PENDING_REVIEW') return 'Pending review';
   if (value === 'REJECTED') return 'Rejected';
+  if (value === 'SUSPENDUE') return 'Suspended';
+  if (value === 'FERMEE') return 'Closed';
   if (value === 'ARCHIVEE' || value === 'ARCHIVED') return 'Archived';
   if (value === 'EXPIREE' || value === 'EXPIRED') return 'Expired';
   return status || '-';
@@ -71,7 +93,27 @@ const decisionLabel = (decision) => {
   if (value === 'approved') return 'Approved';
   if (value === 'rejected') return 'Rejected';
   if (value === 'pending_review') return 'Pending review';
+  if (value === 'needs_changes') return 'Needs changes';
   return decision || '-';
+};
+
+const categoryLabel = (category) => {
+  const labels = {
+    legitimate_opportunity: 'Legitimate opportunity',
+    scam: 'Scam',
+    mlm_or_pyramid: 'MLM or pyramid scheme',
+    advertisement: 'Advertisement',
+    inappropriate_content: 'Inappropriate content',
+    irrelevant: 'Irrelevant content',
+    unclear: 'Unclear',
+  };
+  return labels[String(category || '').toLowerCase()] || category || '-';
+};
+
+const confidenceLabel = (confidence) => {
+  const value = Number(confidence);
+  if (!Number.isFinite(value)) return '-';
+  return `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}%`;
 };
 
 const DetailItem = ({ label, value, wide = false }) => (
@@ -92,6 +134,12 @@ const AuditDetailModal = ({ entry, onClose }) => {
   };
   const Icon = actionMeta.icon;
   const isOpportunityAction = Boolean(metadata.opportunity_id || metadata.opportunity_title);
+  const hasAiContext = Boolean(
+    metadata.ai_category
+      || metadata.ai_decision
+      || metadata.ai_explanation
+      || metadata.ai_confidence !== null && metadata.ai_confidence !== undefined,
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 px-4 py-6">
@@ -149,7 +197,25 @@ const AuditDetailModal = ({ entry, onClose }) => {
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <DetailItem label="Before" value={statusLabel(metadata.before_status)} />
                 <DetailItem label="After" value={statusLabel(metadata.after_status)} />
+                {Array.isArray(metadata.changed_fields) && metadata.changed_fields.length ? (
+                  <DetailItem label="Updated fields" value={metadata.changed_fields.join(', ')} wide />
+                ) : null}
                 <DetailItem label="Admin note" value={metadata.note || 'No note provided'} wide />
+              </div>
+            </section>
+          ) : null}
+
+          {isOpportunityAction && hasAiContext ? (
+            <section className="rounded-lg border border-blue-200 bg-blue-50/40 p-4">
+              <h4 className="text-sm font-semibold text-neutral-900">AI moderation context</h4>
+              <p className="mt-1 text-xs text-neutral-600">
+                Initial automated assessment available to the administrator before the final decision.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <DetailItem label="Detected category" value={categoryLabel(metadata.ai_category)} />
+                <DetailItem label="AI recommendation" value={decisionLabel(metadata.ai_decision)} />
+                <DetailItem label="AI confidence" value={confidenceLabel(metadata.ai_confidence)} />
+                <DetailItem label="AI explanation" value={metadata.ai_explanation} wide />
               </div>
             </section>
           ) : null}

@@ -276,6 +276,7 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                 if not publication_date:
                     publication_date = listing_publication_date
                     date_confidence = listing_date_confidence
+                deadline, detail_status = self._extract_expiration_details(detail_soup)
                 description, raw_description = self._clean_description(description)
                 inferred_type = infer_opportunity_type(
                     title,
@@ -309,8 +310,8 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                     "company_description": company_meta["company_description"] or None,
                     "type_opportunite": inferred_type,
                     "type": inferred_type,
-                    "statut": "ACTIVE",
-                    "status": "ACTIVE",
+                    "statut": detail_status,
+                    "status": detail_status,
                     "publication_date": publication_date,
                     "date_confidence": date_confidence,
                     "url": url,
@@ -318,6 +319,9 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                     "source_url": self.source_url,
                     "source_type": self.source_type,
                 }
+                if deadline:
+                    record["deadline"] = deadline
+                    record["date_limite"] = deadline
 
                 if raw_description:
                     record["raw_description"] = raw_description
@@ -564,6 +568,38 @@ class EmploiTunisieScraper(BaseOpportunityScraper):
                 return parsed, "EXACT"
 
         return date.today().isoformat(), "FALLBACK"
+
+    def _extract_expiration_details(self, detail_soup):
+        if detail_soup is None:
+            return None, "ACTIVE"
+
+        application_details = detail_soup.select_one(".page-application-details")
+        if application_details is not None:
+            text = self._clean_text(application_details.get_text(" ", strip=True))
+            match = re.search(
+                r"\bexpir[ée]e?\s+le\s+(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                day_token, month_token, year_token = match.groups()
+                try:
+                    deadline = date(
+                        int(year_token),
+                        int(month_token),
+                        int(day_token),
+                    )
+                except ValueError:
+                    deadline = None
+                if deadline is not None:
+                    return deadline.isoformat(), "EXPIREE"
+
+        for node in detail_soup.select(".alert.alert-warning"):
+            text = self._normalize_token(node.get_text(" ", strip=True))
+            if "annonce expiree" in text:
+                return None, "EXPIREE"
+
+        return None, "ACTIVE"
 
     # NEW
     def _extract_structured_fields(self, card):

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from opportunities.models import StatutOpportunite
 from .models import Candidature, Document
 
 
@@ -32,3 +33,10 @@ class CandidatureSerializer(serializers.ModelSerializer):
             "date_creation",
             "derniere_mise_a_jour",
         ]
+
+    def validate_opportunite(self, value):
+        if value.statut != StatutOpportunite.ACTIVE:
+            raise serializers.ValidationError(
+                "Applications are closed for this opportunity."
+            )
+        return value

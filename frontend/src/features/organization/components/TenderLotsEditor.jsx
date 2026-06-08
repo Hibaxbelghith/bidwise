@@ -55,7 +55,16 @@ const TenderLotsEditor = ({ lots, error, onChange }) => {
               </div>
               <div>
                 <label htmlFor={`lot-quantity-${index}`} className="text-xs font-semibold text-neutral-700">Quantity</label>
-                <Input id={`lot-quantity-${index}`} value={lot.quantite} onChange={(event) => updateLot(index, 'quantite', event.target.value)} className={`mt-1 ${fieldClassName(false)}`} />
+                <Input
+                  id={`lot-quantity-${index}`}
+                  inputMode="numeric"
+                  value={lot.quantite}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (/^\d*$/.test(value)) updateLot(index, 'quantite', value);
+                  }}
+                  className={`mt-1 ${fieldClassName(false)}`}
+                />
               </div>
               <div className="md:col-span-2">
                 <label htmlFor={`lot-object-${index}`} className="text-xs font-semibold text-neutral-700">Object</label>

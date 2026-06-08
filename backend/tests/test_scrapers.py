@@ -885,6 +885,29 @@ def test_fetch_raw_records_keeps_active_without_expired_badge_even_if_deadline_i
     assert records[0]["date_limite"] == "10/01/2024"
 
 
+def test_fetch_raw_records_keeps_future_deadline_and_active_status(monkeypatch):
+    scraper = KeejobScraper()
+
+    def fake_safe_get_soup(url):
+        if "job-one" in url:
+            return _detail_stage_soup()
+        return _soup()
+
+    monkeypatch.setattr(scraper, "_safe_get_soup", fake_safe_get_soup)
+    monkeypatch.setattr(
+        scraper,
+        "_extract_structured_detail_fields",
+        lambda _detail_soup: {"deadline": "10/07/2026"},
+    )
+
+    records = scraper.fetch_raw_records()
+
+    assert len(records) == 1
+    assert records[0]["statut"] == "ACTIVE"
+    assert records[0]["status"] == "ACTIVE"
+    assert records[0]["date_limite"] == "10/07/2026"
+
+
 def test_description_extraction_deduplicates_repeated_blocks():
     scraper = KeejobScraper()
     description = scraper._extract_detail_description(_detail_duplicate_description_soup())

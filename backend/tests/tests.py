@@ -760,6 +760,53 @@ class EmploiTunisieScraperStructuredParsingTests(TestCase):
                 self.assertEqual(structured["location"], "Tunis")
                 self.assertEqual(structured["job_category"], "Production, maintenance, qualité")
 
+        def test_expired_application_date_sets_deadline_and_expired_status(self):
+                soup = BeautifulSoup(
+                        """
+                        <div class="page-application-details">
+                            <p>Expirée le 07.06.2026</p>
+                        </div>
+                        """,
+                        "html.parser",
+                )
+
+                deadline, status = self.scraper._extract_expiration_details(soup)
+
+                self.assertEqual(deadline, "2026-06-07")
+                self.assertEqual(status, "EXPIREE")
+
+        def test_expired_warning_sets_status_without_inventing_deadline(self):
+                soup = BeautifulSoup(
+                        """
+                        <div class="page-application-details"></div>
+                        <div class="alert alert-warning center">
+                            <p>Annonce expirée</p>
+                        </div>
+                        """,
+                        "html.parser",
+                )
+
+                deadline, status = self.scraper._extract_expiration_details(soup)
+
+                self.assertIsNone(deadline)
+                self.assertEqual(status, "EXPIREE")
+
+        def test_page_without_expiration_signal_stays_active(self):
+                soup = BeautifulSoup(
+                        """
+                        <div class="page-title">
+                            <h1>Electrical Engineer</h1>
+                            <div class="page-application-details"></div>
+                        </div>
+                        """,
+                        "html.parser",
+                )
+
+                deadline, status = self.scraper._extract_expiration_details(soup)
+
+                self.assertIsNone(deadline)
+                self.assertEqual(status, "ACTIVE")
+
 
 class OpportunityTextEnrichmentTests(TestCase):
     def test_enrichment_extracts_salary_experience_skills_and_languages(self):
@@ -1271,6 +1318,58 @@ class OpportunityMaterializationTests(TestCase):
         updated = materialize_opportunity(normalized_data)
         self.assertEqual(updated.pk, opportunity.pk)
         self.assertEqual(updated.statut, StatutOpportunite.ACTIVE)
+
+    def test_materialization_marches_publics_does_not_reactivate_past_deadline(self):
+        source = SourceOpportunite.objects.create(
+            nom="MarchesPublics",
+            url="https://www.marchespublics.gov.tn",
+            type_source="PORTAIL_PROJET",
+        )
+        yesterday = date.today() - timedelta(days=1)
+        opportunity = Opportunite.objects.create(
+            titre="Acquisition de matériel",
+            description="Appel d'offres public avec une description complète.",
+            organisation_nom="Acheteur public",
+            ville="Tunis",
+            source_item_url="https://www.marchespublics.gov.tn/tender/123",
+            type_opportunite=TypeOpportunite.PROJET,
+            statut=StatutOpportunite.EXPIREE,
+            date_publication=date.today() - timedelta(days=30),
+            date_limite=yesterday,
+            source=source,
+        )
+        normalized_data = {
+            "raw_id": 2100,
+            "source": source,
+            "titre": opportunity.titre,
+            "description": opportunity.description,
+            "description_html": "",
+            "organisation_nom": opportunity.organisation_nom,
+            "company_logo": "",
+            "ville": "Tunis",
+            "source_item_url": opportunity.source_item_url,
+            "type_opportunite": TypeOpportunite.PROJET,
+            "statut": StatutOpportunite.ACTIVE,
+            "date_publication": opportunity.date_publication,
+            "date_confidence": "EXACT",
+            "date_limite": yesterday,
+            "organisation": None,
+            "contract_type": "",
+            "education_level": "",
+            "availability": "",
+            "salary": "",
+            "experience_years": None,
+            "experience_min": None,
+            "experience_max": None,
+            "skills": [],
+            "languages": [],
+            "languages_fallback": [],
+        }
+
+        updated = materialize_opportunity(normalized_data)
+
+        self.assertEqual(updated.pk, opportunity.pk)
+        self.assertEqual(updated.statut, StatutOpportunite.EXPIREE)
 
     def test_materialization_matches_existing_with_canonicalized_url(self):
         source = SourceOpportunite.objects.create(

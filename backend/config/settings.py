@@ -286,11 +286,18 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 # Email Configuration
-# Strategy: try Gmail SMTP → Console fallback
+# Strategy: SendGrid API -> Gmail SMTP -> Console fallback
+SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', '').strip()
 _GMAIL_APP_PASSWORD = os.getenv('GMAIL_APP_PASSWORD', '').strip()
 _GMAIL_ADDRESS = os.getenv('GMAIL_ADDRESS', '').strip()
 
-if  _GMAIL_APP_PASSWORD and _GMAIL_ADDRESS:
+if SENDGRID_API_KEY:
+    EMAIL_BACKEND = 'config.sendgrid_backend.SendGridAPIBackend'
+    DEFAULT_FROM_EMAIL = os.getenv(
+        'DEFAULT_FROM_EMAIL',
+        'BidWise <noreply@bidwise.com>',
+    ).strip()
+elif _GMAIL_APP_PASSWORD and _GMAIL_ADDRESS:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = 'smtp.gmail.com'
     EMAIL_PORT = 587
@@ -302,6 +309,9 @@ else:
     # Option C: Console (local development)
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
     DEFAULT_FROM_EMAIL = 'noreply@bidwise.com'
+
+BIDWISE_FRONTEND_URL = os.getenv('BIDWISE_FRONTEND_URL', 'http://localhost:5173').strip()
+BIDWISE_SUPPORT_EMAIL = os.getenv('BIDWISE_SUPPORT_EMAIL', 'support@bidwise.com').strip()
 
 # Google OAuth2
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
@@ -476,6 +486,10 @@ CELERY_BEAT_SCHEDULER = os.getenv(
     "celery.beat:PersistentScheduler",
 )
 CELERY_BEAT_SCHEDULE = {
+    "expire-organization-opportunities-hourly": {
+        "task": "opportunities.expire_organization_opportunities",
+        "schedule": crontab(minute=5),
+    },
     "dispatch-opportunity-pipeline-every-15-minutes": {
         "task": "opportunities.collect_opportunities",
         "schedule": crontab(minute="*/15"),

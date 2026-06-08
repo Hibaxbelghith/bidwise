@@ -1501,6 +1501,32 @@ def _extract_detail_publication_date(soup, jsonld=None):
     return ""
 
 
+def _extract_detail_deadline(jsonld=None):
+    valid_through = _clean_text((jsonld or {}).get("validThrough"))
+    if len(valid_through) < 10:
+        return ""
+    candidate = valid_through[:10]
+    try:
+        return date.fromisoformat(candidate).isoformat()
+    except ValueError:
+        return ""
+
+
+def _extract_detail_status(soup):
+    if soup is None:
+        return "ACTIVE"
+
+    normalized_text = _normalize_search_text(soup.get_text(" ", strip=True))
+    closed_messages = (
+        "les candidatures ne sont plus acceptees",
+        "applications are no longer accepted",
+        "no longer accepting applications",
+    )
+    if any(message in normalized_text for message in closed_messages):
+        return "EXPIREE"
+    return "ACTIVE"
+
+
 def _extract_detail_description(soup, jsonld=None):
     description_node = soup.find(attrs={"data-testid": "expandable-text-box"}) if soup is not None else None
     if description_node is not None:
@@ -1719,6 +1745,8 @@ def parse_linkedin_job_detail_html(html, job_url=""):
         # contract_type as a fallback so the UI does not lose the employment type.
         contract_type = availability
     publication_date = _extract_detail_publication_date_refined(detail_root, jsonld=jsonld)
+    deadline = _extract_detail_deadline(jsonld=jsonld)
+    status = _extract_detail_status(soup)
     education_level = _extract_detail_education_level(description_lines)
     job_qualifications = _extract_detail_job_qualifications(description_lines)
     company_sector = _extract_detail_company_sector(criteria_map)
@@ -1741,6 +1769,8 @@ def parse_linkedin_job_detail_html(html, job_url=""):
         "contract_type": _nullable(contract_type),
         "availability": _nullable(availability),
         "publication_date": _nullable(publication_date),
+        "deadline": _nullable(deadline),
+        "status": status,
         "description_text": _nullable(description_text),
         "description_html": description_html or None,
         "education_level": _nullable(education_level),
@@ -2004,6 +2034,8 @@ def _merge_detail_data(record, detail_data, keyword=""):
     availability = _clean_text(detail_data.get("availability"))
     company_logo = _clean_text(detail_data.get("company_logo"))
     publication_date = _clean_text(detail_data.get("publication_date"))
+    deadline = _clean_text(detail_data.get("deadline"))
+    detail_status = _clean_text(detail_data.get("status"))
     education_level = _clean_text(detail_data.get("education_level"))
     job_qualifications = _clean_multiline_text(detail_data.get("job_qualifications"))
     company_sector = _clean_text(detail_data.get("company_sector"))
@@ -2050,6 +2082,12 @@ def _merge_detail_data(record, detail_data, keyword=""):
     if publication_date:
         merged["publication_date"] = publication_date
         merged["date_publication"] = publication_date
+    if deadline:
+        merged["deadline"] = deadline
+        merged["date_limite"] = deadline
+    if detail_status == "EXPIREE":
+        merged["status"] = "EXPIREE"
+        merged["statut"] = "EXPIREE"
     if education_level:
         merged["education_level"] = education_level
     if job_qualifications:

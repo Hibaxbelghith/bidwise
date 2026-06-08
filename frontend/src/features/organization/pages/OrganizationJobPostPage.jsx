@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -10,6 +10,7 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import OrganizationSidebar from '../components/OrganizationSidebar.jsx';
 import { ErrorSummary, SubmitNotice } from '../components/OpportunityPostFields.jsx';
 import TurnstileChallenge, { isTurnstileEnabled } from '../components/TurnstileChallenge.jsx';
+import useOrganizationOpportunityEdit, { normalizeOptionValue } from '../hooks/useOrganizationOpportunityEdit.js';
 import {
   ORGANIZATION_CREATE_ACCOUNT_PATH,
   ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH,
@@ -18,6 +19,7 @@ import {
 import {
   createOrganizationOpportunity,
   parseOrganizationApiError,
+  updateOrganizationOpportunity,
 } from '../services/organizationService.js';
 import { TUNISIAN_LOCATION_OPTIONS } from '../../profile/profilePreferences.js';
 
@@ -74,12 +76,33 @@ const OrganizationJobPostPage = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const profile = user?.organization_profile;
+  const edit = useOrganizationOpportunityEdit('EMPLOI');
   const [values, setValues] = useState(INITIAL_VALUES);
   const [errors, setErrors] = useState({});
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [turnstileStatus, setTurnstileStatus] = useState(isTurnstileEnabled() ? 'loading' : 'disabled');
+
+  useEffect(() => {
+    if (!edit.opportunity) return;
+    const item = edit.opportunity;
+    setValues({
+      title: item.title || '',
+      location: normalizeOptionValue(item.location, TUNISIAN_LOCATION_OPTIONS),
+      description: item.description || '',
+      contract: item.contract || 'CDI',
+      availability: item.availability || 'On site',
+      experience_min: item.experience_min ?? '',
+      experience_max: item.experience_max ?? '',
+      education_level: item.education_level || '',
+      salary: item.salary || '',
+      skills: Array.isArray(item.skills) ? item.skills.join(', ') : '',
+      deadline: item.deadline || '',
+    });
+  }, [edit.opportunity]);
 
   const skillsPreview = useMemo(() => splitSkills(values.skills), [values.skills]);
 
@@ -162,6 +185,7 @@ const OrganizationJobPostPage = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
+    setHasAttemptedSubmit(true);
 
     const nextErrors = validate();
     setErrors(nextErrors);
@@ -174,11 +198,17 @@ const OrganizationJobPostPage = () => {
     try {
       setIsSubmitting(true);
       setSubmitError('');
-      await createOrganizationOpportunity({
+      const payload = {
         ...buildPayload(),
         turnstile_token: turnstileToken,
-      });
-      navigate(ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH, { replace: true });
+      };
+      if (edit.isEditing) {
+        await updateOrganizationOpportunity(edit.opportunityId, payload);
+        navigate('/organization/dashboard', { replace: true });
+      } else {
+        await createOrganizationOpportunity(payload);
+        navigate(ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH, { replace: true });
+      }
     } catch (error) {
       const parsed = parseOrganizationApiError(error);
       setErrors(parsed.fields || {});
@@ -200,6 +230,14 @@ const OrganizationJobPostPage = () => {
     );
   }
 
+  if (edit.isLoading) {
+    return <section className="flex min-h-[70vh] items-center justify-center text-sm text-neutral-600">Loading opportunity...</section>;
+  }
+
+  if (edit.loadError) {
+    return <section className="flex min-h-[70vh] items-center justify-center px-4 text-center text-sm text-red-700">{edit.loadError}</section>;
+  }
+
   if (!isOrganizationProfileComplete(profile)) {
     return <Navigate to={ORGANIZATION_CREATE_ACCOUNT_PATH} replace />;
   }
@@ -213,12 +251,12 @@ const OrganizationJobPostPage = () => {
           <form onSubmit={handleSubmit} className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl flex-col px-5 py-10">
             <div className="flex-1">
               <div className="text-center">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-700">Create a job</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-700">{edit.isEditing ? 'Edit job' : 'Create a job'}</p>
                 <h1 id="publish-job-heading" className="mt-3 text-4xl font-semibold tracking-tight text-neutral-950">
                   Basic information
                 </h1>
                 <p className="mt-4 text-sm text-neutral-600">
-                  This job will be published on BidWise and visible to qualified candidates.
+                  {edit.isEditing ? 'Your changes will be checked again before publication.' : 'This job will be published on BidWise and visible to qualified candidates.'}
                 </p>
               </div>
 
@@ -335,7 +373,7 @@ const OrganizationJobPostPage = () => {
                     </div>
                     <div>
                       <label htmlFor="salary" className="text-sm font-semibold text-neutral-900">Salary</label>
-                      <Input id="salary" value={values.salary} onChange={(event) => updateSalaryValue(event.target.value)} className={`mt-2 ${FIELD_CLASS}`} aria-invalid={errors.salary ? 'true' : 'false'} />
+                      <Input id="salary" value={values.salary} onChange={(event) => updateSalaryValue(event.target.value)} className={`mt-2 ${FIELD_CLASS}`} aria-invalid={errors.salary ? 'true' : 'false'} placeholder="Example: 1500 DT" />
                       <FieldError message={errors.salary} />
                     </div>
                     <div>
@@ -353,9 +391,10 @@ const OrganizationJobPostPage = () => {
                 <TurnstileChallenge
                   onVerify={setTurnstileToken}
                   onExpire={() => setTurnstileToken('')}
+                  onStatusChange={setTurnstileStatus}
                   resetSignal={turnstileResetKey}
                 />
-                <ErrorSummary errors={errors} labels={ERROR_LABELS} />
+                {hasAttemptedSubmit ? <ErrorSummary errors={errors} labels={ERROR_LABELS} /> : null}
               </div>
             </div>
 
@@ -363,9 +402,9 @@ const OrganizationJobPostPage = () => {
               <Button type="button" variant="outline" asChild className="h-11 rounded-xl">
                 <Link to="/organization/post">Back</Link>
               </Button>
-              <Button type="submit" className="h-11 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800" disabled={isSubmitting}>
+              <Button type="submit" className="h-11 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800" disabled={isSubmitting || (isTurnstileEnabled() && turnstileStatus !== 'verified')}>
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-                Publish job
+                {isSubmitting ? (edit.isEditing ? 'Saving changes...' : 'Publishing...') : edit.isEditing ? 'Save changes' : 'Publish job'}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>

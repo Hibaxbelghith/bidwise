@@ -268,9 +268,17 @@ const OpportunityModal = ({ opportunity, isModerating = false, onClose, onApprov
               <DetailItem label="Company" value={opportunity.company_name || 'Unknown company'} />
               <DetailItem label="Organization email" value={opportunity.organization_email} />
               <DetailItem label="Location" value={opportunity.location} />
-              <DetailItem label="Created" value={formatDateTime(opportunity.created_at)} />
+              <DetailItem label="Published" value={formatDateTime(opportunity.published_at)} />
+              <DetailItem label="Added to BidWise" value={formatDateTime(opportunity.created_at)} />
               <DetailItem label="Contract" value={opportunity.contract} />
-              <DetailItem label="Availability" value={opportunity.availability} />
+              <DetailItem
+                label="Availability"
+                value={{
+                  REMOTE: 'Remote',
+                  HYBRID: 'Hybrid',
+                  ON_SITE: 'On site',
+                }[String(opportunity.availability || '').trim().toUpperCase()] || opportunity.availability}
+              />
               <DetailItem label="Experience" value={formatExperience(opportunity.experience_min, opportunity.experience_max)} />
               <DetailItem label="Salary" value={opportunity.salary} />
               <DetailItem label="ID" value={opportunity.id} />

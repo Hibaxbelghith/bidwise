@@ -221,6 +221,18 @@ class CandidatureSerializerTests(TestCase):
         s = CandidatureSerializer(data=data)
         self.assertTrue(s.is_valid(), s.errors)
 
+    def test_rejects_application_for_non_active_opportunity(self):
+        for opportunity_status in ("SUSPENDUE", "FERMEE"):
+            self.opp.statut = opportunity_status
+            self.opp.save(update_fields=["statut"])
+            serializer = CandidatureSerializer(data={
+                "candidat": self.user.pk,
+                "opportunite": self.opp.pk,
+                "statut": "INTERESSEE",
+            })
+            self.assertFalse(serializer.is_valid())
+            self.assertIn("opportunite", serializer.errors)
+
 
 # ═══════════════════════════════════════════════════════════
 # PERMISSION TESTS

@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-06-08T07:20:39.208022+00:00",
+  "today": "2026-06-08",
+  "mode": "dry-run",
+  "totals": {
+    "inspected": 4932,
+    "active_inspected": 4024,
+    "to_expire": 0,
+    "ignored_status": 908,
+    "unchanged": 4932
+  },
+  "organization_opportunities": {
+    "with_deadline_inspected": 10,
+    "expiring": 0,
+    "expiring_ids": []
+  },
+  "by_reason": {},
+  "by_source": {},
+  "by_type": {},
+  "ignored_by_status": {
+    "ARCHIVEE": 121,
+    "EXPIREE": 782,
+    "FERMEE": 2,
+    "REJECTED": 1,
+    "SUSPENDUE": 2
+  },
+  "candidates": []
+}

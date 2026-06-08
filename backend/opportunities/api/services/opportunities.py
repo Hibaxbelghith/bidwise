@@ -15,6 +15,8 @@ def build_opportunity_queryset(*, request, action, base_ordering):
     ordering = list(base_ordering) if isinstance(base_ordering, (list, tuple)) else [base_ordering]
 
     if action not in {"list", "facets"}:
+        if action in {"retrieve", "similar"}:
+            queryset = queryset.filter(statut=StatutOpportunite.ACTIVE)
         return queryset, ordering
 
     statut_param = request.query_params.get("statut")

@@ -17,6 +17,10 @@ export const AUDIT_ACTION_OPTIONS = [
   { value: 'TOGGLE_ACTIVE', label: 'Active status changes' },
   { value: 'APPROVE_ORG_OPPORTUNITY', label: 'Opportunity approvals' },
   { value: 'REJECT_ORG_OPPORTUNITY', label: 'Opportunity rejections' },
+  { value: 'UPDATE_ORG_OPPORTUNITY', label: 'Opportunity updates' },
+  { value: 'SUSPEND_ORG_OPPORTUNITY', label: 'Opportunity suspensions' },
+  { value: 'ACTIVATE_ORG_OPPORTUNITY', label: 'Opportunity activations' },
+  { value: 'CLOSE_ORG_OPPORTUNITY', label: 'Opportunity closures' },
 ];
 
 export const useAdminAuditLogs = ({ action, page, pageSize }) => {

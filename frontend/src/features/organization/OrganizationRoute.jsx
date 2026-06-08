@@ -3,7 +3,6 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { Spinner } from '../../components/ui/spinner.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import {
-  ORGANIZATION_CREATE_ACCOUNT_PATH,
   ORGANIZATION_LOGIN_PATH,
   isOrganizationAccount,
 } from './organizationFlow.js';
@@ -27,7 +26,7 @@ const OrganizationRoute = ({ requireOrganizationAccount = false }) => {
   }
 
   if (requireOrganizationAccount && !isOrganizationAccount(user)) {
-    return <Navigate to={ORGANIZATION_CREATE_ACCOUNT_PATH} replace />;
+    return <Navigate to="/organizations" replace />;
   }
 
   return <Outlet />;

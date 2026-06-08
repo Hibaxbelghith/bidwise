@@ -191,9 +191,15 @@ export const validateTenderPostForm = (values) => {
   }
   if (values.execution_start_date && !executionStartDate) {
     errors.execution_start_date = 'Choose a valid execution start date.';
+  } else if (executionStartDate && executionStartDate < today) {
+    errors.execution_start_date = 'Execution start date cannot be in the past.';
   }
   if (values.opening_date && !openingDate) {
     errors.opening_date = 'Choose a valid opening date.';
+  } else if (openingDate && openingDate < today) {
+    errors.opening_date = 'Opening date cannot be in the past.';
+  } else if (openingDate && deadline && openingDate < deadline) {
+    errors.opening_date = 'Opening date cannot be before the reception deadline.';
   }
   if (values.opening_time && !isValidTime(values.opening_time)) {
     errors.opening_time = 'Use HH:MM format.';
@@ -232,6 +238,10 @@ export const validateTenderPostForm = (values) => {
   lots.forEach((lot, index) => {
     if (!lot.objet) {
       errors.lots = `Lot ${index + 1}: object is required.`;
+    } else if (lot.quantite && (!/^\d+$/.test(lot.quantite) || Number(lot.quantite) <= 0)) {
+      errors.lots = `Lot ${index + 1}: quantity must be a positive whole number.`;
+    } else if (lot.caution && /(^|[\s:])-\s*\d/.test(lot.caution)) {
+      errors.lots = `Lot ${index + 1}: provisional guarantee cannot be negative.`;
     }
   });
 

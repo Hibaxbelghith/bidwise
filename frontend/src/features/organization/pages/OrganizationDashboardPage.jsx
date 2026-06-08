@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
   ChevronDown,
@@ -8,89 +8,20 @@ import {
   Star,
 } from 'lucide-react';
 
-import { Badge } from '../../../components/ui/badge.jsx';
 import { Button } from '../../../components/ui/button.jsx';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../../components/ui/table.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import {
   ORGANIZATION_CREATE_ACCOUNT_PATH,
   isOrganizationProfileComplete,
 } from '../organizationFlow.js';
 import OrganizationSidebar from '../components/OrganizationSidebar.jsx';
+import OrganizationOpportunitiesTable from '../components/OrganizationOpportunitiesTable.jsx';
+import {
+  OrganizationOpportunityStatusDialog,
+  statusFallbackForAction,
+} from '../components/OrganizationOpportunityStatus.jsx';
 import { listOrganizationOpportunities } from '../services/organizationService.js';
-
-const TYPE_LABELS = {
-  EMPLOI: 'Job',
-  STAGE: 'Internship',
-  PROJET: 'Call for tender',
-  SAISONNIER: 'Seasonal job',
-};
-
-const STATUS_LABELS = {
-  ACTIVE: 'Active',
-  PENDING_REVIEW: 'Pending',
-  REJECTED: 'Rejected',
-  INACTIVE: 'Inactive',
-  EXPIRED: 'Expired',
-  EXPIREE: 'Expired',
-  ARCHIVED: 'Archived',
-  ARCHIVEE: 'Archived',
-};
-
-const STATUS_VARIANTS = {
-  ACTIVE: 'default',
-  PENDING_REVIEW: 'outline',
-  REJECTED: 'destructive',
-  INACTIVE: 'secondary',
-  EXPIRED: 'secondary',
-  EXPIREE: 'secondary',
-  ARCHIVED: 'secondary',
-  ARCHIVEE: 'secondary',
-};
-
-const OpportunityStatusBadge = ({ status }) => {
-  const label = STATUS_LABELS[status] || status || 'Pending';
-  const badge = (
-    <Badge variant={STATUS_VARIANTS[status] || 'outline'}>
-      {label}
-    </Badge>
-  );
-
-  if (status !== 'PENDING_REVIEW') {
-    return badge;
-  }
-
-  return (
-    <span className="group relative inline-flex">
-      <span className="cursor-help border-b border-blue-600 pb-0.5">
-        {badge}
-      </span>
-      <span className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-64 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-left text-xs font-medium leading-5 text-neutral-700 shadow-lg group-hover:block">
-        Your opportunity is being reviewed before publication.
-      </span>
-    </span>
-  );
-};
-
-const formatDate = (value) => {
-  if (!value) return 'Not set';
-  try {
-    return new Intl.DateTimeFormat('en', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    }).format(new Date(value));
-  } catch {
-    return value;
-  }
-};
+import { changeOrganizationOpportunityStatus } from '../services/organizationService.js';
 
 const OrganizationDashboardPage = () => {
   const { loading, user } = useAuth();
@@ -98,6 +29,12 @@ const OrganizationDashboardPage = () => {
   const [opportunities, setOpportunities] = useState([]);
   const [isLoadingOpportunities, setIsLoadingOpportunities] = useState(true);
   const [opportunitiesError, setOpportunitiesError] = useState('');
+  const [pendingStatusAction, setPendingStatusAction] = useState(null);
+  const [statusActionId, setStatusActionId] = useState(null);
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -148,6 +85,38 @@ const OrganizationDashboardPage = () => {
       total: opportunities.length,
     };
   }, [opportunities]);
+
+  const applyStatusAction = async (opportunity, action) => {
+    try {
+      setStatusActionId(opportunity.id);
+      setOpportunitiesError('');
+      const result = await changeOrganizationOpportunityStatus(opportunity.id, action);
+      const serverOpportunity = result?.opportunity;
+      const nextStatus = serverOpportunity?.status || statusFallbackForAction(opportunity, action);
+      setOpportunities((current) => current.map((item) => (
+        item.id === opportunity.id
+          ? {
+              ...item,
+              ...(serverOpportunity || {}),
+              status: nextStatus,
+            }
+          : item
+      )));
+      setPendingStatusAction(null);
+    } catch (error) {
+      setOpportunitiesError(error?.response?.data?.detail || 'Unable to update opportunity status.');
+    } finally {
+      setStatusActionId(null);
+    }
+  };
+
+  const handleStatusAction = (opportunity, action) => {
+    if (action === 'activate') {
+      applyStatusAction(opportunity, action);
+      return;
+    }
+    setPendingStatusAction({ opportunity, action });
+  };
 
   if (loading) {
     return (
@@ -252,53 +221,11 @@ const OrganizationDashboardPage = () => {
                   </div>
                 </div>
 
-                <div className="overflow-hidden rounded-lg border border-neutral-200">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-neutral-50">
-                        <TableHead>Title</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead>Published</TableHead>
-                        <TableHead className="text-right">Applications</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {opportunities.map((opportunity) => (
-                        <TableRow key={opportunity.id}>
-                          <TableCell className="font-medium text-neutral-950">{opportunity.title}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{TYPE_LABELS[opportunity.type] || opportunity.type}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <OpportunityStatusBadge status={opportunity.status} />
-                          </TableCell>
-                          <TableCell className="text-neutral-600">{opportunity.location || 'Not set'}</TableCell>
-                          <TableCell className="text-neutral-600">{formatDate(opportunity.published_at)}</TableCell>
-                          <TableCell className="text-right font-medium">{opportunity.applications_count || 0}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="ghost" size="sm">
-                                Edit
-                              </Button>
-                              {opportunity.status === 'PENDING_REVIEW' ? (
-                                <Button variant="ghost" size="sm" disabled>
-                                  Under review
-                                </Button>
-                              ) : (
-                                <Button variant="ghost" size="sm" asChild>
-                                  <Link to={`/opportunities/${opportunity.id}`}>View</Link>
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                <OrganizationOpportunitiesTable
+                  opportunities={opportunities}
+                  statusActionId={statusActionId}
+                  onStatusAction={handleStatusAction}
+                />
               </div>
             ) : (
               <div className="flex min-h-[560px] flex-col items-center justify-center px-6 py-12 text-center">
@@ -333,6 +260,15 @@ const OrganizationDashboardPage = () => {
           </div>
         </div>
       </div>
+      <OrganizationOpportunityStatusDialog
+        pendingAction={pendingStatusAction}
+        onCancel={() => setPendingStatusAction(null)}
+        onConfirm={() => applyStatusAction(
+          pendingStatusAction.opportunity,
+          pendingStatusAction.action,
+        )}
+        isSubmitting={Boolean(statusActionId)}
+      />
     </section>
   );
 };

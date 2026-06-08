@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -10,6 +10,7 @@ import { TUNISIAN_LOCATION_OPTIONS } from '../../profile/profilePreferences.js';
 import OpportunityPostLayout from '../components/OpportunityPostLayout.jsx';
 import { ErrorSummary, FieldBlock, FieldError, SubmitNotice, fieldClassName } from '../components/OpportunityPostFields.jsx';
 import TurnstileChallenge, { isTurnstileEnabled } from '../components/TurnstileChallenge.jsx';
+import useOrganizationOpportunityEdit, { normalizeOptionValue } from '../hooks/useOrganizationOpportunityEdit.js';
 import {
   SEASON_OPTIONS,
   WORK_MODE_OPTIONS,
@@ -19,6 +20,7 @@ import { ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH } from '../organizationFlow.js'
 import {
   createOrganizationOpportunity,
   parseOrganizationApiError,
+  updateOrganizationOpportunity,
 } from '../services/organizationService.js';
 
 const INITIAL_VALUES = {
@@ -65,13 +67,34 @@ const buildPayload = (values, skills) => ({
 
 const OrganizationSeasonalPostPage = () => {
   const navigate = useNavigate();
+  const edit = useOrganizationOpportunityEdit('SAISONNIER');
   const [values, setValues] = useState(INITIAL_VALUES);
   const [errors, setErrors] = useState({});
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [turnstileStatus, setTurnstileStatus] = useState(isTurnstileEnabled() ? 'loading' : 'disabled');
   const skillsPreview = useMemo(() => splitSkills(values.skills), [values.skills]);
+
+  useEffect(() => {
+    if (!edit.opportunity) return;
+    const item = edit.opportunity;
+    const details = item.seasonal_details || {};
+    setValues({
+      title: item.title || '',
+      location: normalizeOptionValue(item.location, TUNISIAN_LOCATION_OPTIONS),
+      availability: item.availability || 'On site',
+      season: normalizeOptionValue(details.season, SEASON_OPTIONS, 'SUMMER'),
+      start_date: details.start_date || '',
+      end_date: details.end_date || '',
+      description: item.description || '',
+      skills: Array.isArray(item.skills) ? item.skills.join(', ') : '',
+      salary: item.salary || '',
+      deadline: item.deadline || '',
+    });
+  }, [edit.opportunity]);
 
   const updateValue = (field, value) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -86,6 +109,7 @@ const OrganizationSeasonalPostPage = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setHasAttemptedSubmit(true);
     const validation = validateSeasonalPostForm(values);
     setErrors(validation.errors);
     if (Object.keys(validation.errors).length > 0) return;
@@ -97,13 +121,21 @@ const OrganizationSeasonalPostPage = () => {
     setIsSubmitting(true);
     setSubmitError('');
     try {
-      await createOrganizationOpportunity({
+      const payload = {
         ...buildPayload(values, validation.skills),
         turnstile_token: turnstileToken,
-      });
-      navigate(ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH, { replace: true });
+      };
+      if (edit.isEditing) {
+        await updateOrganizationOpportunity(edit.opportunityId, payload);
+        navigate('/organization/dashboard', { replace: true });
+      } else {
+        await createOrganizationOpportunity(payload);
+        navigate(ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH, { replace: true });
+      }
     } catch (error) {
-      setSubmitError(parseOrganizationApiError(error).message);
+      const parsed = parseOrganizationApiError(error);
+      setErrors(parsed.fields || {});
+      setSubmitError(parsed.message || 'Unable to save this seasonal job.');
       setTurnstileToken('');
       setTurnstileResetKey((value) => value + 1);
     } finally {
@@ -111,11 +143,18 @@ const OrganizationSeasonalPostPage = () => {
     }
   };
 
+  if (edit.isLoading) {
+    return <section className="flex min-h-[70vh] items-center justify-center text-sm text-neutral-600">Loading opportunity...</section>;
+  }
+  if (edit.loadError) {
+    return <section className="flex min-h-[70vh] items-center justify-center px-4 text-center text-sm text-red-700">{edit.loadError}</section>;
+  }
+
   return (
     <OpportunityPostLayout
-      eyebrow="Create a seasonal job"
+      eyebrow={edit.isEditing ? 'Edit seasonal job' : 'Create a seasonal job'}
       title="Seasonal job details"
-      description="Publish temporary work for seasonal demand, events, holidays, or short operational needs."
+      description={edit.isEditing ? 'Update this seasonal job. Changes are reviewed again before publication.' : 'Publish temporary work for seasonal demand, events, holidays, or short operational needs.'}
       headingId="publish-seasonal-heading"
     >
       <form onSubmit={handleSubmit} className="mt-10 flex flex-1 flex-col">
@@ -235,7 +274,7 @@ const OrganizationSeasonalPostPage = () => {
                   onChange={(event) => updateValue('salary', event.target.value)}
                   className={`mt-2 ${fieldClassName(errors.salary)}`}
                   aria-invalid={errors.salary ? 'true' : 'false'}
-                  placeholder="900 TND"
+                  placeholder="Example: 900 DT"
                 />
                 <FieldError message={errors.salary} />
               </div>
@@ -285,18 +324,19 @@ const OrganizationSeasonalPostPage = () => {
           <TurnstileChallenge
             onVerify={setTurnstileToken}
             onExpire={() => setTurnstileToken('')}
+            onStatusChange={setTurnstileStatus}
             resetSignal={turnstileResetKey}
           />
-          <ErrorSummary errors={errors} labels={ERROR_LABELS} />
+          {hasAttemptedSubmit ? <ErrorSummary errors={errors} labels={ERROR_LABELS} /> : null}
         </div>
 
         <div className="sticky bottom-0 mt-10 flex items-center justify-between border-t border-neutral-200 bg-white py-4">
           <Button type="button" variant="outline" asChild className="h-11 rounded-xl">
             <Link to="/organization/post">Back</Link>
           </Button>
-          <Button type="submit" className="h-11 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800" disabled={isSubmitting}>
+          <Button type="submit" className="h-11 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800" disabled={isSubmitting || (isTurnstileEnabled() && turnstileStatus !== 'verified')}>
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-            Publish seasonal job
+            {isSubmitting ? (edit.isEditing ? 'Saving changes...' : 'Publishing...') : edit.isEditing ? 'Save changes' : 'Publish seasonal job'}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>

@@ -1,7 +1,7 @@
 import { cn } from './utils.js';
 
-export const Table = ({ className, ...props }) => (
-  <div data-slot="table-container" className="relative w-full overflow-x-auto">
+export const Table = ({ className, containerClassName, ...props }) => (
+  <div data-slot="table-container" className={cn('relative w-full overflow-x-auto', containerClassName)}>
     <table data-slot="table" className={cn('w-full caption-bottom text-sm', className)} {...props} />
   </div>
 );

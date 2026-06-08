@@ -15,6 +15,8 @@ class StatutOpportunite(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
     PENDING_REVIEW = "PENDING_REVIEW", "Pending review"
     REJECTED = "REJECTED", "Rejected"
+    SUSPENDUE = "SUSPENDUE", "Suspended"
+    FERMEE = "FERMEE", "Closed"
     EXPIREE = "EXPIREE", "Expirée"
     ARCHIVEE = "ARCHIVEE", "Archivée"
 

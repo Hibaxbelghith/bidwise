@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from rest_framework import serializers
 from django.utils import timezone
 
-from .models import Opportunite, SourceOpportunite, TypeOpportunite
+from .models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
 from .normalization import normalize_city_name
 from .utils.images import normalize_company_logo_url
 from users.serializers import TUNISIAN_LOCATIONS, _location_lookup_key
@@ -234,8 +234,12 @@ class OrganizationOpportunitySerializer(serializers.ModelSerializer):
     deadline = serializers.DateField(source="date_limite", read_only=True)
     updated_at = serializers.DateTimeField(source="date_modification", read_only=True)
     applications_count = serializers.IntegerField(read_only=True)
+    description = serializers.CharField(read_only=True)
     internship_details = serializers.SerializerMethodField(read_only=True)
     seasonal_details = serializers.SerializerMethodField(read_only=True)
+    project_details = serializers.SerializerMethodField(read_only=True)
+    suspended_from = serializers.SerializerMethodField(read_only=True)
+    closed_from = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Opportunite
@@ -256,8 +260,12 @@ class OrganizationOpportunitySerializer(serializers.ModelSerializer):
             "deadline",
             "applications_count",
             "updated_at",
+            "description",
             "internship_details",
             "seasonal_details",
+            "project_details",
+            "suspended_from",
+            "closed_from",
         ]
         read_only_fields = fields
 
@@ -274,6 +282,42 @@ class OrganizationOpportunitySerializer(serializers.ModelSerializer):
             return None
         details = extra_data.get("seasonal_details")
         return details if isinstance(details, dict) else None
+
+    def get_project_details(self, obj):
+        extra_data = getattr(obj, "extra_data", None)
+        if not isinstance(extra_data, dict):
+            return None
+        details = extra_data.get("project_details")
+        return details if isinstance(details, dict) else None
+
+    def get_suspended_from(self, obj):
+        extra_data = getattr(obj, "extra_data", None)
+        if not isinstance(extra_data, dict):
+            return None
+        organization_status = extra_data.get("organization_status")
+        if not isinstance(organization_status, dict):
+            return None
+        value = organization_status.get("suspended_from")
+        if value in {StatutOpportunite.ACTIVE, StatutOpportunite.PENDING_REVIEW}:
+            return value
+        return None
+
+    def get_closed_from(self, obj):
+        extra_data = getattr(obj, "extra_data", None)
+        if not isinstance(extra_data, dict):
+            return None
+        organization_status = extra_data.get("organization_status")
+        if not isinstance(organization_status, dict):
+            return None
+        value = organization_status.get("closed_from")
+        if value in {
+            StatutOpportunite.ACTIVE,
+            StatutOpportunite.SUSPENDUE,
+            StatutOpportunite.PENDING_REVIEW,
+            StatutOpportunite.REJECTED,
+        }:
+            return value
+        return None
 
 
 class OrganizationOpportunityWriteSerializer(serializers.Serializer):
@@ -512,6 +556,15 @@ class OrganizationOpportunityWriteSerializer(serializers.Serializer):
                 continue
             if not objet:
                 raise serializers.ValidationError({f"lot_{index}": "Lot object is required."})
+            if quantite:
+                if not quantite.isdigit() or int(quantite) <= 0:
+                    raise serializers.ValidationError({
+                        f"lot_{index}_quantite": "Quantity must be a positive whole number."
+                    })
+            if caution and re.search(r"(^|[\s:])-\s*\d", caution):
+                raise serializers.ValidationError({
+                    f"lot_{index}_caution": "Provisional guarantee cannot be negative."
+                })
             cleaned.append({
                 "lot": lot_title,
                 "objet": objet,
@@ -601,7 +654,17 @@ class OrganizationOpportunityWriteSerializer(serializers.Serializer):
                 except serializers.ValidationError:
                     errors[field_name] = "Enter a valid date."
                 else:
-                    project_details[field_name] = parsed_date.isoformat()
+                    if parsed_date < timezone.localdate():
+                        errors[field_name] = "Date cannot be in the past."
+                    else:
+                        project_details[field_name] = parsed_date.isoformat()
+
+        if (
+            project_details.get("opening_date")
+            and value.get("opening_date")
+            and str(value.get("opening_date")) < str(self.initial_data.get("deadline") or "")
+        ):
+            errors["opening_date"] = "Opening date cannot be before the reception deadline."
 
         for field_name in ("opening_time",):
             if project_details[field_name] and not re.match(r"^\d{2}:\d{2}$", project_details[field_name]):

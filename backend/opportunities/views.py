@@ -1,10 +1,12 @@
 import logging
 import secrets
 import time
+from copy import deepcopy
+from datetime import date, datetime
 from pathlib import Path
 
 from django.conf import settings
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Count
 from django.utils import timezone
 from rest_framework import viewsets
@@ -38,7 +40,7 @@ from .similarity import find_similar_opportunities_with_fallback
 from .source_cleanup import removed_source_q
 from .throttles import OrganizationOpportunityPostThrottle
 from .turnstile import verify_turnstile_token
-from users.models import OrganizationProfile, Utilisateur
+from users.models import AuditLog, OrganizationProfile, Utilisateur
 from users.storage import ProfileResumeStorage
 
 
@@ -77,6 +79,161 @@ def _moderation_payload(validated_data, submitted_data):
         if key in submitted_data:
             payload[key] = submitted_data.get(key)
     return payload
+
+
+ORGANIZATION_OPPORTUNITY_MUTABLE_FIELDS = {
+    "title",
+    "location",
+    "description",
+    "contract",
+    "availability",
+    "experience_min",
+    "experience_max",
+    "education_level",
+    "salary",
+    "skills",
+    "deadline",
+    "internship_details",
+    "seasonal_details",
+    "project_details",
+}
+
+ORGANIZATION_OPPORTUNITY_IMMUTABLE_FIELDS = {
+    "id",
+    "type",
+    "status",
+    "statut",
+    "source",
+    "organisation",
+    "organization",
+    "organisation_nom",
+    "extra_data",
+    "published_at",
+    "date_publication",
+    "applications_count",
+}
+
+
+def _organization_opportunity_write_payload(opportunity):
+    extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+    payload = {
+        "title": opportunity.titre,
+        "type": opportunity.type_opportunite,
+        "location": opportunity.ville,
+        "description": opportunity.description,
+        "contract": opportunity.contract_type,
+        "availability": opportunity.availability,
+        "experience_min": opportunity.experience_min,
+        "experience_max": opportunity.experience_max,
+        "education_level": opportunity.education_level,
+        "salary": opportunity.salary,
+        "skills": opportunity.skills if isinstance(opportunity.skills, list) else [],
+        "deadline": opportunity.date_limite,
+    }
+    if opportunity.type_opportunite == "STAGE":
+        payload["internship_details"] = extra_data.get("internship_details") or {}
+    elif opportunity.type_opportunite == "SAISONNIER":
+        payload["seasonal_details"] = extra_data.get("seasonal_details") or {}
+    elif opportunity.type_opportunite == "PROJET":
+        payload["project_details"] = extra_data.get("project_details") or {}
+    return payload
+
+
+def _updated_organization_opportunity_extra_data(opportunity, data):
+    extra_data = dict(opportunity.extra_data) if isinstance(opportunity.extra_data, dict) else {}
+    extra_data["published_by"] = "organization"
+    for key in ("internship_details", "seasonal_details", "project_details"):
+        extra_data.pop(key, None)
+
+    if data.get("internship_details"):
+        extra_data["internship_details"] = data["internship_details"]
+    if data.get("seasonal_details"):
+        extra_data["seasonal_details"] = data["seasonal_details"]
+    if data.get("project_details"):
+        project_details = data["project_details"]
+        extra_data.update(project_details)
+        extra_data["project_details"] = project_details
+
+    moderation = extra_data.get("moderation")
+    if not isinstance(moderation, dict):
+        moderation = {}
+    moderation["final_status"] = StatutOpportunite.PENDING_REVIEW
+    moderation["requires_remoderation"] = True
+    moderation["content_updated_at"] = timezone.now().isoformat()
+    extra_data["moderation"] = moderation
+    return extra_data
+
+
+def _json_safe_value(value):
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_value(item) for item in value]
+    return value
+
+
+def _changed_opportunity_fields(before_payload, after_payload):
+    return sorted(
+        field
+        for field in ORGANIZATION_OPPORTUNITY_MUTABLE_FIELDS
+        if _json_safe_value(before_payload.get(field)) != _json_safe_value(after_payload.get(field))
+    )
+
+
+def _moderated_update_extra_data(opportunity, data, llm_result, *, changed_fields, previous_status):
+    extra_data = _updated_organization_opportunity_extra_data(opportunity, data)
+    previous_moderation = deepcopy(extra_data.get("moderation"))
+    if not isinstance(previous_moderation, dict):
+        previous_moderation = {}
+
+    history = previous_moderation.get("history")
+    if not isinstance(history, list):
+        history = []
+    previous_snapshot = {
+        key: value
+        for key, value in previous_moderation.items()
+        if key not in {"history", "requires_remoderation", "content_updated_at"}
+    }
+    if previous_snapshot:
+        history.append({
+            "superseded_at": timezone.now().isoformat(),
+            "reason": "organization_update",
+            "moderation": previous_snapshot,
+        })
+
+    moderated_status = (
+        StatutOpportunite.ACTIVE
+        if llm_result.decision == DECISION_APPROVED
+        else StatutOpportunite.PENDING_REVIEW
+    )
+    final_status = moderated_status
+    if previous_status == StatutOpportunite.SUSPENDUE:
+        final_status = StatutOpportunite.SUSPENDUE
+        organization_status = extra_data.get("organization_status")
+        if not isinstance(organization_status, dict):
+            organization_status = {}
+        organization_status["suspended_from"] = moderated_status
+        organization_status["moderated_while_suspended_at"] = timezone.now().isoformat()
+        extra_data["organization_status"] = organization_status
+    elif previous_status == StatutOpportunite.REJECTED:
+        final_status = StatutOpportunite.PENDING_REVIEW
+
+    extra_data["moderation"] = {
+        "llm": llm_result.to_dict(),
+        "final_decision": llm_result.decision,
+        "final_status": final_status,
+        "activation_status": moderated_status,
+        "history": history[-20:],
+        "last_update": {
+            "changed_fields": changed_fields,
+            "previous_status": previous_status,
+            "requires_admin_review": previous_status == StatutOpportunite.REJECTED,
+            "moderated_at": timezone.now().isoformat(),
+        },
+    }
+    return extra_data, final_status
 
 
 def _client_ip(request):
@@ -193,6 +350,373 @@ def organization_opportunities_view(request):
     )
     serializer = OrganizationOpportunitySerializer(opportunities, many=True)
     return Response(serializer.data)
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def organization_opportunity_detail_view(request, pk):
+    organization_profile, error_response = _require_organization_profile(request)
+    if error_response:
+        return error_response
+
+    if request.method == "GET":
+        opportunity = (
+            Opportunite.objects
+            .filter(pk=pk, organisation=request.user)
+            .annotate(applications_count=Count("candidatures"))
+            .first()
+        )
+        if opportunity is None:
+            return Response(
+                {"detail": "Opportunity not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(OrganizationOpportunitySerializer(opportunity).data)
+
+    submitted_fields = set(request.data.keys())
+    immutable_fields = sorted(submitted_fields & ORGANIZATION_OPPORTUNITY_IMMUTABLE_FIELDS)
+    unknown_fields = sorted(
+        submitted_fields
+        - ORGANIZATION_OPPORTUNITY_MUTABLE_FIELDS
+        - ORGANIZATION_OPPORTUNITY_IMMUTABLE_FIELDS
+        - {"turnstile_token"}
+    )
+    errors = {}
+    if immutable_fields:
+        errors["immutable_fields"] = [
+            f"These fields cannot be modified: {', '.join(immutable_fields)}."
+        ]
+    if unknown_fields:
+        errors["unknown_fields"] = [
+            f"Unsupported fields: {', '.join(unknown_fields)}."
+        ]
+    if errors:
+        return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+    if not (submitted_fields & ORGANIZATION_OPPORTUNITY_MUTABLE_FIELDS):
+        return Response(
+            {"detail": "Provide at least one editable opportunity field."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    turnstile = verify_turnstile_token(
+        request.data.get("turnstile_token"),
+        remote_ip=_client_ip(request),
+    )
+    if not turnstile.success:
+        return Response(
+            {"turnstile_token": [turnstile.reason]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    opportunity = Opportunite.objects.filter(pk=pk, organisation=request.user).first()
+    if opportunity is None:
+        return Response(
+            {"detail": "Opportunity not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    if opportunity.statut in {
+        StatutOpportunite.ARCHIVEE,
+        StatutOpportunite.EXPIREE,
+        StatutOpportunite.FERMEE,
+    }:
+        return Response(
+            {"detail": "Closed, archived, or expired opportunities cannot be modified."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    original_modified_at = opportunity.date_modification
+    previous_status = opportunity.statut
+    before_payload = _organization_opportunity_write_payload(opportunity)
+    merged_payload = deepcopy(before_payload)
+    for field in ORGANIZATION_OPPORTUNITY_MUTABLE_FIELDS:
+        if field in request.data:
+            merged_payload[field] = request.data.get(field)
+
+    serializer = OrganizationOpportunityWriteSerializer(data=merged_payload)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+    changed_fields = _changed_opportunity_fields(before_payload, data)
+    if not changed_fields:
+        return Response(
+            {
+                "detail": "No changes were needed.",
+                "opportunity": OrganizationOpportunitySerializer(
+                    Opportunite.objects
+                    .filter(pk=opportunity.pk)
+                    .annotate(applications_count=Count("candidatures"))
+                    .get()
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    moderation_payload = _moderation_payload(data, merged_payload)
+    try:
+        llm_moderation_result = classify_opportunity_with_gemini(moderation_payload)
+    except Exception:  # pragma: no cover - defensive guard for provider integration failures.
+        logger.exception("Unexpected LLM moderation failure after organization opportunity update.")
+        llm_moderation_result = failed_llm_result(
+            "LLM moderation failed unexpectedly; kept for admin review.",
+        )
+
+    with transaction.atomic():
+        opportunity = (
+            Opportunite.objects
+            .select_for_update()
+            .filter(pk=pk, organisation=request.user)
+            .first()
+        )
+        if opportunity is None:
+            return Response(
+                {"detail": "Opportunity not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if opportunity.date_modification != original_modified_at:
+            return Response(
+                {"detail": "This opportunity was modified in another session. Refresh and try again."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if opportunity.statut in {
+            StatutOpportunite.ARCHIVEE,
+            StatutOpportunite.EXPIREE,
+            StatutOpportunite.FERMEE,
+        }:
+            return Response(
+                {"detail": "Closed, archived, or expired opportunities cannot be modified."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        opportunity.titre = data["title"]
+        opportunity.description = data["description"]
+        opportunity.description_html = ""
+        opportunity.organisation_nom = (
+            data.get("project_details", {}).get("public_buyer")
+            or organization_profile.organization_name
+        )
+        opportunity.ville = data["location"]
+        opportunity.contract_type = data.get("contract", "")
+        opportunity.normalized_contract_types = normalize_contract_types(opportunity.contract_type)
+        opportunity.availability = data.get("availability", "")
+        opportunity.normalized_work_mode = normalize_work_mode(opportunity.availability)
+        opportunity.normalized_schedule = normalize_schedule(
+            [opportunity.availability, opportunity.contract_type]
+        )
+        opportunity.experience_min = data.get("experience_min")
+        opportunity.experience_max = data.get("experience_max")
+        opportunity.education_level = data.get("education_level", "")
+        opportunity.salary = data.get("salary", "")
+        opportunity.skills = data.get("skills", [])
+        opportunity.raw_skills = data.get("skills", [])
+        opportunity.date_limite = data.get("deadline")
+        opportunity.extra_data, opportunity.statut = _moderated_update_extra_data(
+            opportunity,
+            data,
+            llm_moderation_result,
+            changed_fields=changed_fields,
+            previous_status=previous_status,
+        )
+        opportunity.save()
+        organization_profile = request.user.organization_profile
+        AuditLog.objects.create(
+            actor=request.user,
+            target=request.user,
+            action=AuditLog.Action.UPDATE_ORG_OPPORTUNITY,
+            metadata={
+                "message": "Organization opportunity updated and re-moderated.",
+                "opportunity_id": opportunity.pk,
+                "opportunity_title": opportunity.titre,
+                "organization_email": request.user.email,
+                "organization_name": organization_profile.organization_name,
+                "organization_phone": organization_profile.phone or "",
+                "organization_type": organization_profile.organization_type or "",
+                "organization_website": organization_profile.website or "",
+                "organization_contact_name": " ".join(
+                    part
+                    for part in [organization_profile.first_name, organization_profile.last_name]
+                    if part
+                ),
+                "changed_fields": changed_fields,
+                "before_status": previous_status,
+                "after_status": opportunity.statut,
+                "decision": llm_moderation_result.decision,
+                "ai_category": llm_moderation_result.category,
+                "ai_decision": llm_moderation_result.decision,
+                "ai_confidence": llm_moderation_result.confidence,
+                "ai_explanation": llm_moderation_result.reason,
+            },
+        )
+
+    opportunity = (
+        Opportunite.objects
+        .filter(pk=opportunity.pk)
+        .annotate(applications_count=Count("candidatures"))
+        .get()
+    )
+    return Response(
+        {
+            "detail": (
+                "Opportunity updated and remains suspended."
+                if opportunity.statut == StatutOpportunite.SUSPENDUE
+                else (
+                    "Opportunity updated and published."
+                    if opportunity.statut == StatutOpportunite.ACTIVE
+                    else "Opportunity updated and submitted for review."
+                )
+            ),
+            "opportunity": OrganizationOpportunitySerializer(opportunity).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+ORGANIZATION_STATUS_ACTIONS = {
+    "suspend": {
+        "allowed": {
+            StatutOpportunite.ACTIVE,
+            StatutOpportunite.PENDING_REVIEW,
+            StatutOpportunite.FERMEE,
+        },
+        "target": StatutOpportunite.SUSPENDUE,
+        "audit_action": AuditLog.Action.SUSPEND_ORG_OPPORTUNITY,
+        "message": "Organization opportunity suspended.",
+    },
+    "activate": {
+        "allowed": {
+            StatutOpportunite.SUSPENDUE,
+            StatutOpportunite.PENDING_REVIEW,
+            StatutOpportunite.FERMEE,
+        },
+        "target": StatutOpportunite.ACTIVE,
+        "audit_action": AuditLog.Action.ACTIVATE_ORG_OPPORTUNITY,
+        "message": "Organization opportunity activated.",
+    },
+    "close": {
+        "allowed": {
+            StatutOpportunite.ACTIVE,
+            StatutOpportunite.SUSPENDUE,
+            StatutOpportunite.PENDING_REVIEW,
+            StatutOpportunite.REJECTED,
+        },
+        "target": StatutOpportunite.FERMEE,
+        "audit_action": AuditLog.Action.CLOSE_ORG_OPPORTUNITY,
+        "message": "Organization opportunity closed.",
+    },
+}
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def organization_opportunity_status_action_view(request, pk, action):
+    organization_profile, error_response = _require_organization_profile(request)
+    if error_response:
+        return error_response
+    action_config = ORGANIZATION_STATUS_ACTIONS.get(action)
+    if action_config is None:
+        return Response({"detail": "Unsupported status action."}, status=status.HTTP_404_NOT_FOUND)
+
+    with transaction.atomic():
+        opportunity = (
+            Opportunite.objects
+            .select_for_update()
+            .filter(pk=pk, organisation=request.user)
+            .first()
+        )
+        if opportunity is None:
+            return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        before_status = opportunity.statut
+        opportunity.applications_count = opportunity.candidatures.count()
+        target_status = action_config["target"]
+        extra_data = dict(opportunity.extra_data) if isinstance(opportunity.extra_data, dict) else {}
+        organization_status = extra_data.get("organization_status")
+        if not isinstance(organization_status, dict):
+            organization_status = {}
+        if action == "activate":
+            if before_status == StatutOpportunite.PENDING_REVIEW:
+                target_status = StatutOpportunite.PENDING_REVIEW
+            elif before_status == StatutOpportunite.SUSPENDUE:
+                suspended_from = organization_status.get("suspended_from")
+                target_status = (
+                    StatutOpportunite.PENDING_REVIEW
+                    if suspended_from == StatutOpportunite.PENDING_REVIEW
+                    else StatutOpportunite.ACTIVE
+                )
+            elif before_status == StatutOpportunite.FERMEE:
+                closed_from = organization_status.get("closed_from")
+                target_status = (
+                    StatutOpportunite.PENDING_REVIEW
+                    if closed_from in {
+                        StatutOpportunite.PENDING_REVIEW,
+                        StatutOpportunite.REJECTED,
+                    }
+                    else StatutOpportunite.ACTIVE
+                )
+        if before_status == target_status:
+            return Response(
+                {
+                    "detail": f"Opportunity is already {target_status.lower()}.",
+                    "opportunity": OrganizationOpportunitySerializer(opportunity).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        if before_status in {StatutOpportunite.ARCHIVEE, StatutOpportunite.EXPIREE}:
+            return Response(
+                {"detail": "Archived or expired opportunities cannot change organization status."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if before_status not in action_config["allowed"]:
+            return Response(
+                {"detail": f"Cannot {action} an opportunity with status {before_status}."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        opportunity.statut = target_status
+        if action == "suspend":
+            suspended_from = before_status
+            if before_status == StatutOpportunite.FERMEE:
+                suspended_from = organization_status.get("closed_from", StatutOpportunite.ACTIVE)
+            organization_status["suspended_from"] = suspended_from
+        elif action == "close":
+            closed_from = before_status
+            if before_status == StatutOpportunite.SUSPENDUE:
+                closed_from = organization_status.get(
+                    "suspended_from",
+                    StatutOpportunite.ACTIVE,
+                )
+            organization_status["closed_from"] = closed_from
+        organization_status.update({
+            "last_action": action,
+            "before_status": before_status,
+            "after_status": target_status,
+            "changed_at": timezone.now().isoformat(),
+        })
+        extra_data["organization_status"] = organization_status
+        opportunity.extra_data = extra_data
+        opportunity.save(update_fields=["statut", "extra_data", "date_modification"])
+
+        AuditLog.objects.create(
+            actor=request.user,
+            target=request.user,
+            action=action_config["audit_action"],
+            metadata={
+                "message": action_config["message"],
+                "opportunity_id": opportunity.pk,
+                "opportunity_title": opportunity.titre,
+                "organization_email": request.user.email,
+                "organization_name": organization_profile.organization_name,
+                "before_status": before_status,
+                "after_status": target_status,
+                "decision": action,
+                "applications_count": opportunity.applications_count,
+            },
+        )
+
+    return Response(
+        {
+            "detail": action_config["message"],
+            "opportunity": OrganizationOpportunitySerializer(opportunity).data,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["POST"])

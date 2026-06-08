@@ -9,6 +9,8 @@ export const STATUS_OPTIONS = [
   { value: 'ACTIVE', label: 'Active' },
   { value: 'PENDING_REVIEW', label: 'Pending review' },
   { value: 'REJECTED', label: 'Rejected' },
+  { value: 'SUSPENDUE', label: 'Suspended' },
+  { value: 'FERMEE', label: 'Closed' },
   { value: 'EXPIREE', label: 'Expired' },
   { value: 'ARCHIVEE', label: 'Archived' },
 ];
