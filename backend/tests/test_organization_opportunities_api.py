@@ -20,7 +20,10 @@ from opportunities.moderation_llm import (
     DECISION_REJECTED,
     ModerationLLMResult,
 )
-from opportunities.tasks import send_organization_admin_decision_email_task
+from opportunities.tasks import (
+    send_organization_admin_decision_email_task,
+    send_organization_automatic_approval_email_task,
+)
 from users.models import AuditLog, OrganizationProfile, Utilisateur
 
 
@@ -1176,6 +1179,104 @@ class OrganizationOpportunitiesAPITests(APITestCase):
         self.assertEqual(opportunity.extra_data["moderation"]["llm"]["decision"], DECISION_REJECTED)
         self.assertEqual(opportunity.extra_data["moderation"]["final_status"], StatutOpportunite.PENDING_REVIEW)
 
+    @patch("opportunities.views.send_organization_automatic_approval_email_task.delay")
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_automatic_approval_dispatches_email_after_commit(
+        self,
+        mock_moderation,
+        mock_email_delay,
+    ):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_LEGITIMATE,
+            decision=DECISION_APPROVED,
+            confidence=0.95,
+            reason="Internal LLM explanation.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        self.client.force_authenticate(self.organization)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(self.url, self.valid_post_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        opportunity = Opportunite.objects.get(pk=response.data["id"])
+        self.assertEqual(opportunity.statut, StatutOpportunite.ACTIVE)
+        mock_email_delay.assert_called_once_with(
+            opportunity.id,
+            opportunity.extra_data["moderation"]["automatic_decision_id"],
+        )
+
+    @patch("opportunities.views.send_organization_automatic_approval_email_task.delay")
+    @patch("opportunities.views.classify_opportunity_with_gemini")
+    def test_pending_review_does_not_dispatch_automatic_email(
+        self,
+        mock_moderation,
+        mock_email_delay,
+    ):
+        mock_moderation.return_value = ModerationLLMResult(
+            category=CATEGORY_SCAM,
+            decision=DECISION_REJECTED,
+            confidence=1.0,
+            reason="Internal LLM explanation.",
+            provider="gemini",
+            model="gemini-test",
+        )
+        self.client.force_authenticate(self.organization)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                self.url,
+                self.valid_post_payload(title="Suspicious role"),
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        opportunity = Opportunite.objects.get(pk=response.data["id"])
+        self.assertEqual(opportunity.statut, StatutOpportunite.PENDING_REVIEW)
+        mock_email_delay.assert_not_called()
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="BidWise <test@bidwise.com>",
+        BIDWISE_FRONTEND_URL="http://localhost:5173",
+    )
+    def test_automatic_approval_email_is_safe_and_idempotent(self):
+        decision_id = "2026-06-08T16:30:00+00:00"
+        opportunity = self.create_opportunity(
+            owner=self.organization,
+            title="Data Engineer",
+            statut=StatutOpportunite.ACTIVE,
+            extra_data={
+                "published_by": "organization",
+                "moderation": {
+                    "llm": {
+                        "decision": DECISION_APPROVED,
+                        "reason": "TECHNICAL LLM REASON MUST NEVER BE EXPOSED",
+                        "confidence": 0.99,
+                    },
+                    "final_decision": DECISION_APPROVED,
+                    "final_status": StatutOpportunite.ACTIVE,
+                    "automatic_decision_id": decision_id,
+                },
+            },
+        )
+
+        first = send_organization_automatic_approval_email_task.apply(
+            args=[opportunity.id, decision_id],
+        ).get()
+        second = send_organization_automatic_approval_email_task.apply(
+            args=[opportunity.id, decision_id],
+        ).get()
+
+        self.assertEqual(first["status"], "sent")
+        self.assertEqual(second, {"status": "skipped", "reason": "already_sent"})
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertIn("has passed our publication checks", message.body)
+        self.assertNotIn("TECHNICAL LLM REASON", message.body)
+        self.assertNotIn("TECHNICAL LLM REASON", message.alternatives[0][0])
+
     @patch("opportunities.views.classify_opportunity_with_gemini")
     def test_ambiguous_opportunity_uses_llm_final_decision(self, mock_judge):
         mock_judge.return_value = ModerationLLMResult(
@@ -1535,6 +1636,28 @@ class OrganizationOpportunitiesAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("turnstile_token", response.data)
+
+    @override_settings(TURNSTILE_SECRET_KEY="invalid-secret")
+    @patch("opportunities.turnstile.requests.post")
+    def test_invalid_turnstile_secret_returns_safe_service_message(self, mock_post):
+        mock_post.return_value.status_code = 400
+        mock_post.return_value.json.return_value = {
+            "success": False,
+            "error-codes": ["invalid-input-secret"],
+        }
+        self.client.force_authenticate(self.organization)
+
+        response = self.client.post(
+            self.url,
+            self.valid_post_payload(turnstile_token="browser-token"),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["turnstile_token"][0],
+            "Anti-bot verification is temporarily unavailable. Please try again later.",
+        )
         self.assertFalse(Opportunite.objects.filter(titre="Junior Java Developer").exists())
 
     @override_settings(TURNSTILE_SECRET_KEY="test-secret")

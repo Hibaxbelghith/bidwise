@@ -330,13 +330,20 @@ Flow:
 3. Celery sends the email through the configured Django email backend.
 4. When `SENDGRID_API_KEY` is configured, the SendGrid Web API backend is used.
 
+The two organization email tasks are routed to the dedicated `notifications`
+queue, consumed by `celery_notifications`. This prevents long scraping jobs on
+the default queue from delaying transactional emails.
+
 Notifications are sent only for a real decision:
 
+- Automatic LLM approval sends an email after the new opportunity is committed
+  as `ACTIVE`.
 - Admin approval sends a link to the public opportunity.
 - Admin rejection sends the public admin note, or a generic message when no
   note was provided.
 - Repeated decisions do not send duplicate emails.
-- `PENDING_REVIEW` does not trigger an email.
+- LLM results mapped to `PENDING_REVIEW` do not trigger a final email. The
+  organization is notified only after the administrator approves or rejects.
 
 The task verifies the decision timestamp before delivery and stores delivery
 state in `extra_data["moderation"]["admin_decision"]["email_notification"]`.

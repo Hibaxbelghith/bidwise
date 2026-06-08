@@ -82,6 +82,32 @@ def build_admin_approved_email(opportunity):
     )
 
 
+def build_automatic_approved_email(opportunity):
+    title = _clean_header(opportunity.titre)
+    public_url = _frontend_url(f"opportunities/{opportunity.pk}")
+    subject = f"Your opportunity is now published - {title}"
+    plaintext = (
+        f'Your opportunity "{title}" has passed our publication checks.\n'
+        "It is now published and visible to candidates.\n\n"
+        f"View your opportunity: {public_url}"
+    )
+    body_html = (
+        f'<p>Your opportunity <strong>"{escape(title)}"</strong> has passed '
+        "our publication checks.</p>"
+        "<p>It is now published and visible to candidates.</p>"
+    )
+    return OrganizationDecisionEmail(
+        subject=subject,
+        plaintext=plaintext,
+        html=_email_shell(
+            heading="Your opportunity is now published",
+            body_html=body_html,
+            action_label="View my opportunity",
+            action_url=public_url,
+        ),
+    )
+
+
 def build_admin_rejected_email(opportunity, *, admin_note=""):
     title = _clean_header(opportunity.titre)
     note = str(admin_note or "").strip()
@@ -114,4 +140,3 @@ def build_admin_rejected_email(opportunity, *, admin_note=""):
             action_url=support_url,
         ),
     )
-

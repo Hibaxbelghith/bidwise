@@ -40,6 +40,7 @@ from .similarity import find_similar_opportunities_with_fallback
 from .source_cleanup import removed_source_q
 from .throttles import OrganizationOpportunityPostThrottle
 from .turnstile import verify_turnstile_token
+from .tasks import send_organization_automatic_approval_email_task
 from users.models import AuditLog, OrganizationProfile, Utilisateur
 from users.storage import ProfileResumeStorage
 
@@ -296,41 +297,51 @@ def organization_opportunities_view(request):
             if llm_moderation_result.decision == DECISION_APPROVED
             else StatutOpportunite.PENDING_REVIEW
         )
+        automatic_decision_id = timezone.now().isoformat()
         extra_data["moderation"] = {
             "llm": llm_moderation_result.to_dict(),
             "final_decision": llm_moderation_result.decision,
             "final_status": opportunity_status,
+            "automatic_decision_id": automatic_decision_id,
         }
 
-        opportunity = Opportunite.objects.create(
-            titre=data["title"],
-            description=data["description"],
-            description_html="",
-            organisation_nom=(
-                data.get("project_details", {}).get("public_buyer")
-                or organization_profile.organization_name
-            ),
-            ville=data["location"],
-            contract_type=contract,
-            normalized_contract_types=normalize_contract_types(contract),
-            availability=availability,
-            normalized_work_mode=normalize_work_mode(availability),
-            normalized_schedule=normalize_schedule([availability, contract]),
-            experience_min=data.get("experience_min"),
-            experience_max=data.get("experience_max"),
-            education_level=data.get("education_level", ""),
-            salary=data.get("salary", ""),
-            skills=data.get("skills", []),
-            raw_skills=data.get("skills", []),
-            type_opportunite=data["type"],
-            statut=opportunity_status,
-            date_publication=timezone.localdate(),
-            date_limite=data.get("deadline"),
-            date_confidence=DateConfidence.EXACT,
-            source=source,
-            organisation=request.user,
-            extra_data=extra_data,
-        )
+        with transaction.atomic():
+            opportunity = Opportunite.objects.create(
+                titre=data["title"],
+                description=data["description"],
+                description_html="",
+                organisation_nom=(
+                    data.get("project_details", {}).get("public_buyer")
+                    or organization_profile.organization_name
+                ),
+                ville=data["location"],
+                contract_type=contract,
+                normalized_contract_types=normalize_contract_types(contract),
+                availability=availability,
+                normalized_work_mode=normalize_work_mode(availability),
+                normalized_schedule=normalize_schedule([availability, contract]),
+                experience_min=data.get("experience_min"),
+                experience_max=data.get("experience_max"),
+                education_level=data.get("education_level", ""),
+                salary=data.get("salary", ""),
+                skills=data.get("skills", []),
+                raw_skills=data.get("skills", []),
+                type_opportunite=data["type"],
+                statut=opportunity_status,
+                date_publication=timezone.localdate(),
+                date_limite=data.get("deadline"),
+                date_confidence=DateConfidence.EXACT,
+                source=source,
+                organisation=request.user,
+                extra_data=extra_data,
+            )
+            if opportunity_status == StatutOpportunite.ACTIVE:
+                transaction.on_commit(
+                    lambda: send_organization_automatic_approval_email_task.delay(
+                        opportunity.pk,
+                        automatic_decision_id,
+                    )
+                )
         opportunity = (
             Opportunite.objects
             .filter(pk=opportunity.pk)

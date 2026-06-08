@@ -42,11 +42,13 @@ from .models import (
     Opportunite,
     RawOpportunite,
     RawOpportuniteProcessingStatus,
+    StatutOpportunite,
 )
 from .organization_expiration import expire_due_organization_opportunities
 from .organization_notification_emails import (
     build_admin_approved_email,
     build_admin_rejected_email,
+    build_automatic_approved_email,
 )
 from .processing import process_pending_raw_opportunities
 
@@ -207,6 +209,116 @@ def send_organization_admin_decision_email_task(
             "Organization decision email failed opportunity_id=%s decision=%s",
             opportunity_id,
             decision,
+        )
+        countdown = min(30 * (2 ** int(self.request.retries or 0)), 300)
+        raise self.retry(exc=exc, countdown=countdown)
+
+
+@shared_task(
+    bind=True,
+    name="opportunities.send_organization_automatic_approval_email",
+    max_retries=3,
+)
+def send_organization_automatic_approval_email_task(
+    self,
+    opportunity_id,
+    decision_id,
+):
+    try:
+        with transaction.atomic():
+            opportunity = (
+                Opportunite.objects.select_for_update()
+                .filter(pk=opportunity_id)
+                .first()
+            )
+            if opportunity is None or opportunity.organisation_id is None:
+                return {"status": "skipped", "reason": "opportunity_or_recipient_missing"}
+
+            extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+            moderation = extra_data.get("moderation")
+            moderation = moderation if isinstance(moderation, dict) else {}
+            if (
+                moderation.get("automatic_decision_id") != decision_id
+                or moderation.get("final_decision") != "approved"
+                or moderation.get("final_status") != StatutOpportunite.ACTIVE
+                or opportunity.statut != StatutOpportunite.ACTIVE
+            ):
+                return {"status": "skipped", "reason": "stale_or_non_final_decision"}
+
+            notification = moderation.get("automatic_notification")
+            notification = notification if isinstance(notification, dict) else {}
+            if notification.get("sent_at"):
+                return {"status": "skipped", "reason": "already_sent"}
+            if _is_recent_processing_notification(notification):
+                return {"status": "skipped", "reason": "already_processing"}
+
+            recipient = str(opportunity.organisation.email or "").strip()
+            if not recipient:
+                return {"status": "skipped", "reason": "recipient_missing"}
+
+            notification.update({
+                "status": "processing",
+                "task_id": self.request.id or "",
+                "started_at": timezone.now().isoformat(),
+            })
+            moderation["automatic_notification"] = notification
+            extra_data["moderation"] = moderation
+            opportunity.extra_data = extra_data
+            opportunity.save(update_fields=["extra_data"])
+            email = build_automatic_approved_email(opportunity)
+
+        send_mail(
+            subject=email.subject,
+            message=email.plaintext,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+            html_message=email.html,
+        )
+
+        with transaction.atomic():
+            opportunity = Opportunite.objects.select_for_update().get(pk=opportunity_id)
+            extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+            moderation = extra_data.get("moderation")
+            moderation = moderation if isinstance(moderation, dict) else {}
+            if moderation.get("automatic_decision_id") == decision_id:
+                notification = moderation.get("automatic_notification") or {}
+                notification.update({
+                    "status": "sent",
+                    "sent_at": timezone.now().isoformat(),
+                    "recipient": recipient,
+                })
+                moderation["automatic_notification"] = notification
+                extra_data["moderation"] = moderation
+                opportunity.extra_data = extra_data
+                opportunity.save(update_fields=["extra_data"])
+
+        logger.info(
+            "Automatic organization approval email sent opportunity_id=%s recipient=%s",
+            opportunity_id,
+            recipient,
+        )
+        return {"status": "sent", "opportunity_id": opportunity_id, "decision": "approved"}
+    except Exception as exc:
+        with transaction.atomic():
+            opportunity = Opportunite.objects.select_for_update().filter(pk=opportunity_id).first()
+            if opportunity is not None:
+                extra_data = opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {}
+                moderation = extra_data.get("moderation")
+                moderation = moderation if isinstance(moderation, dict) else {}
+                if moderation.get("automatic_decision_id") == decision_id:
+                    notification = moderation.get("automatic_notification") or {}
+                    notification.update({
+                        "status": "failed",
+                        "last_error_at": timezone.now().isoformat(),
+                    })
+                    moderation["automatic_notification"] = notification
+                    extra_data["moderation"] = moderation
+                    opportunity.extra_data = extra_data
+                    opportunity.save(update_fields=["extra_data"])
+        logger.exception(
+            "Automatic organization approval email failed opportunity_id=%s",
+            opportunity_id,
         )
         countdown = min(30 * (2 ** int(self.request.retries or 0)), 300)
         raise self.retry(exc=exc, countdown=countdown)

@@ -42,11 +42,15 @@ export const parseOrganizationApiError = (error) => {
     if (message) fields[key] = message;
   });
 
+  const securityMessage = firstMessage(data.turnstile_token);
+  const firstFieldMessage = Object.values(fields)[0];
   return {
     message:
       data.detail ||
       data.error ||
       firstMessage(data.non_field_errors) ||
+      securityMessage ||
+      firstFieldMessage ||
       fallback,
     fields,
   };
