@@ -105,6 +105,8 @@ export const normalizeOpportunity = (opportunity) => {
     recommendation_bucket_reason: normalizeString(raw.recommendation_bucket_reason),
     evidence_summary: normalizeObject(raw.evidence_summary),
     recommendation: raw.recommendation ? normalizeRecommendation(raw.recommendation) : null,
+    accepts_direct_applications: Boolean(raw.accepts_direct_applications),
+    my_application: raw.my_application ? normalizeObject(raw.my_application) : null,
   };
 };
 
@@ -317,13 +319,51 @@ export const askOpportunityAssistant = async (opportunityId, question, history =
   return normalizeObject(response.data);
 };
 
-export const uploadProfileResume = async (file) => {
+export const uploadProfileResume = async (file, { activate = false } = {}) => {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('activate', 'false');
+  formData.append('activate', activate ? 'true' : 'false');
 
   const response = await api.post('/profile/resume/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return normalizeObject(response.data);
+};
+
+export const uploadApplicationCoverLetter = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await api.post('/applications/cover-letter-upload/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return normalizeObject(response.data);
+};
+
+export const submitOrganizationApplication = async (opportunityId, payload) => {
+  const response = await api.post(`/opportunities/${opportunityId}/apply/`, payload);
+  return normalizeObject(response.data);
+};
+
+export const registerExternalApplicationClick = async (opportunityId) => {
+  if (!opportunityId) {
+    throw new Error('Opportunity id is required');
+  }
+
+  const response = await api.post(`/opportunities/${opportunityId}/external-apply-click/`, {});
+  return normalizeObject(response.data);
+};
+
+export const updateExternalApplicationStatus = async (applicationId, statusValue) => {
+  if (!applicationId) {
+    throw new Error('Application id is required');
+  }
+  if (!statusValue) {
+    throw new Error('External application status is required');
+  }
+
+  const response = await api.patch(`/me/applications/${applicationId}/external-status/`, {
+    status: statusValue,
   });
   return normalizeObject(response.data);
 };

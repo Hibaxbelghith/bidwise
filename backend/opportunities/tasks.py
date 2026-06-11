@@ -49,6 +49,8 @@ from .organization_notification_emails import (
     build_admin_approved_email,
     build_admin_rejected_email,
     build_automatic_approved_email,
+    build_candidate_application_submitted_email,
+    build_new_application_email,
 )
 from .processing import process_pending_raw_opportunities
 
@@ -319,6 +321,124 @@ def send_organization_automatic_approval_email_task(
         logger.exception(
             "Automatic organization approval email failed opportunity_id=%s",
             opportunity_id,
+        )
+        countdown = min(30 * (2 ** int(self.request.retries or 0)), 300)
+        raise self.retry(exc=exc, countdown=countdown)
+
+
+@shared_task(
+    bind=True,
+    name="applications.notify_organization_new_application",
+    max_retries=3,
+)
+def notify_organization_new_application_task(self, application_id):
+    """Send email notification to organization when a new application is submitted."""
+    try:
+        from applications.models import Candidature
+        
+        with transaction.atomic():
+            candidature = (
+                Candidature.objects.select_related("candidat", "opportunite", "opportunite__organisation")
+                .filter(pk=application_id)
+                .first()
+            )
+            
+            if candidature is None:
+                return {"status": "skipped", "reason": "application_not_found"}
+            
+            # Check if application is in SUBMITTED status
+            from applications.models import StatutSuiviCandidature
+            if candidature.statut != StatutSuiviCandidature.SUBMITTED:
+                return {"status": "skipped", "reason": "application_not_submitted"}
+            
+            # Check if opportunity exists and organization exists
+            if candidature.opportunite is None or candidature.opportunite.organisation is None:
+                return {"status": "skipped", "reason": "opportunity_or_organization_missing"}
+            
+            # Check if organization is not suspended
+            organisation = candidature.opportunite.organisation
+            if not organisation.is_active:
+                return {"status": "skipped", "reason": "organization_suspended"}
+            
+            recipient = str(organisation.email or "").strip()
+            if not recipient:
+                return {"status": "skipped", "reason": "recipient_email_missing"}
+            
+            # Build and send email
+            email = build_new_application_email(candidature)
+        
+        send_mail(
+            subject=email.subject,
+            message=email.plaintext,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+            html_message=email.html,
+        )
+        
+        logger.info(
+            "New application notification sent application_id=%s recipient=%s",
+            application_id,
+            recipient,
+        )
+        return {"status": "sent", "application_id": application_id}
+    
+    except Exception as exc:
+        logger.exception(
+            "New application notification failed application_id=%s",
+            application_id,
+        )
+        countdown = min(30 * (2 ** int(self.request.retries or 0)), 300)
+        raise self.retry(exc=exc, countdown=countdown)
+
+
+@shared_task(
+    bind=True,
+    name="applications.notify_candidate_application_submitted",
+    max_retries=3,
+)
+def notify_candidate_application_submitted_task(self, application_id):
+    """Send email notification to candidate after a direct BidWise application."""
+    try:
+        from applications.models import Candidature, StatutSuiviCandidature
+
+        with transaction.atomic():
+            candidature = (
+                Candidature.objects.select_related("candidat", "opportunite", "opportunite__organisation")
+                .filter(pk=application_id)
+                .first()
+            )
+            if candidature is None:
+                return {"status": "skipped", "reason": "application_not_found"}
+
+            if candidature.statut != StatutSuiviCandidature.SUBMITTED:
+                return {"status": "skipped", "reason": "application_not_submitted"}
+
+            recipient = str(candidature.contact_email or candidature.candidat.email or "").strip()
+            if not recipient:
+                return {"status": "skipped", "reason": "recipient_email_missing"}
+
+            email = build_candidate_application_submitted_email(candidature)
+
+        send_mail(
+            subject=email.subject,
+            message=email.plaintext,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+            html_message=email.html,
+        )
+
+        logger.info(
+            "Candidate application submitted notification sent application_id=%s recipient=%s",
+            application_id,
+            recipient,
+        )
+        return {"status": "sent", "application_id": application_id}
+    except Exception as exc:
+        logger.exception(
+            "Candidate application submitted notification failed application_id=%s",
+            application_id,
         )
         countdown = min(30 * (2 ** int(self.request.retries or 0)), 300)
         raise self.retry(exc=exc, countdown=countdown)

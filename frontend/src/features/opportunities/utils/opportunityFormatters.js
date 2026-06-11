@@ -79,6 +79,7 @@ const getBackendOrigin = () => {
 };
 
 const toSafeNonNegativeInt = (value) => {
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Math.floor(parsed);

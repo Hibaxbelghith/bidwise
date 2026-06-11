@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Bookmark,
@@ -13,6 +13,11 @@ import { Button } from '../../../../components/ui/button.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
 import RecommendationInsightPanel from '../recommendations/RecommendationInsightPanel.jsx';
 import RecommendationMatchBadge from '../recommendations/RecommendationMatchBadge.jsx';
+import {
+  isOpportunitySaved,
+  listenSavedOpportunityChanges,
+  toggleSavedOpportunity,
+} from '../../utils/savedOpportunityStorage.js';
 import { buildOpportunityBrowseCardViewModel } from '../../viewModels/opportunityList.vm.js';
 
 const getRecommendationPayload = (opportunity) => {
@@ -39,6 +44,7 @@ const OpportunityBrowseCard = memo(({
   const location = useLocation();
   const viewModel = buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated);
   const recommendation = getRecommendationPayload(opportunity);
+  const [isSaved, setIsSaved] = useState(() => isOpportunitySaved(opportunity?.id));
   const hasRoleDetails = Boolean(
     viewModel.salaryLabel ||
       viewModel.contractTypeLabel ||
@@ -52,6 +58,24 @@ const OpportunityBrowseCard = memo(({
     returnTab,
     scrollY: typeof window !== 'undefined' ? window.scrollY : 0,
     opportunityId: opportunity?.id ?? null,
+  };
+
+  useEffect(() => {
+    if (!isUserAuthenticated || !opportunity?.id) {
+      setIsSaved(false);
+      return undefined;
+    }
+
+    setIsSaved(isOpportunitySaved(opportunity.id));
+    return listenSavedOpportunityChanges(() => {
+      setIsSaved(isOpportunitySaved(opportunity.id));
+    });
+  }, [isUserAuthenticated, opportunity?.id]);
+
+  const handleToggleSave = () => {
+    if (!isUserAuthenticated || !opportunity?.id) return;
+
+    setIsSaved(toggleSavedOpportunity(opportunity.id));
   };
 
   return (
@@ -181,14 +205,26 @@ const OpportunityBrowseCard = memo(({
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
-          {!isUserAuthenticated ? (
+          {isUserAuthenticated ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={isSaved ? 'default' : 'outline'}
+              aria-pressed={isSaved}
+              onClick={handleToggleSave}
+              className={isSaved ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
+            >
+              <Bookmark className={isSaved ? 'h-4 w-4 fill-current' : 'h-4 w-4'} />
+              {isSaved ? 'Saved' : 'Save'}
+            </Button>
+          ) : (
             <Button asChild size="sm" variant="outline">
               <Link to="/login">
                 <Bookmark className="h-4 w-4" />
                 Sign in to save
               </Link>
             </Button>
-          ) : null}
+          )}
           <Button asChild size="sm" className="bg-neutral-950 text-white hover:bg-neutral-800 sm:hidden">
             <Link to={`/opportunities/${opportunity.id}`} state={detailState}>
               View details

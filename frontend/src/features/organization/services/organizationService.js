@@ -103,3 +103,62 @@ export const uploadOrganizationTenderDocument = async ({ file, type, label }) =>
   });
   return response.data;
 };
+
+export const getOpportunityApplications = async (opportunityId) => {
+  const response = await api.get(`/organization/opportunities/${opportunityId}/applications/`);
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+export const getOpportunitiesApplicationsStats = async (opportunities) => {
+  const stats = {};
+  
+  const fetchApplications = async (opportunity) => {
+    try {
+      const applications = await getOpportunityApplications(opportunity.id);
+      stats[opportunity.id] = applications;
+    } catch (error) {
+      // If error fetching applications, set empty array
+      stats[opportunity.id] = [];
+    }
+  };
+
+  // Fetch all applications in parallel
+  await Promise.all(opportunities.map(fetchApplications));
+  
+  return stats;
+};
+
+export const listAllOrganizationApplications = async () => {
+  const response = await api.get('/organization/applications/');
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+export const getCandidateApplicationProfile = async (applicationId) => {
+  const response = await api.get(
+    `/organization/applications/${applicationId}/candidate-profile/`
+  );
+  return response.data;
+};
+
+export const rejectApplication = async (opportunityId, applicationId, options = {}) => {
+  const response = await api.patch(
+    `/organization/opportunities/${opportunityId}/applications/${applicationId}/reject/`,
+    options.restoreStatus ? { restore_status: options.restoreStatus } : {}
+  );
+  return response.data;
+};
+
+export const acceptApplication = async (opportunityId, applicationId, options = {}) => {
+  const response = await api.patch(
+    `/organization/opportunities/${opportunityId}/applications/${applicationId}/accept/`,
+    options.restoreStatus ? { restore_status: options.restoreStatus } : {}
+  );
+  return response.data;
+};
+
+export const deleteApplication = async (opportunityId, applicationId) => {
+  const response = await api.delete(
+    `/organization/opportunities/${opportunityId}/applications/${applicationId}/`
+  );
+  return response.data;
+};

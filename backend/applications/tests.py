@@ -192,7 +192,8 @@ class CandidatureSerializerTests(TestCase):
         data = CandidatureSerializer(cand).data
         expected = {
             "id", "candidat", "opportunite", "statut", "url_source",
-            "date_creation", "derniere_mise_a_jour", "documents"
+            "cv", "cover_letter_url", "contact_email", "contact_phone",
+            "submitted_at", "date_creation", "derniere_mise_a_jour", "documents"
         }
         self.assertEqual(set(data.keys()), expected)
 

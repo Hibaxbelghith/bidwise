@@ -140,3 +140,87 @@ def build_admin_rejected_email(opportunity, *, admin_note=""):
             action_url=support_url,
         ),
     )
+
+
+def build_new_application_email(candidature):
+    """Build email notification for new application submitted to organization."""
+    # Extract candidate name from profil if available, fallback to first/last name, then email
+    candidate_name = ""
+    if hasattr(candidature.candidat, "profil"):
+        prenom = getattr(candidature.candidat.profil, "prenom", "").strip()
+        nom = getattr(candidature.candidat.profil, "nom", "").strip()
+        candidate_name = _clean_header(f"{prenom} {nom}".strip())
+    
+    if not candidate_name:
+        candidate_name = _clean_header(
+            f"{candidature.candidat.first_name} {candidature.candidat.last_name}".strip()
+        )
+    
+    if not candidate_name:
+        candidate_name = candidature.candidat.email
+    
+    opportunity_title = _clean_header(candidature.opportunite.titre)
+    dashboard_url = _frontend_url("organization/dashboard")
+    
+    subject = f"New application — {opportunity_title}"
+    
+    phone_line = f"Phone   : {candidature.contact_phone}\n" if candidature.contact_phone else ""
+    plaintext = (
+        f'{candidate_name} applied for "{opportunity_title}".\n\n'
+        f"Email   : {candidature.contact_email}\n"
+        f"{phone_line}\n"
+        f"View applications: {dashboard_url}"
+    )
+    
+    phone_html = f"<p><strong>Phone:</strong> {escape(candidature.contact_phone)}</p>" if candidature.contact_phone else ""
+    body_html = (
+        f'<p><strong>{escape(candidate_name)}</strong> applied for '
+        f'<strong>"{escape(opportunity_title)}"</strong>.</p>'
+        f"<p><strong>Email:</strong> {escape(candidature.contact_email)}</p>"
+        f"{phone_html}"
+    )
+    
+    return OrganizationDecisionEmail(
+        subject=subject,
+        plaintext=plaintext,
+        html=_email_shell(
+            heading="New application received",
+            body_html=body_html,
+            action_label="View applications",
+            action_url=dashboard_url,
+        ),
+    )
+
+
+def build_candidate_application_submitted_email(candidature):
+    title = _clean_header(candidature.opportunite.titre)
+    organization_name = _clean_header(
+        getattr(candidature.opportunite, "organisation_nom", "")
+        or getattr(candidature.opportunite.organisation, "company_name", "")
+        or getattr(candidature.opportunite.organisation, "email", "")
+    )
+    dashboard_url = _frontend_url("dashboard")
+
+    subject = f"Application submitted - {title}"
+    plaintext = (
+        f'Your application for "{title}" has been submitted successfully.\n'
+        f"Organization: {organization_name or 'BidWise organization'}\n\n"
+        "You can track this application from your BidWise dashboard.\n\n"
+        f"View my applications: {dashboard_url}"
+    )
+    body_html = (
+        f'<p>Your application for <strong>"{escape(title)}"</strong> has been '
+        "submitted successfully.</p>"
+        f"<p><strong>Organization:</strong> {escape(organization_name or 'BidWise organization')}</p>"
+        "<p>You can track this application from your BidWise dashboard.</p>"
+    )
+    return OrganizationDecisionEmail(
+        subject=subject,
+        plaintext=plaintext,
+        html=_email_shell(
+            heading="Your application has been submitted",
+            body_html=body_html,
+            action_label="View my applications",
+            action_url=dashboard_url,
+        ),
+    )

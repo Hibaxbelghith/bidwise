@@ -1,5 +1,7 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { useAuth } from '../../auth/AuthContext.jsx';
 import OpportunityActionBar from '../components/detail/OpportunityActionBar.jsx';
@@ -13,10 +15,8 @@ import OpportunityMeta from '../components/detail/OpportunityMeta.jsx';
 import OpportunitySimilarSection from '../components/detail/OpportunitySimilarSection.jsx';
 import OpportunitySkillsSection from '../components/detail/OpportunitySkillsSection.jsx';
 import OpportunityAssistantCard from '../components/recommendations/OpportunityAssistantCard.jsx';
-import RecommendationInsightPanel, {
-  RecommendationInsightSkeleton,
-} from '../components/recommendations/RecommendationInsightPanel.jsx';
-import ResumeFitCtaCard from '../components/recommendations/ResumeFitCtaCard.jsx';
+import OpportunityApplicationDialog from '../components/application/OpportunityApplicationDialog.jsx';
+import ExternalApplicationFollowUpDialog from '../components/application/ExternalApplicationFollowUpDialog.jsx';
 import { useOpportunityDetailPage } from '../hooks/useOpportunityDetailPage.js';
 import { hasActiveResume } from '../utils/recommendationUtils.js';
 
@@ -26,9 +26,12 @@ const OpportunityDetailPage = () => {
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, loading: authLoading, user } = useAuth();
+  const { isAuthenticated, loading: authLoading, user, refreshUser } = useAuth();
+  const [applicationOpen, setApplicationOpen] = useState(false);
+  const continueApplicationHandledRef = useRef(false);
   const isUserAuthenticated = !authLoading && isAuthenticated;
   const userHasResume = hasActiveResume(user);
+  const shouldContinueExternalApplication = new URLSearchParams(location.search).get('continueApplication') === '1';
   const handleBackToOpportunities = () => {
     if (location.state?.returnTab) {
       navigate('/opportunities', {
@@ -47,6 +50,33 @@ const OpportunityDetailPage = () => {
     opportunityId: id,
     isUserAuthenticated,
   });
+  const viewModel = detailPage.viewModel;
+  const isCandidate = user?.account_type === 'candidate';
+  const isDirectApplication = Boolean(viewModel?.acceptsDirectApplications && isCandidate);
+
+  useEffect(() => {
+    if (
+      continueApplicationHandledRef.current
+      || !shouldContinueExternalApplication
+      || detailPage.loading
+      || !viewModel
+      || !isCandidate
+      || !detailPage.canApply
+      || isDirectApplication
+      || detailPage.isApplied
+    ) {
+      return;
+    }
+
+    continueApplicationHandledRef.current = true;
+    void detailPage.handleApply();
+  }, [
+    detailPage,
+    isCandidate,
+    isDirectApplication,
+    shouldContinueExternalApplication,
+    viewModel,
+  ]);
 
   if (detailPage.loading) {
     return <OpportunityDetailSkeleton />;
@@ -70,10 +100,21 @@ const OpportunityDetailPage = () => {
     );
   }
 
-  const { viewModel } = detailPage;
   const visibleAdditionalInfoItems = viewModel.additionalInfoItems.filter((item) => (
     VISIBLE_ADDITIONAL_INFO_LABELS.has(item.label)
   ));
+  const handlePrimaryAction = async () => {
+    if (isDirectApplication) {
+      setApplicationOpen(true);
+      return;
+    }
+    await detailPage.handleApply();
+  };
+  const handleApplicationSubmitted = () => {
+    detailPage.markApplied();
+    setApplicationOpen(false);
+    toast.success('Application submitted successfully.');
+  };
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-32">
@@ -108,14 +149,6 @@ const OpportunityDetailPage = () => {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">
-            {viewModel.recommendation ? (
-              <RecommendationInsightPanel recommendation={viewModel.recommendation} context="detail" />
-            ) : detailPage.recommendationLoading && isUserAuthenticated ? (
-              <RecommendationInsightSkeleton />
-            ) : !detailPage.recommendationLoading && isUserAuthenticated && !userHasResume ? (
-              <ResumeFitCtaCard />
-            ) : null}
-
             <OpportunityDescriptionSection
               descriptionMarkup={viewModel.descriptionMarkup}
               isLongDescription={viewModel.isLongDescription}
@@ -179,10 +212,13 @@ const OpportunityDetailPage = () => {
               snapshotProps={viewModel.snapshotProps}
               isUserAuthenticated={isUserAuthenticated}
               isSaved={detailPage.isSaved}
-              canApply={detailPage.canApply}
+              canApply={detailPage.canApply && isCandidate}
               primaryActionLabel={viewModel.primaryActionLabel}
-              onApply={detailPage.handleApply}
+              onApply={handlePrimaryAction}
               onSave={detailPage.handleSave}
+              isApplied={detailPage.isApplied}
+              isDirectApplication={isDirectApplication}
+              isApplyingExternally={detailPage.isApplyingExternally}
             />
           </aside>
         </div>
@@ -197,10 +233,38 @@ const OpportunityDetailPage = () => {
       <OpportunityActionBar
         isUserAuthenticated={isUserAuthenticated}
         isSaved={detailPage.isSaved}
-        canApply={detailPage.canApply}
+        canApply={detailPage.canApply && isCandidate}
         primaryActionLabel={viewModel.primaryActionLabel}
-        onApply={detailPage.handleApply}
+        onApply={handlePrimaryAction}
         onSave={detailPage.handleSave}
+        isApplied={detailPage.isApplied}
+        isDirectApplication={isDirectApplication}
+        isApplyingExternally={detailPage.isApplyingExternally}
+      />
+
+      {isDirectApplication ? (
+        <OpportunityApplicationDialog
+          open={applicationOpen}
+          onOpenChange={setApplicationOpen}
+          opportunity={viewModel}
+          organizationLabel={viewModel.organizationLabel}
+          user={user}
+          onUserRefresh={refreshUser}
+          onSubmitted={handleApplicationSubmitted}
+        />
+      ) : null}
+
+      <ExternalApplicationFollowUpDialog
+        open={detailPage.externalPromptOpen}
+        onOpenChange={detailPage.closeExternalPrompt}
+        opportunityTitle={detailPage.pendingExternalApplication?.title || viewModel.title}
+        organizationLabel={detailPage.pendingExternalApplication?.organizationLabel || viewModel.organizationLabel}
+        sourceUrl={detailPage.pendingExternalApplication?.sourceUrl || viewModel.sourceUrl}
+        isBusy={detailPage.externalPromptBusy}
+        error={detailPage.externalPromptError}
+        onConfirmApplied={detailPage.handleExternalApplicationConfirmed}
+        onNotYet={detailPage.handleExternalApplicationNotYet}
+        onRemindLater={detailPage.handleExternalApplicationRemindLater}
       />
     </div>
   );

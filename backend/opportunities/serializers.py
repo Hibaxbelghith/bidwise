@@ -42,6 +42,8 @@ class OpportuniteSerializer(serializers.ModelSerializer):
     source = SourceOpportuniteSerializer(read_only=True)
     last_updated_at = serializers.DateTimeField(source="date_modification", read_only=True)
     is_new = serializers.SerializerMethodField(read_only=True)
+    accepts_direct_applications = serializers.SerializerMethodField(read_only=True)
+    my_application = serializers.SerializerMethodField(read_only=True)
     source_id = serializers.PrimaryKeyRelatedField(
         queryset=SourceOpportunite.objects.all(), source='source', write_only=True
     )
@@ -81,6 +83,8 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             "date_modification",
             "last_updated_at",
             "is_new",
+            "accepts_direct_applications",
+            "my_application",
         ]
         read_only_fields = [
             "id",
@@ -164,6 +168,30 @@ class OpportuniteSerializer(serializers.ModelSerializer):
             return False
         return created_at >= timezone.now() - timedelta(hours=24)
 
+    def get_accepts_direct_applications(self, obj):
+        return bool(
+            getattr(obj, "statut", "") == StatutOpportunite.ACTIVE
+            and getattr(obj, "type_opportunite", "") != TypeOpportunite.PROJET
+            and getattr(obj, "organisation_id", None)
+            and getattr(getattr(obj, "source", None), "nom", "") == "BidWise Organizations"
+        )
+
+    def get_my_application(self, obj):
+        request = self.context.get("request")
+        view = self.context.get("view")
+        user = getattr(request, "user", None)
+        if (
+            getattr(view, "action", None) != "retrieve"
+            or not getattr(user, "is_authenticated", False)
+            or getattr(user, "account_type", "") != "candidate"
+        ):
+            return None
+
+        application = obj.candidatures.filter(candidat=user).only("id", "statut").first()
+        if application is None:
+            return None
+        return {"id": application.pk, "status": application.statut}
+
     def to_internal_value(self, data):
         # Keep API backward-compatible: ignore legacy owner payload key.
         if isinstance(data, dict):
@@ -234,6 +262,7 @@ class OrganizationOpportunitySerializer(serializers.ModelSerializer):
     deadline = serializers.DateField(source="date_limite", read_only=True)
     updated_at = serializers.DateTimeField(source="date_modification", read_only=True)
     applications_count = serializers.IntegerField(read_only=True)
+    new_applications_count = serializers.IntegerField(read_only=True)
     description = serializers.CharField(read_only=True)
     internship_details = serializers.SerializerMethodField(read_only=True)
     seasonal_details = serializers.SerializerMethodField(read_only=True)
@@ -259,6 +288,7 @@ class OrganizationOpportunitySerializer(serializers.ModelSerializer):
             "published_at",
             "deadline",
             "applications_count",
+            "new_applications_count",
             "updated_at",
             "description",
             "internship_details",

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, parser_classes, permission_classes, throttle_classes
@@ -112,6 +112,7 @@ ORGANIZATION_OPPORTUNITY_IMMUTABLE_FIELDS = {
     "published_at",
     "date_publication",
     "applications_count",
+    "new_applications_count",
 }
 
 
@@ -345,7 +346,13 @@ def organization_opportunities_view(request):
         opportunity = (
             Opportunite.objects
             .filter(pk=opportunity.pk)
-            .annotate(applications_count=Count("candidatures"))
+            .annotate(
+                applications_count=Count("candidatures"),
+                new_applications_count=Count(
+                    "candidatures",
+                    filter=Q(candidatures__statut="SUBMITTED"),
+                ),
+            )
             .get()
         )
         return Response(
@@ -356,7 +363,13 @@ def organization_opportunities_view(request):
     opportunities = (
         Opportunite.objects
         .filter(organisation=request.user)
-        .annotate(applications_count=Count("candidatures"))
+        .annotate(
+            applications_count=Count("candidatures"),
+            new_applications_count=Count(
+                "candidatures",
+                filter=Q(candidatures__statut="SUBMITTED"),
+            ),
+        )
         .order_by("-date_creation", "-id")
     )
     serializer = OrganizationOpportunitySerializer(opportunities, many=True)
@@ -374,7 +387,13 @@ def organization_opportunity_detail_view(request, pk):
         opportunity = (
             Opportunite.objects
             .filter(pk=pk, organisation=request.user)
-            .annotate(applications_count=Count("candidatures"))
+            .annotate(
+                applications_count=Count("candidatures"),
+                new_applications_count=Count(
+                    "candidatures",
+                    filter=Q(candidatures__statut="SUBMITTED"),
+                ),
+            )
             .first()
         )
         if opportunity is None:
@@ -453,7 +472,13 @@ def organization_opportunity_detail_view(request, pk):
                 "opportunity": OrganizationOpportunitySerializer(
                     Opportunite.objects
                     .filter(pk=opportunity.pk)
-                    .annotate(applications_count=Count("candidatures"))
+                    .annotate(
+                        applications_count=Count("candidatures"),
+                        new_applications_count=Count(
+                            "candidatures",
+                            filter=Q(candidatures__statut="SUBMITTED"),
+                        ),
+                    )
                     .get()
                 ).data,
             },
@@ -559,7 +584,13 @@ def organization_opportunity_detail_view(request, pk):
     opportunity = (
         Opportunite.objects
         .filter(pk=opportunity.pk)
-        .annotate(applications_count=Count("candidatures"))
+        .annotate(
+            applications_count=Count("candidatures"),
+            new_applications_count=Count(
+                "candidatures",
+                filter=Q(candidatures__statut="SUBMITTED"),
+            ),
+        )
         .get()
     )
     return Response(
@@ -636,6 +667,9 @@ def organization_opportunity_status_action_view(request, pk, action):
 
         before_status = opportunity.statut
         opportunity.applications_count = opportunity.candidatures.count()
+        opportunity.new_applications_count = opportunity.candidatures.filter(
+            statut="SUBMITTED",
+        ).count()
         target_status = action_config["target"]
         extra_data = dict(opportunity.extra_data) if isinstance(opportunity.extra_data, dict) else {}
         organization_status = extra_data.get("organization_status")

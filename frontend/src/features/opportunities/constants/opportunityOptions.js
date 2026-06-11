@@ -12,7 +12,6 @@ export const STATUS_OPTIONS = [
   { value: 'SUSPENDUE', label: 'Suspended' },
   { value: 'FERMEE', label: 'Closed' },
   { value: 'EXPIREE', label: 'Expired' },
-  { value: 'ARCHIVEE', label: 'Archived' },
 ];
 
 const buildLabelMap = (items) =>

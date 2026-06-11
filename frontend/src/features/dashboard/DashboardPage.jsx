@@ -1,69 +1,76 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
-import PipelineMetrics from '../../components/PipelineMetrics.jsx';
 import { Briefcase, Clock, Bookmark, Building2, MapPin, DollarSign, Calendar, TrendingUp } from 'lucide-react';
+import ApplicationsList from './components/ApplicationsList.jsx';
+import useMyApplications from './hooks/useMyApplications.js';
+import { getOpportunityById } from '../opportunities/services/opportunitiesService.js';
+import { buildOpportunityBrowseCardViewModel } from '../opportunities/viewModels/opportunityList.vm.js';
+import {
+	getSavedOpportunityIds,
+	listenSavedOpportunityChanges,
+	removeSavedOpportunity,
+} from '../opportunities/utils/savedOpportunityStorage.js';
+
+const normalizeSavedOpportunity = (opportunity) => ({
+	id: opportunity.id,
+	viewModel: buildOpportunityBrowseCardViewModel(opportunity, true),
+});
 
 const Dashboard = () => {
-	// Mock data - replace with backend fetch
-	const savedOpportunities = [
-		{
-			id: '2',
-			title: 'AI Research Grant',
-			organization: 'National Science Foundation',
-			type: 'Funding',
-			location: 'Nationwide',
-			salary: '$500k - $2M',
-			deadline: 'Apr 30, 2026',
-			status: 'Active',
-			tags: ['AI/ML', 'Research', 'Healthcare'],
-		},
-		{
-			id: '5',
-			title: 'UX Designer',
-			organization: 'DesignHub',
-			type: 'Job Offer',
-			location: 'New York, NY',
-			salary: '$90k - $120k',
-			deadline: 'Mar 20, 2026',
-			status: 'Active',
-			tags: ['UI/UX', 'Figma', 'Design Systems'],
-		},
-		{
-			id: '8',
-			title: 'Open Source Development',
-			organization: 'Mozilla Foundation',
-			type: 'Project',
-			location: 'Remote',
-			salary: '$60k - $80k',
-			deadline: 'Mar 28, 2026',
-			status: 'Active',
-			tags: ['JavaScript', 'Open Source'],
-		},
-	];
+	const { applications, isLoading, error, withdraw } = useMyApplications();
+	const [savedOpportunities, setSavedOpportunities] = useState([]);
+	const [savedLoading, setSavedLoading] = useState(true);
+	const [savedError, setSavedError] = useState('');
 
-	const appliedOpportunities = [
-		{
-			id: '1',
-			title: 'Senior Software Engineer',
-			organization: 'TechCorp Inc.',
-			type: 'Job Offer',
-			appliedDate: 'Feb 5, 2026',
-			status: 'Under Review',
-			lastUpdate: '2 days ago',
-		},
-		{
-			id: '7',
-			title: 'Data Science Research',
-			organization: 'Stanford University',
-			type: 'Research',
-			appliedDate: 'Jan 28, 2026',
-			status: 'Interview Scheduled',
-			lastUpdate: '5 days ago',
-		},
-	];
+	const loadSavedOpportunities = useCallback(async () => {
+		const savedIds = getSavedOpportunityIds();
+
+		if (savedIds.length === 0) {
+			setSavedOpportunities([]);
+			setSavedLoading(false);
+			setSavedError('');
+			return;
+		}
+
+		try {
+			setSavedLoading(true);
+			setSavedError('');
+
+			const results = await Promise.allSettled(
+				savedIds.map((id) => getOpportunityById(id)),
+			);
+
+			const opportunities = results
+				.filter((result) => result.status === 'fulfilled' && result.value?.id)
+				.map((result) => normalizeSavedOpportunity(result.value));
+
+			setSavedOpportunities(opportunities);
+		} catch {
+			setSavedError('Unable to load saved opportunities.');
+			setSavedOpportunities([]);
+		} finally {
+			setSavedLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		loadSavedOpportunities();
+		return listenSavedOpportunityChanges(loadSavedOpportunities);
+	}, [loadSavedOpportunities]);
+
+	const savedCount = savedOpportunities.length;
+	const appliedCount = useMemo(() => applications.length, [applications.length]);
+
+	const handleRemoveSaved = (opportunityId) => {
+		removeSavedOpportunity(opportunityId);
+		setSavedOpportunities((current) =>
+			current.filter((opportunity) => String(opportunity.id) !== String(opportunityId)),
+		);
+	};
 
 	return (
 		<section className="bg-neutral-50" aria-labelledby="dashboard-heading">
@@ -82,7 +89,7 @@ const Dashboard = () => {
 						</CardHeader>
 						<CardContent>
 							<div className="flex items-center justify-between">
-								<p className="text-3xl font-bold text-neutral-900">{savedOpportunities.length}</p>
+								<p className="text-3xl font-bold text-neutral-900">{savedCount}</p>
 								<Bookmark className="w-8 h-8 text-blue-600" aria-hidden="true" />
 							</div>
 						</CardContent>
@@ -94,23 +101,12 @@ const Dashboard = () => {
 						</CardHeader>
 						<CardContent>
 							<div className="flex items-center justify-between">
-								<p className="text-3xl font-bold text-neutral-900">{appliedOpportunities.length}</p>
+								<p className="text-3xl font-bold text-neutral-900">{appliedCount}</p>
 								<Briefcase className="w-8 h-8 text-blue-600" aria-hidden="true" />
 							</div>
 						</CardContent>
 					</Card>
 
-					<Card>
-						<CardHeader className="pb-3">
-							<CardTitle className="text-sm font-medium text-neutral-600">Interviews</CardTitle>
-						</CardHeader>
-						<CardContent>
-							<div className="flex items-center justify-between">
-								<p className="text-3xl font-bold text-neutral-900">1</p>
-								<Calendar className="w-8 h-8 text-blue-600" aria-hidden="true" />
-							</div>
-						</CardContent>
-					</Card>
 
 					<Card>
 						<CardHeader className="pb-3">
@@ -137,7 +133,22 @@ const Dashboard = () => {
 
 					{/* Saved Opportunities */}
 					<TabsContent value="saved" className="space-y-4">
-						{savedOpportunities.length === 0 ? (
+						{savedLoading ? (
+							<Card>
+								<CardContent className="py-12 text-center">
+									<p className="text-neutral-600">Loading saved opportunities...</p>
+								</CardContent>
+							</Card>
+						) : savedError ? (
+							<Card>
+								<CardContent className="py-12 text-center">
+									<p className="text-red-600 mb-4">{savedError}</p>
+									<Button type="button" variant="outline" onClick={loadSavedOpportunities}>
+										Try again
+									</Button>
+								</CardContent>
+							</Card>
+						) : savedOpportunities.length === 0 ? (
 							<Card>
 								<CardContent className="py-12 text-center">
 									<Bookmark className="w-12 h-12 text-neutral-300 mx-auto mb-4" aria-hidden="true" />
@@ -158,43 +169,57 @@ const Dashboard = () => {
 														to={`/opportunities/${opportunity.id}`}
 														className="text-xl font-semibold text-neutral-900 hover:text-blue-600"
 													>
-														{opportunity.title}
+														{opportunity.viewModel.title}
 													</Link>
-													<Badge>{opportunity.type}</Badge>
-													<Badge variant="outline" className="text-green-600 border-green-600">
-														{opportunity.status}
+													<Badge>{opportunity.viewModel.typeLabel}</Badge>
+													<Badge>
+														{opportunity.viewModel.statusLabel}
 													</Badge>
 												</div>
 												<div className="flex items-center gap-4 text-sm text-neutral-600 mb-3">
-													<span className="flex items-center gap-1">
-														<Building2 className="w-4 h-4" />
-														{opportunity.organization}
-													</span>
-													<span className="flex items-center gap-1">
-														<MapPin className="w-4 h-4" />
-														{opportunity.location}
-													</span>
-													<span className="flex items-center gap-1">
-														<DollarSign className="w-4 h-4" />
-														{opportunity.salary}
-													</span>
+													{opportunity.viewModel.organizationLabel ? (
+														<span className="flex items-center gap-1">
+															<Building2 className="w-4 h-4" />
+															{opportunity.viewModel.organizationLabel}
+														</span>
+													) : null}
+													{opportunity.viewModel.locationLabel ? (
+														<span className="flex items-center gap-1">
+															<MapPin className="w-4 h-4" />
+															{opportunity.viewModel.locationLabel}
+														</span>
+													) : null}
+													{opportunity.viewModel.salaryLabel ? (
+														<span className="flex items-center gap-1">
+															<DollarSign className="w-4 h-4" />
+															{opportunity.viewModel.salaryLabel}
+														</span>
+													) : null}
 												</div>
 												<div className="flex flex-wrap gap-2 mb-3">
-													{opportunity.tags.map((tag) => (
+													{opportunity.viewModel.skillsPreview.map((tag) => (
 														<Badge key={tag} variant="secondary">
 															{tag}
 														</Badge>
 													))}
 												</div>
-												<p className="text-sm text-neutral-500">
-													Deadline: {opportunity.deadline}
-												</p>
+												{opportunity.viewModel.deadlineDateLabel ? (
+													<p className="text-sm text-neutral-500">
+														Deadline: {opportunity.viewModel.deadlineDateLabel}
+													</p>
+												) : null}
 											</div>
 											<div className="flex gap-2">
 												<Button asChild>
 													<Link to={`/opportunities/${opportunity.id}`}>View</Link>
 												</Button>
-												<Button variant="outline">Remove</Button>
+												<Button
+													type="button"
+													variant="outline"
+													onClick={() => handleRemoveSaved(opportunity.id)}
+												>
+													Remove
+												</Button>
 											</div>
 										</div>
 									</CardContent>
@@ -205,61 +230,12 @@ const Dashboard = () => {
 
 					{/* Applied Opportunities */}
 					<TabsContent value="applied" className="space-y-4">
-						{appliedOpportunities.length === 0 ? (
-							<Card>
-								<CardContent className="py-12 text-center">
-									<Briefcase className="w-12 h-12 text-neutral-300 mx-auto mb-4" aria-hidden="true" />
-									<p className="text-neutral-600 mb-4">No applications yet</p>
-									<Button asChild>
-										<Link to="/opportunities">Start Applying</Link>
-									</Button>
-								</CardContent>
-							</Card>
-						) : (
-							appliedOpportunities.map((opportunity) => (
-								<Card key={opportunity.id} className="hover:border-blue-300 transition-colors">
-									<CardContent className="p-6">
-										<div className="flex items-start justify-between gap-4">
-											<div className="flex-1">
-												<div className="flex items-center gap-3 mb-2">
-													<Link
-														to={`/opportunities/${opportunity.id}`}
-														className="text-xl font-semibold text-neutral-900 hover:text-blue-600"
-													>
-														{opportunity.title}
-													</Link>
-													<Badge>{opportunity.type}</Badge>
-													<Badge
-														variant="outline"
-														className={
-															opportunity.status === 'Interview Scheduled'
-																? 'text-green-600 border-green-600'
-																: 'text-blue-600 border-blue-600'
-														}
-													>
-														{opportunity.status}
-													</Badge>
-												</div>
-												<p className="text-neutral-600 mb-3">{opportunity.organization}</p>
-												<div className="flex items-center gap-4 text-sm text-neutral-500">
-													<span>Applied: {opportunity.appliedDate}</span>
-													<span className="flex items-center gap-1">
-														<Clock className="w-4 h-4" aria-hidden="true" />
-														Updated {opportunity.lastUpdate}
-													</span>
-												</div>
-											</div>
-											<div className="flex gap-2">
-												<Button asChild>
-													<Link to={`/opportunities/${opportunity.id}`}>View Details</Link>
-												</Button>
-												<Button variant="outline">Withdraw</Button>
-											</div>
-										</div>
-									</CardContent>
-								</Card>
-							))
-						)}
+						<ApplicationsList
+							applications={applications}
+							isLoading={isLoading}
+							error={error}
+							onWithdraw={withdraw}
+						/>
 					</TabsContent>
 				</Tabs>
 			</div>

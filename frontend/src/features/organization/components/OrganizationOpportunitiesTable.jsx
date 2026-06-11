@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { FileUser, Users } from 'lucide-react';
 
 import { Badge } from '../../../components/ui/badge.jsx';
 import {
@@ -39,11 +41,11 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
       <Table className="table-fixed" containerClassName="overflow-visible">
         <TableHeader>
           <TableRow className="bg-neutral-50">
-            <TableHead className="w-[42%] px-4">Opportunity</TableHead>
+            <TableHead className="w-[36%] px-4">Opportunity</TableHead>
             <TableHead className="hidden w-[15%] md:table-cell">Type</TableHead>
             <TableHead className="w-[190px]">Status</TableHead>
             <TableHead className="hidden w-[15%] lg:table-cell">Published</TableHead>
-            <TableHead className="hidden w-[110px] text-right sm:table-cell">Applications</TableHead>
+            <TableHead className="hidden w-[190px] sm:table-cell">Applications</TableHead>
             <TableHead className="w-14 text-right">
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -75,8 +77,33 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
               <TableCell className="hidden text-neutral-600 lg:table-cell">
                 {formatOrganizationOpportunityDate(opportunity.published_at)}
               </TableCell>
-              <TableCell className="hidden text-right font-medium sm:table-cell">
-                {opportunity.applications_count || 0}
+              <TableCell className="hidden sm:table-cell">
+                <div className="grid grid-cols-2 gap-3" aria-label="Application counts">
+                  <Link
+                    to={`/organization/applications?filter=all`}
+                    className="min-w-0 block hover:opacity-75 transition-opacity"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Users className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
+                      <span className="font-semibold text-blue-700">
+                        {Number(opportunity.applications_count || 0)} total
+                      </span>
+                    </div>
+                  </Link>
+                  {Number(opportunity.new_applications_count || 0) > 0 && (
+                    <Link
+                      to={`/organization/applications?filter=new`}
+                      className="min-w-0 block hover:opacity-75 transition-opacity"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <FileUser className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
+                        <span className="font-semibold text-blue-700">
+                          {Number(opportunity.new_applications_count || 0)} new
+                        </span>
+                      </div>
+                    </Link>
+                  )}
+                </div>
               </TableCell>
               <TableCell className="text-right">
                 <OrganizationOpportunityActionsMenu

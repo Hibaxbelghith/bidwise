@@ -358,3 +358,40 @@ DEFAULT_FROM_EMAIL=BidWise <verified-sender@example.com>
 BIDWISE_FRONTEND_URL=http://localhost:5173
 BIDWISE_SUPPORT_EMAIL=support@example.com
 ```
+
+## Direct Candidate Applications
+
+Active organization jobs, internships, and seasonal opportunities accept
+applications directly on BidWise. Calls for tender keep their dedicated
+procurement workflow.
+
+### Upload an optional cover letter
+
+`POST /api/applications/cover-letter-upload/`
+
+- Candidate account required
+- Multipart field: `file`
+- Accepted formats: PDF and DOCX
+- Maximum size: `5 MB`
+- Stored through the profile document storage abstraction
+
+### Submit an application
+
+`POST /api/opportunities/{id}/apply/`
+
+```json
+{
+  "cv_id": 42,
+  "cover_letter_url": "https://res.cloudinary.com/.../cover-letter.pdf",
+  "contact_email": "candidate@example.com",
+  "contact_phone": "+21612345678"
+}
+```
+
+The backend verifies resume and cover-letter ownership, opportunity status,
+opportunity type, organization source, and duplicate applications. The initial
+application status is `SUBMITTED`.
+
+Opportunity detail responses expose `accepts_direct_applications` and
+`my_application`, allowing the frontend to preserve the `Applied` state after
+a page refresh.

@@ -440,6 +440,8 @@ CELERY_TASK_ROUTES = {
     # source collection jobs on the default queue.
     "opportunities.send_organization_admin_decision_email": {"queue": "notifications"},
     "opportunities.send_organization_automatic_approval_email": {"queue": "notifications"},
+    "applications.notify_organization_new_application": {"queue": "notifications"},
+    "applications.notify_candidate_application_submitted": {"queue": "notifications"},
 }
 PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS = int(
     os.getenv("PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS", "150")

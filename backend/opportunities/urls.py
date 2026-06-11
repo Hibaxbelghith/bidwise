@@ -1,5 +1,14 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
+from applications.views import (
+	accept_organization_opportunity_application,
+	delete_organization_opportunity_application,
+	get_organization_candidate_application_profile,
+	list_organization_opportunity_applications,
+	reject_organization_opportunity_application,
+	list_organization_applications,
+)
+
 from .views import (
     OpportuniteViewSet,
     SourceOpportuniteViewSet,
@@ -31,17 +40,50 @@ router.register(r'admin/audit-logs', AdminAuditLogViewSet, basename='admin-audit
 
 
 urlpatterns = [
-	path('admin/login/', AdminLoginView.as_view(), name='admin_login'),
-	path('admin/test/', AdminTestView.as_view(), name='admin_test'),
-	path('admin/dashboard/', AdminDashboardView.as_view(), name='admin_dashboard'),
-	path('admin/organization-opportunities/pending/', AdminPendingOrganizationOpportunitiesView.as_view(), name='admin_organization_opportunities_pending'),
-	path('admin/organization-opportunities/<int:pk>/approve/', AdminOrganizationOpportunityDecisionView.as_view(), {"decision": "approve"}, name='admin_organization_opportunity_approve'),
-	path('admin/organization-opportunities/<int:pk>/reject/', AdminOrganizationOpportunityDecisionView.as_view(), {"decision": "reject"}, name='admin_organization_opportunity_reject'),
-	path('admin/scheduler-state/', AdminSchedulerStateView.as_view(), name='admin_scheduler_state'),
-	path('metrics/pipeline/', pipeline_metrics_view, name='pipeline_metrics'),
-	path('organization/opportunities/', organization_opportunities_view, name='organization_opportunities'),
-	path('organization/opportunities/<int:pk>/', organization_opportunity_detail_view, name='organization_opportunity_detail'),
-	path('organization/opportunities/<int:pk>/<str:action>/', organization_opportunity_status_action_view, name='organization_opportunity_status_action'),
-	path('organization/opportunities/tender-documents/', organization_tender_document_upload_view, name='organization_tender_document_upload'),
+    # Admin
+    path('admin/login/', AdminLoginView.as_view(), name='admin_login'),
+    path('admin/test/', AdminTestView.as_view(), name='admin_test'),
+    path('admin/dashboard/', AdminDashboardView.as_view(), name='admin_dashboard'),
+    path('admin/organization-opportunities/pending/', AdminPendingOrganizationOpportunitiesView.as_view(), name='admin_organization_opportunities_pending'),
+    path('admin/organization-opportunities/<int:pk>/approve/', AdminOrganizationOpportunityDecisionView.as_view(), {"decision": "approve"}, name='admin_organization_opportunity_approve'),
+    path('admin/organization-opportunities/<int:pk>/reject/', AdminOrganizationOpportunityDecisionView.as_view(), {"decision": "reject"}, name='admin_organization_opportunity_reject'),
+    path('admin/scheduler-state/', AdminSchedulerStateView.as_view(), name='admin_scheduler_state'),
+    path('metrics/pipeline/', pipeline_metrics_view, name='pipeline_metrics'),
+
+    # Organization
+    path('organization/opportunities/', organization_opportunities_view, name='organization_opportunities'),
+    path('organization/opportunities/tender-documents/', organization_tender_document_upload_view, name='organization_tender_document_upload'),
+    path('organization/applications/', list_organization_applications, name='list_organization_applications'),
+    path(
+        'organization/applications/<int:application_id>/candidate-profile/',
+        get_organization_candidate_application_profile,
+        name='organization_candidate_application_profile',
+    ),
+
+  
+    path(
+        'organization/opportunities/<int:opportunity_id>/applications/',
+        list_organization_opportunity_applications,
+        name='list_organization_opportunity_applications',
+    ),
+	path(
+		'organization/opportunities/<int:opportunity_id>/applications/<int:application_id>/reject/',
+		reject_organization_opportunity_application,
+		name='reject_organization_opportunity_application',
+	),
+	path(
+		'organization/opportunities/<int:opportunity_id>/applications/<int:application_id>/accept/',
+		accept_organization_opportunity_application,
+		name='accept_organization_opportunity_application',
+	),
+	path(
+		'organization/opportunities/<int:opportunity_id>/applications/<int:application_id>/',
+		delete_organization_opportunity_application,
+		name='delete_organization_opportunity_application',
+	),
+
+   
+    path('organization/opportunities/<int:pk>/', organization_opportunity_detail_view, name='organization_opportunity_detail'),
+    path('organization/opportunities/<int:pk>/<str:action>/', organization_opportunity_status_action_view, name='organization_opportunity_status_action'),
 ]
 urlpatterns += router.urls

@@ -28,6 +28,10 @@ import OrganizationOpportunityDetailPage from './features/organization/pages/Org
 import OrganizationOpportunitySubmittedPage from './features/organization/pages/OrganizationOpportunitySubmittedPage.jsx';
 import OrganizationSeasonalPostPage from './features/organization/pages/OrganizationSeasonalPostPage.jsx';
 import OrganizationTenderPostPage from './features/organization/pages/OrganizationTenderPostPage.jsx';
+import OpportunitiesStatisticsPage from './features/organization/pages/OpportunitiesStatisticsPage.jsx';
+import OrganizationOpportunityApplicationsPage from './features/organization/pages/OrganizationOpportunityApplicationsPage.jsx';
+import OrganizationAllApplicationsPage from './features/organization/pages/OrganizationAllApplicationsPage.jsx';
+import OrganizationCandidateApplicationPage from './features/organization/pages/OrganizationCandidateApplicationPage.jsx';
 
 import './App.css';
 
@@ -49,7 +53,11 @@ const App = () => (
         </Route>
         <Route element={<OrganizationRoute requireOrganizationAccount />}>
           <Route path="/organization/dashboard" element={<OrganizationDashboardPage />} />
+          <Route path="/organization/applications" element={<OrganizationAllApplicationsPage />} />
+          <Route path="/organization/applications/:applicationId" element={<OrganizationCandidateApplicationPage />} />
+          <Route path="/organization/statistics" element={<OpportunitiesStatisticsPage />} />
           <Route path="/organization/opportunities/:opportunityId" element={<OrganizationOpportunityDetailPage />} />
+          <Route path="/organization/opportunities/:opportunityId/applications" element={<OrganizationOpportunityApplicationsPage />} />
           <Route path="/organization/post" element={<OrganizationOpportunityPostPage />} />
           <Route path="/organization/post/job" element={<OrganizationJobPostPage />} />
           <Route path="/organization/post/job/:opportunityId/edit" element={<OrganizationJobPostPage />} />

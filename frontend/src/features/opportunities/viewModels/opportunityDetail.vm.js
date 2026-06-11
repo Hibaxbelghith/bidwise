@@ -77,6 +77,8 @@ export const buildOpportunityDetailViewModel = (opportunity) => {
     organizationLabel: formatOrganizationLabel(opportunity),
     sourceName: String(opportunity.source?.nom || '').trim(),
     sourceUrl: String(opportunity.source_item_url || '').trim(),
+    acceptsDirectApplications: Boolean(opportunity.accepts_direct_applications),
+    myApplication: opportunity.my_application || null,
     publishedDateLabel: formatDate(opportunity.date_publication),
     deadlineDateLabel: opportunity.date_limite ? formatDate(opportunity.date_limite) : '',
     descriptionMarkup: buildDescriptionMarkup(opportunity),
