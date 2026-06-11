@@ -47,6 +47,14 @@ const failureReasons = new Set([
 
 const staleReasons = new Set(['STALE', 'RUNNING_STALE']);
 const runningReasons = new Set(['RUNNING', 'RUNNING_STALE']);
+const summaryIssueReasons = new Set([
+  'FAILURE',
+  'ADAPTIVE_FAILURE_BACKOFF',
+  'ADAPTIVE_HARD_FAILURE_COOLDOWN',
+  'ADAPTIVE_RECENT_FAILURES',
+  'RETRY_AFTER_FAILURE',
+  'RUNNING_STALE',
+]);
 
 const reasonTooltips = {
   ADAPTIVE_HIGH_CREATED_VOLUME: 'Created EMA is above the high-volume threshold, so this source is pulled forward.',
@@ -180,8 +188,15 @@ export const formatRelativeTime = (value) => {
   const absSeconds = Math.abs(diffSeconds);
   if (absSeconds < 30) return 'due now';
 
+  const futureFormat = (amount, unit) => `in ${amount} ${unit}`;
+  const pastFormat = (amount, unit) => {
+    if (amount <= 1) {
+      return 'due now';
+    }
+    return `overdue by ${amount} ${unit}`;
+  };
   const format = (amount, unit) => (
-    diffSeconds > 0 ? `in ${amount} ${unit}` : `${amount} ${unit} ago`
+    diffSeconds > 0 ? futureFormat(amount, unit) : pastFormat(amount, unit)
   );
 
   const minutes = Math.round(absSeconds / 60);
@@ -250,6 +265,10 @@ export const getDecisionModeMeta = (decision) => {
   const reason = normalizeReason(decision?.reason);
   const latestRunStatus = normalizeReason(decision?.latest_run_status);
 
+  if (reason === 'NO_DATA') {
+    return { label: 'NO DATA', tone: 'neutral' };
+  }
+
   if (runningReasons.has(reason) || latestRunStatus === 'RUNNING') {
     return { label: 'RUNNING', tone: 'blue' };
   }
@@ -273,6 +292,15 @@ export const getDecisionBadges = (decision) => {
   const reason = normalizeReason(decision?.reason);
   const metrics = normalizeMetrics(decision?.metrics);
   const badges = [];
+
+  if (reason === 'NO_DATA') {
+    return [{
+      type: 'NO_DATA',
+      label: 'NO_DATA',
+      tone: 'neutral',
+      tooltip: 'No scheduler history is available yet for this source.',
+    }];
+  }
 
   if (highVolumeReasons.has(reason) || (metrics.score != null && metrics.score >= 0.8)) {
     badges.push({
@@ -326,6 +354,15 @@ export const getTrendMeta = (decision) => {
   const reason = normalizeReason(decision?.reason);
   const metrics = normalizeMetrics(decision?.metrics);
   const trend = metrics.trend;
+
+  if (reason === 'NO_DATA') {
+    return {
+      direction: 'flat',
+      label: 'No activity history yet',
+      tone: 'neutral',
+      strength: 0,
+    };
+  }
 
   if (trend.length >= 2) {
     const first = trend[0];
@@ -389,7 +426,8 @@ export const getTrendMeta = (decision) => {
 export const getSchedulerSummary = (decisions) => {
   const normalizedDecisions = Array.isArray(decisions) ? decisions : [];
   const nextRunTimestamps = normalizedDecisions
-    .map((decision) => new Date(decision?.next_run_at).getTime())
+    .filter((decision) => decision?.next_run_at)
+    .map((decision) => new Date(decision.next_run_at).getTime())
     .filter((timestamp) => Number.isFinite(timestamp));
 
   return {
@@ -397,9 +435,16 @@ export const getSchedulerSummary = (decisions) => {
     highPriorityCount: normalizedDecisions.filter(
       (decision) => getScoreMeta(decision?.metrics).label === 'HIGH PRIORITY'
     ).length,
-    attentionCount: normalizedDecisions.filter((decision) => (
-      getDecisionBadges(decision).some((badge) => ['COOLDOWN', 'FAILURE', 'STALE'].includes(badge.type))
-    )).length,
+    attentionCount: normalizedDecisions.filter((decision) => {
+      const reason = normalizeReason(decision?.reason);
+      const latestRunStatus = normalizeReason(decision?.latest_run_status);
+
+      return (
+        summaryIssueReasons.has(reason)
+        || latestRunStatus === 'FAILED'
+        || normalizeMetrics(decision?.metrics).failure_rate >= 0.25
+      );
+    }).length,
     nextRunAt: nextRunTimestamps.length ? new Date(Math.min(...nextRunTimestamps)).toISOString() : null,
   };
 };

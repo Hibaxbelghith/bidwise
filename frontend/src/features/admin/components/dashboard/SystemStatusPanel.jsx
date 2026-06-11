@@ -6,9 +6,19 @@ import { formatDateTime, formatNumber, getSystemStatus } from './dashboard.Utils
 
 const SystemStatusPanel = ({ dashboard }) => {
   const system = getSystemStatus(dashboard);
+  const pipelineStatus = dashboard?.pipeline?.status || 'healthy';
   const activeAlerts = dashboard?.monitoring?.alerts?.length || 0;
-  const workers = dashboard?.celery?.workers ?? 0;
-  const lastRun = formatDateTime(dashboard?.pipeline?.last_run);
+  const lastCompletedRun = formatDateTime(dashboard?.pipeline?.last_run);
+  const currentIssue = dashboard?.pipeline?.status_detail || 'No active issue';
+  const detailMatchesCurrentIssue = String(system.detail || '').trim() === String(currentIssue || '').trim();
+  const issueTextClass =
+    pipelineStatus === 'failed'
+      ? 'text-red-700'
+      : pipelineStatus === 'degraded'
+        ? 'text-yellow-800'
+        : pipelineStatus === 'running'
+          ? 'text-blue-700'
+          : 'text-green-700';
 
   return (
     <div className="mb-8 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
@@ -20,15 +30,19 @@ const SystemStatusPanel = ({ dashboard }) => {
           <div>
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-lg font-semibold text-neutral-900">{system.status}</h2>
-              <StatusBadge status={dashboard?.pipeline?.status || 'idle'} />
+              <StatusBadge status={pipelineStatus} />
             </div>
             <p className="mt-1 max-w-2xl text-sm text-neutral-600">{system.detail}</p>
+            {!detailMatchesCurrentIssue ? (
+              <p className={`mt-2 text-sm ${issueTextClass}`}>
+                <span className="font-medium text-neutral-700">Current issue:</span> {currentIssue}
+              </p>
+            ) : null}
           </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+        <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[360px]">
           <MetricTile label="Active alerts" value={formatNumber(activeAlerts)} tone={activeAlerts ? 'yellow' : 'green'} />
-          <MetricTile label="Workers" value={formatNumber(workers)} tone={workers > 0 ? 'green' : 'yellow'} />
-          <MetricTile label="Last run" value={lastRun} />
+          <MetricTile label="Last completed run" value={lastCompletedRun} />
         </div>
       </div>
     </div>

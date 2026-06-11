@@ -5,7 +5,6 @@ import {
   Database,
   FileCheck2,
   LineChart,
-  Server,
   TrendingUp,
   UsersRound,
 } from 'lucide-react';
@@ -13,6 +12,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../../components/ui/card.jsx';
 import SchedulerPanel from '../../scheduler/components/SchedulerPanel.jsx';
 import AlertList from '../dashboard/AlertList.jsx';
+import AISupervisionPanel from '../dashboard/AISupervisionPanel.jsx';
 import CeleryMonitoringPanel from '../dashboard/CeleryMonitoringPanel.jsx';
 import KpiCard from '../dashboard/KpiCard.jsx';
 import MetricTile from '../dashboard/MetricTile.jsx';
@@ -24,22 +24,37 @@ import SystemStatusPanel from '../dashboard/SystemStatusPanel.jsx';
 import { formatNumber, percentFormatter } from '../dashboard/dashboard.Utils.js';
 
 const statusLabels = {
-  VUE: 'Vues',
-  INTERESSEE: 'Interessees',
-  POSTULEE_EXTERNEMENT: 'Postulees',
-  ABANDONNEE: 'Abandonnees',
-  ACTIVE: 'Actives',
+  VUE: 'Viewed',
+  INTERESSEE: 'Interested',
+  POSTULEE_EXTERNEMENT: 'Applied',
+  ABANDONNEE: 'Abandoned',
+  ACTIVE: 'Active',
   PENDING_REVIEW: 'Pending review',
   REJECTED: 'Rejected',
-  EXPIREE: 'Expirees',
-  ARCHIVEE: 'Archivees',
-  EMPLOI: 'Emplois',
+  EXPIREE: 'Expired',
+  ARCHIVEE: 'Archived',
+  EMPLOI: 'Jobs',
   STAGE: 'Stages',
-  SAISONNIER: 'Saisonniers',
+  SAISONNIER: 'Seasonal jobs',
   PROJET: 'Calls for tender',
+  SUBMITTED: 'Submitted',
+  VIEWED_BY_ORGANIZATION: 'Under review',
+  SHORTLISTED: 'Shortlisted',
+  WITHDRAWN: 'Withdrawn',
+  EXTERNAL_CLICKED: 'External apply clicked',
+  EXTERNAL_APPLIED_CONFIRMED: 'Applied externally',
+  EXTERNAL_REMIND_LATER: 'Reminder saved',
 };
 
 const formatPercent = (value) => `${percentFormatter.format(Number(value || 0))}%`;
+const decimalFormatter = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 1,
+});
+const HIDDEN_ANALYTICS_SOURCES = new Set(['BidWise Recommendation Benchmark']);
+const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+});
 
 const PlatformKpiCard = ({ title, value, detail, icon: Icon, tone = 'blue' }) => {
   const tones = {
@@ -84,6 +99,15 @@ const CompactLineChart = ({ series }) => {
     );
   }
 
+  const allDates = series
+    .flatMap((item) => item.values.map((point) => point?.date))
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()));
+
+  const startLabel = allDates.length ? shortDateFormatter.format(new Date(Math.min(...allDates.map((value) => value.getTime())))) : '-';
+  const endLabel = allDates.length ? shortDateFormatter.format(new Date(Math.max(...allDates.map((value) => value.getTime())))) : '-';
+
   return (
     <div className="overflow-hidden">
       <svg
@@ -121,11 +145,19 @@ const CompactLineChart = ({ series }) => {
           );
         })}
       </svg>
+      <div className="mt-2 flex items-center justify-between text-xs text-neutral-500">
+        <span>{startLabel}</span>
+        <span>{endLabel}</span>
+      </div>
       <div className="mt-3 flex flex-wrap gap-4">
         {series.map((item) => (
           <div key={item.label} className="flex items-center gap-2 text-sm text-neutral-600">
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-            {item.label}
+            <span>{item.label}</span>
+            <span className="text-neutral-400">·</span>
+            <span className="font-medium text-neutral-800">
+              {formatNumber(item.values[item.values.length - 1]?.count || 0)}
+            </span>
           </div>
         ))}
       </div>
@@ -134,7 +166,9 @@ const CompactLineChart = ({ series }) => {
 };
 
 const DistributionList = ({ title, data }) => {
-  const entries = Object.entries(data || {}).filter(([, value]) => Number(value || 0) > 0);
+  const entries = Object.entries(data || {})
+    .filter(([, value]) => Number(value || 0) > 0)
+    .sort(([, left], [, right]) => Number(right || 0) - Number(left || 0));
   const maxValue = Math.max(...entries.map(([, value]) => Number(value || 0)), 0);
 
   return (
@@ -171,40 +205,41 @@ export const GlobalPlatformView = ({ dashboard }) => {
   const opportunities = platform.opportunities || {};
   const conversion = platform.conversion || {};
   const growth = platform.growth || {};
+  const applicationsPerUser = Number(conversion.applications_per_user || 0);
 
   const growthSeries = [
-    { label: 'Utilisateurs', color: '#2563eb', values: growth.users || [] },
-    { label: 'Candidatures', color: '#16a34a', values: growth.applications || [] },
-    { label: 'Opportunites', color: '#d97706', values: growth.opportunities || [] },
+    { label: 'Users', color: '#2563eb', values: growth.users || [] },
+    { label: 'Applications', color: '#16a34a', values: growth.applications || [] },
+    { label: 'Opportunities', color: '#d97706', values: growth.opportunities || [] },
   ];
 
   return (
     <div className="space-y-6">
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <PlatformKpiCard
-          title="Utilisateurs"
+          title="Users"
           value={formatNumber(users.total)}
-          detail={`${formatNumber(users.new_30_days)} nouveaux sur 30 jours`}
+          detail={`${formatNumber(users.new_30_days)} new in the last 30 days`}
           icon={UsersRound}
         />
         <PlatformKpiCard
-          title="Candidatures"
+          title="Applications"
           value={formatNumber(applications.total)}
-          detail={`${formatNumber(applications.last_30_days)} sur 30 jours`}
+          detail={`${formatNumber(applications.last_30_days)} in the last 30 days`}
           icon={FileCheck2}
           tone="green"
         />
         <PlatformKpiCard
-          title="Opportunites"
+          title="Opportunities"
           value={formatNumber(opportunities.total)}
-          detail={`${formatNumber(opportunities.active)} actives`}
+          detail={`${formatNumber(opportunities.active)} active`}
           icon={Database}
           tone="amber"
         />
         <PlatformKpiCard
-          title="Taux candidature"
-          value={formatPercent(conversion.application_rate)}
-          detail={`${percentFormatter.format(conversion.applications_per_user)} candidature / utilisateur`}
+          title="Applications / User"
+          value={decimalFormatter.format(applicationsPerUser)}
+          detail={`${formatNumber(applications.total)} applications across ${formatNumber(users.total)} users`}
           icon={TrendingUp}
           tone="neutral"
         />
@@ -216,8 +251,8 @@ export const GlobalPlatformView = ({ dashboard }) => {
             <div className="flex items-center gap-3">
               <LineChart className="h-5 w-5 text-blue-600" aria-hidden="true" />
               <div>
-                <CardTitle>Croissance plateforme</CardTitle>
-                <CardDescription>Evolution quotidienne des utilisateurs, candidatures et opportunites.</CardDescription>
+                <CardTitle>Platform Growth</CardTitle>
+                <CardDescription>Daily growth trends for users, applications, and opportunities.</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -228,29 +263,29 @@ export const GlobalPlatformView = ({ dashboard }) => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Utilisation recente</CardTitle>
-            <CardDescription>Fenetres glissantes pour suivre le rythme de croissance.</CardDescription>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>Rolling windows that help track current platform momentum.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
-            <MetricTile label="Utilisateurs 7j" value={formatNumber(users.new_7_days)} detail="Nouveaux comptes" />
-            <MetricTile label="Candidatures 7j" value={formatNumber(applications.last_7_days)} detail="Actions candidats" tone="green" />
-            <MetricTile label="Opportunites 7j" value={formatNumber(opportunities.created_7_days)} detail="Nouveaux contenus" />
+            <MetricTile label="Users 7d" value={formatNumber(users.new_7_days)} detail="New accounts" />
+            <MetricTile label="Applications 7d" value={formatNumber(applications.last_7_days)} detail="Candidate actions" tone="green" />
+            <MetricTile label="Opportunities 7d" value={formatNumber(opportunities.created_7_days)} detail="New opportunity records" />
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
         <DistributionList
-          title="Utilisateurs"
+          title="Users"
           data={{
-            Candidats: users.candidates,
-            Organisations: users.organizations,
+            Candidates: users.candidates,
+            Organizations: users.organizations,
             Admins: users.admins,
-            Suspendus: users.suspended,
+            Suspended: users.suspended,
           }}
         />
-        <DistributionList title="Candidatures par statut" data={applications.by_status} />
-        <DistributionList title="Opportunites par type" data={opportunities.by_type} />
+        <DistributionList title="Applications by Status" data={applications.by_status} />
+        <DistributionList title="Opportunities by Type" data={opportunities.by_type} />
       </div>
     </div>
   );
@@ -270,19 +305,20 @@ export const ExecutiveDashboardView = ({
       icon: Database,
     },
     {
-      title: 'Success Rate',
-      value: `${percentFormatter.format(Number(dashboard?.kpis?.success_rate ?? 0))}%`,
+      title: 'Content Change Rate',
+      value: `${percentFormatter.format(Number(dashboard?.kpis?.change_rate ?? 0))}%`,
+      icon: CheckCircle2,
+      detail: `${percentFormatter.format(Number(dashboard?.kpis?.run_success_rate ?? 0))}% successful runs`,
+    },
+    {
+      title: 'Successful Runs',
+      value: `${percentFormatter.format(Number(dashboard?.kpis?.run_success_rate ?? 0))}%`,
       icon: CheckCircle2,
     },
     {
       title: 'Active Alerts',
       value: formatNumber(alerts.length),
       icon: AlertTriangle,
-    },
-    {
-      title: 'Workers',
-      value: formatNumber(dashboard?.celery?.workers ?? 0),
-      icon: Server,
     },
   ];
 
@@ -300,6 +336,9 @@ export const ExecutiveDashboardView = ({
         pipelineLag={pipelineLag}
         alerts={alerts}
       />
+      <div className="mt-8">
+        <AISupervisionPanel aiSupervision={dashboard?.ai_supervision} />
+      </div>
     </>
   );
 };
@@ -310,7 +349,7 @@ export const SourcesMonitoringView = ({ sources }) => (
   <Card>
     <CardHeader>
       <CardTitle>Sources Monitoring</CardTitle>
-      <CardDescription>Per-source success, errors, duration, and last run.</CardDescription>
+      <CardDescription>Per-source operational status, change rate, throughput, and current error state.</CardDescription>
     </CardHeader>
     <CardContent>
       <SourceMonitoringTable data={sources} />
@@ -374,46 +413,52 @@ export const AlertsView = ({ alerts }) => (
   </Card>
 );
 
-export const AnalyticsView = ({ dashboard }) => (
-  <div className="grid gap-6 xl:grid-cols-2">
-    <Card>
-      <CardHeader>
-        <CardTitle>Opportunities by Source</CardTitle>
-        <CardDescription>Current materialized opportunity volume by source.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <SourceBarChart data={dashboard?.sources || []} />
-      </CardContent>
-    </Card>
-    <Card>
-      <CardHeader>
-        <CardTitle>Pipeline Trends</CardTitle>
-        <CardDescription>Aggregate run totals and throughput.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4 sm:grid-cols-2">
-        <MetricTile
-          label="Total runs"
-          value={formatNumber(dashboard?.pipeline?.stats?.total_runs)}
-          detail="Recorded pipeline runs"
-        />
-        <MetricTile
-          label="Failed runs"
-          value={formatNumber(dashboard?.pipeline?.stats?.failed_runs)}
-          detail="Runs requiring review"
-          tone={Number(dashboard?.pipeline?.stats?.failed_runs || 0) > 0 ? 'yellow' : 'green'}
-        />
-        <MetricTile
-          label="Created"
-          value={formatNumber(dashboard?.pipeline?.stats?.total_created)}
-          detail="All created records"
-          tone="green"
-        />
-        <MetricTile
-          label="Updated"
-          value={formatNumber(dashboard?.pipeline?.stats?.total_updated)}
-          detail="All refreshed records"
-        />
-      </CardContent>
-    </Card>
-  </div>
-);
+export const AnalyticsView = ({ dashboard }) => {
+  const analyticsSources = (dashboard?.sources || []).filter(
+    (source) => !HIDDEN_ANALYTICS_SOURCES.has(String(source?.name || '').trim())
+  );
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Opportunities by Source</CardTitle>
+          <CardDescription>Current materialized opportunity volume by external and organization publishing sources.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SourceBarChart data={analyticsSources} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Pipeline History</CardTitle>
+          <CardDescription>Historical run totals and average throughput across recorded pipeline runs.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <MetricTile
+            label="Runs recorded"
+            value={formatNumber(dashboard?.pipeline?.stats?.total_runs)}
+            detail="All recorded pipeline runs in monitoring history"
+          />
+          <MetricTile
+            label="Runs failed"
+            value={formatNumber(dashboard?.pipeline?.stats?.failed_runs)}
+            detail="Historical failures, not only current incidents"
+            tone={Number(dashboard?.pipeline?.stats?.failed_runs || 0) > 0 ? 'yellow' : 'green'}
+          />
+          <MetricTile
+            label="Average change rate"
+            value={`${percentFormatter.format(Number(dashboard?.pipeline?.stats?.change_rate || 0))}%`}
+            detail="Share of processed items that changed across recorded runs"
+            tone="green"
+          />
+          <MetricTile
+            label="Run success"
+            value={`${percentFormatter.format(Number(dashboard?.pipeline?.stats?.run_success_rate || 0))}%`}
+            detail="Successful runs over total recorded runs"
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
+};

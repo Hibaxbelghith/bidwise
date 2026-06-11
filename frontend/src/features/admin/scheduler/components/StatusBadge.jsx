@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ClockAlert,
   Flame,
+  Info,
   PauseCircle,
 } from 'lucide-react';
 
@@ -22,6 +23,7 @@ const iconMap = {
   STALE: ClockAlert,
   FAILURE: AlertTriangle,
   STANDARD: CheckCircle2,
+  NO_DATA: Info,
 };
 
 const StatusBadge = ({ badge }) => {

@@ -1,5 +1,6 @@
 import ast
 import csv
+from collections import Counter
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -9,6 +10,7 @@ from django.db.models import DateTimeField, Max, OuterRef, Subquery
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.conf import settings
+from django.utils.dateparse import parse_datetime
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.timezone import now
@@ -25,7 +27,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from config.celery import app as celery_app
-from users.models import AuditLog, LoginEvent
+from users.models import AuditLog, LoginEvent, ProfileResume, Profil
 from users.permissions import IsAdminUser
 from users.serializers import UserSuspensionSerializer
 from applications.models import Candidature
@@ -39,6 +41,7 @@ from .models import (
     RawOpportuniteProcessingStatus,
     StatutOpportunite,
 )
+from .pipeline import get_source_schedule_state
 from .source_cleanup import REMOVED_SOURCE_KEYS, removed_source_q
 from .tasks import send_organization_admin_decision_email_task
 from .services.scheduler_monitoring import get_scheduler_decision_snapshots
@@ -1020,6 +1023,7 @@ def _get_celery_snapshot():
             "status": "degraded",
             "pipeline_running": False,
             "running_sources": [],
+            "inspect_error": True,
         }
 
     active_tasks = sum(len(tasks) for tasks in active.values())
@@ -1052,6 +1056,97 @@ def _get_celery_snapshot():
         "status": "healthy" if workers > 0 else "degraded",
         "pipeline_running": pipeline_running,
         "running_sources": running_sources,
+        "inspect_error": False,
+    }
+
+
+def _derive_pipeline_health_status(*, latest_run, celery_snapshot, alerts, pipeline_lag):
+    """
+    Build a single trustworthy pipeline status from live runtime signals.
+
+    Priority order matters:
+    1. `failed` when a recent hard failure is known.
+    2. `degraded` when supervision, backlog, or freshness is impaired.
+    3. `running` when ingestion is actively progressing without blocking issues.
+    4. `healthy` otherwise.
+
+    This keeps the admin dashboard grounded in operational state instead of
+    showing "idle" while the latest run has actually failed or gone stale.
+    """
+
+    alerts = alerts or []
+    celery_snapshot = celery_snapshot or {}
+    pipeline_lag = pipeline_lag or {}
+
+    has_critical_alert = any(alert.get("severity") == "CRITICAL" for alert in alerts)
+    has_warning_alert = any(alert.get("severity") == "WARNING" for alert in alerts)
+    latest_run_failed = bool(latest_run and latest_run.status == PipelineRunStatus.FAILED)
+    latest_run_stale = bool(latest_run and latest_run.is_stale)
+    backlog_detected = bool(pipeline_lag.get("backlog_detected"))
+    pipeline_running = bool(celery_snapshot.get("pipeline_running"))
+    inspect_error = bool(celery_snapshot.get("inspect_error"))
+    workers = int(celery_snapshot.get("workers") or 0)
+
+    if has_critical_alert:
+        return {
+            "status": "failed",
+            "reason": "critical_alert",
+            "detail": "Critical pipeline alerts are active and need immediate review.",
+        }
+
+    if latest_run_failed:
+        return {
+            "status": "failed",
+            "reason": "last_run_failed",
+            "detail": "The latest pipeline run failed and requires investigation.",
+        }
+
+    if inspect_error:
+        return {
+            "status": "degraded",
+            "reason": "celery_inspect_unavailable",
+            "detail": "Celery supervision is temporarily unavailable, so worker health cannot be fully confirmed.",
+        }
+
+    if workers <= 0:
+        return {
+            "status": "degraded",
+            "reason": "no_workers",
+            "detail": "No active Celery workers were detected for the ingestion pipeline.",
+        }
+
+    if latest_run_stale:
+        return {
+            "status": "degraded",
+            "reason": "stale_run",
+            "detail": "The latest pipeline run is stale and may no longer be progressing normally.",
+        }
+
+    if backlog_detected:
+        return {
+            "status": "degraded",
+            "reason": "pipeline_backlog",
+            "detail": "Raw opportunity backlog is still pending after ingestion and should be reviewed.",
+        }
+
+    if has_warning_alert:
+        return {
+            "status": "degraded",
+            "reason": "warning_alert",
+            "detail": "Warning-level monitoring alerts are active and should be checked.",
+        }
+
+    if pipeline_running:
+        return {
+            "status": "running",
+            "reason": "pipeline_running",
+            "detail": "Ingestion is currently running and workers are available.",
+        }
+
+    return {
+        "status": "healthy",
+        "reason": "nominal",
+        "detail": "Sources, workers, and freshness checks are within expected ranges.",
     }
 
 
@@ -1086,6 +1181,77 @@ def _run_total(run, total_field, legacy_field):
     return getattr(run, legacy_field, 0) or 0
 
 
+def _summarize_error_message(message):
+    value = " ".join(str(message or "").split()).strip()
+    if not value:
+        return ""
+    if len(value) <= 180:
+        return value
+    return f"{value[:177].rstrip()}..."
+
+
+def _summarize_source_issue(active_alert):
+    if not active_alert:
+        return {
+            "status": "healthy",
+            "summary": "",
+            "detail": "",
+        }
+
+    title = str(active_alert.get("title") or "").strip()
+    details = _summarize_error_message(active_alert.get("details"))
+    severity = str(active_alert.get("severity") or "").upper()
+
+    if title and details:
+        summary = f"{title}: {details}"
+    else:
+        summary = title or details
+
+    return {
+        "status": "failed" if severity == "CRITICAL" else "warning",
+        "summary": summary,
+        "detail": details,
+    }
+
+
+def _derive_source_operational_status(*, source_name, running_sources, schedule_state):
+    if source_name in running_sources:
+        return {
+            "status": "running",
+            "detail": "Collection is currently running.",
+        }
+
+    latest_run_status = schedule_state.get("latest_run_status")
+    if schedule_state.get("is_running_stale"):
+        return {
+            "status": "failed",
+            "detail": "The active run exceeded its maximum expected duration.",
+        }
+
+    if latest_run_status == PipelineRunStatus.FAILED:
+        return {
+            "status": "failed",
+            "detail": "The latest run failed and needs investigation.",
+        }
+
+    if schedule_state.get("is_stale"):
+        return {
+            "status": "degraded",
+            "detail": "No recent fresh opportunities were detected for this source.",
+        }
+
+    if not schedule_state.get("last_run_at"):
+        return {
+            "status": "degraded",
+            "detail": "No pipeline run has been recorded for this source yet.",
+        }
+
+    return {
+        "status": "healthy",
+        "detail": "Recent runs completed within the expected freshness window.",
+    }
+
+
 def get_pipeline_stats():
     aggregates = PipelineRun.objects.exclude(source__in=REMOVED_SOURCE_KEYS).aggregate(
         total_runs=Count("id"),
@@ -1101,23 +1267,43 @@ def get_pipeline_stats():
     total_created = aggregates.get("total_created") or 0
     total_updated = aggregates.get("total_updated") or 0
     total_failed_pages = aggregates.get("total_failed_pages") or 0
-    success_rate = ((total_created + total_updated) / total_processed) * 100 if total_processed else 0.0
+    change_rate = ((total_created + total_updated) / total_processed) * 100 if total_processed else 0.0
+    total_runs = aggregates.get("total_runs") or 0
+    successful_runs = aggregates.get("success_runs") or 0
+    run_success_rate = (successful_runs / total_runs) * 100 if total_runs else 0.0
 
     return {
-        "total_runs": aggregates.get("total_runs") or 0,
-        "success_runs": aggregates.get("success_runs") or 0,
+        "total_runs": total_runs,
+        "success_runs": successful_runs,
         "failed_runs": aggregates.get("failed_runs") or 0,
         "total_processed": total_processed,
         "total_created": total_created,
         "total_updated": total_updated,
         "total_failed_pages": total_failed_pages,
-        "success_rate": success_rate,
+        "change_rate": change_rate,
+        "run_success_rate": run_success_rate,
+        # Backward compatibility for existing consumers; prefer `change_rate`.
+        "success_rate": change_rate,
         "avg_duration": aggregates.get("avg_duration") or 0.0,
     }
 
 
-def get_source_monitoring(running_sources=None):
+def get_source_monitoring(running_sources=None, alerts=None):
     running_sources = set(running_sources or [])
+    alerts_by_source = {}
+    for alert in alerts or []:
+        source_key = alert.get("source")
+        if not source_key:
+            continue
+        current = alerts_by_source.get(source_key)
+        if current is None:
+            alerts_by_source[source_key] = alert
+            continue
+        current_rank = 2 if str(current.get("severity") or "").upper() == "CRITICAL" else 1
+        incoming_rank = 2 if str(alert.get("severity") or "").upper() == "CRITICAL" else 1
+        if incoming_rank > current_rank:
+            alerts_by_source[source_key] = alert
+
     last_failed_run = (
         PipelineRun.objects.filter(
             source=OuterRef("source"),
@@ -1147,20 +1333,42 @@ def get_source_monitoring(running_sources=None):
     sources = []
     for row in source_rows:
         source = row.get("source")
+        active_alert = alerts_by_source.get(source)
+        schedule_state = get_source_schedule_state(source)
+        source_health = _derive_source_operational_status(
+            source_name=source,
+            running_sources=running_sources,
+            schedule_state=schedule_state,
+        )
+        issue_state = _summarize_source_issue(active_alert)
+        latest_run_status = schedule_state.get("latest_run_status")
+        raw_last_error_message = row.get("last_error_message")
+        current_error_summary = (
+            _summarize_error_message(raw_last_error_message)
+            if latest_run_status == PipelineRunStatus.FAILED or source_health["status"] == "failed"
+            else ""
+        )
+        current_issue_summary = issue_state["summary"] or current_error_summary
+        current_issue_status = issue_state["status"] if issue_state["summary"] else (
+            "failed" if current_error_summary else "healthy"
+        )
         total_processed = row.get("total_processed") or 0
         total_created = row.get("total_created") or 0
         total_updated = row.get("total_updated") or 0
-        success_rate = (
+        change_rate = (
             ((total_created + total_updated) / total_processed) * 100
             if total_processed
             else 0.0
         )
+        total_runs = row.get("total_runs") or 0
+        successful_runs = row.get("success_runs") or 0
+        run_success_rate = (successful_runs / total_runs) * 100 if total_runs else 0.0
 
         sources.append(
             {
                 "source": source,
-                "total_runs": row.get("total_runs") or 0,
-                "success_runs": row.get("success_runs") or 0,
+                "total_runs": total_runs,
+                "success_runs": successful_runs,
                 "failed_runs": row.get("failed_runs") or 0,
                 "total_processed": total_processed,
                 "total_created": total_created,
@@ -1168,9 +1376,21 @@ def get_source_monitoring(running_sources=None):
                 "total_failed_pages": row.get("total_failed_pages") or 0,
                 "avg_duration": row.get("avg_duration") or 0.0,
                 "last_run": row.get("last_run"),
-                "last_error_message": row.get("last_error_message"),
-                "success_rate": success_rate,
+                "last_activity_at": schedule_state.get("last_activity_at"),
+                "last_error_message": raw_last_error_message,
+                "last_error_summary": current_error_summary,
+                "current_issue_status": current_issue_status,
+                "current_issue_summary": current_issue_summary,
+                "change_rate": change_rate,
+                "run_success_rate": run_success_rate,
+                # Backward compatibility for existing consumers; prefer `change_rate`.
+                "success_rate": change_rate,
                 "is_running": source in running_sources,
+                "operational_status": source_health["status"],
+                "operational_detail": source_health["detail"],
+                "latest_run_status": latest_run_status,
+                "is_stale": bool(schedule_state.get("is_stale")),
+                "is_running_stale": bool(schedule_state.get("is_running_stale")),
             }
         )
 
@@ -1328,11 +1548,332 @@ def get_platform_statistics():
     }
 
 
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _counter_top_value(counter):
+    if not counter:
+        return ""
+    return counter.most_common(1)[0][0]
+
+
+def _parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        return parse_datetime(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def get_ai_supervision_snapshot():
+    """
+    Build a conservative AI supervision snapshot from persisted data only.
+
+    This intentionally avoids synthetic "accuracy" claims. Every metric below
+    is backed by stored moderation metadata, enrichment payloads, resume
+    semantic fields, or embedding coverage already present in the database.
+    """
+
+    organization_opportunities = (
+        Opportunite.objects.filter(extra_data__published_by="organization")
+        .only("id", "extra_data", "statut", "date_modification")
+        .order_by("-date_modification", "-id")
+    )
+    moderation_total = organization_opportunities.count()
+    moderation_processed = 0
+    moderation_skipped = 0
+    moderation_fallbacks = 0
+    moderation_admin_reviewed = 0
+    moderation_admin_overrides = 0
+    moderation_confidence_sum = 0.0
+    moderation_confidence_count = 0
+    moderation_decisions = Counter()
+    moderation_categories = Counter()
+    moderation_providers = Counter()
+    moderation_models = Counter()
+    moderation_last_updated = None
+
+    for opportunity in organization_opportunities:
+        extra_data = getattr(opportunity, "extra_data", {}) or {}
+        if not isinstance(extra_data, dict):
+            continue
+        moderation = extra_data.get("moderation")
+        if not isinstance(moderation, dict):
+            continue
+        llm = moderation.get("llm")
+        if not isinstance(llm, dict):
+            continue
+
+        moderation_processed += 1
+        moderation_decisions[str(llm.get("decision") or "").strip().lower() or "unknown"] += 1
+        moderation_categories[str(llm.get("category") or "").strip().lower() or "unknown"] += 1
+
+        provider = str(llm.get("provider") or "").strip()
+        model = str(llm.get("model") or "").strip()
+        if provider:
+            moderation_providers[provider] += 1
+        if model:
+            moderation_models[model] += 1
+
+        if llm.get("confidence") is not None:
+            moderation_confidence_sum += _safe_float(llm.get("confidence"))
+            moderation_confidence_count += 1
+
+        if bool(llm.get("skipped")):
+            moderation_skipped += 1
+        if str(llm.get("error") or "").strip():
+            moderation_fallbacks += 1
+
+        admin_decision = moderation.get("admin_decision")
+        if isinstance(admin_decision, dict) and admin_decision.get("action"):
+            moderation_admin_reviewed += 1
+            admin_action = str(admin_decision.get("action") or "").strip().lower()
+            admin_mapped = "approved" if admin_action == "approved" else "rejected" if admin_action == "rejected" else ""
+            llm_decision = str(llm.get("decision") or "").strip().lower()
+            if admin_mapped and llm_decision and admin_mapped != llm_decision:
+                moderation_admin_overrides += 1
+
+            decided_at = _parse_iso_datetime(admin_decision.get("decided_at"))
+            if decided_at and (moderation_last_updated is None or decided_at > moderation_last_updated):
+                moderation_last_updated = decided_at
+
+        updated_at = getattr(opportunity, "date_modification", None)
+        if updated_at and (moderation_last_updated is None or updated_at > moderation_last_updated):
+            moderation_last_updated = updated_at
+
+    opportunity_queryset = (
+        Opportunite.objects.exclude(removed_source_q("source__nom"))
+        .only("id", "extra_data", "date_modification")
+        .order_by("-date_modification", "-id")
+    )
+    enrichment_total = opportunity_queryset.count()
+    enrichment_processed = 0
+    enrichment_applied_to_skills = 0
+    enrichment_with_warnings = 0
+    enrichment_confidence_sum = 0.0
+    enrichment_confidence_count = 0
+    enrichment_providers = Counter()
+    enrichment_models = Counter()
+    enrichment_last_updated = None
+
+    for opportunity in opportunity_queryset:
+        extra_data = getattr(opportunity, "extra_data", {}) or {}
+        if not isinstance(extra_data, dict):
+            continue
+        enrichment = extra_data.get("llm_enrichment")
+        if not isinstance(enrichment, dict):
+            continue
+
+        enrichment_processed += 1
+        if bool(enrichment.get("applied_to_skills")):
+            enrichment_applied_to_skills += 1
+        if isinstance(enrichment.get("warnings"), list) and enrichment.get("warnings"):
+            enrichment_with_warnings += 1
+
+        if enrichment.get("confidence") is not None:
+            enrichment_confidence_sum += _safe_float(enrichment.get("confidence"))
+            enrichment_confidence_count += 1
+
+        provider = str(enrichment.get("provider") or "").strip()
+        model = str(enrichment.get("model") or "").strip()
+        if provider:
+            enrichment_providers[provider] += 1
+        if model:
+            enrichment_models[model] += 1
+
+        updated_at = _parse_iso_datetime(enrichment.get("updated_at")) or getattr(opportunity, "date_modification", None)
+        if updated_at and (enrichment_last_updated is None or updated_at > enrichment_last_updated):
+            enrichment_last_updated = updated_at
+
+    resume_queryset = (
+        ProfileResume.objects.filter(is_active=True)
+        .only(
+            "id",
+            "semantic_resume_status",
+            "semantic_resume_confidence",
+            "semantic_resume_updated_at",
+            "semantic_resume_error",
+            "semantic_resume_metadata",
+        )
+        .order_by("-semantic_resume_updated_at", "-id")
+    )
+    resume_total = resume_queryset.count()
+    resume_statuses = Counter()
+    resume_confidence_sum = 0.0
+    resume_confidence_count = 0
+    resume_providers = Counter()
+    resume_models = Counter()
+    resume_last_updated = None
+    resume_last_error = ""
+    resume_last_error_at = None
+
+    for resume in resume_queryset:
+        status_value = str(getattr(resume, "semantic_resume_status", "") or "PENDING").strip().upper()
+        resume_statuses[status_value or "UNKNOWN"] += 1
+
+        if status_value == "SUCCEEDED":
+            resume_confidence_sum += _safe_float(getattr(resume, "semantic_resume_confidence", 0.0))
+            resume_confidence_count += 1
+
+        metadata = getattr(resume, "semantic_resume_metadata", {}) or {}
+        if isinstance(metadata, dict):
+            llm_enrichment = metadata.get("llm_enrichment")
+            if isinstance(llm_enrichment, dict):
+                provider = str(llm_enrichment.get("provider") or "").strip()
+                model = str(llm_enrichment.get("model") or "").strip()
+                if provider:
+                    resume_providers[provider] += 1
+                if model:
+                    resume_models[model] += 1
+
+        updated_at = getattr(resume, "semantic_resume_updated_at", None)
+        if updated_at and (resume_last_updated is None or updated_at > resume_last_updated):
+            resume_last_updated = updated_at
+
+        error = str(getattr(resume, "semantic_resume_error", "") or "").strip()
+        if error and updated_at and (resume_last_error_at is None or updated_at > resume_last_error_at):
+            resume_last_error_at = updated_at
+            resume_last_error = error
+
+    profile_queryset = Profil.objects.only(
+        "id",
+        "embedding_updated_at",
+        "jobbert_embedding",
+        "jobbert_embedding_updated_at",
+    )
+    profile_total = profile_queryset.count()
+    profile_embeddings = 0
+    profile_jobbert_embeddings = 0
+    for profile in profile_queryset:
+        if getattr(profile, "embedding_updated_at", None):
+            profile_embeddings += 1
+        if getattr(profile, "jobbert_embedding_updated_at", None) or getattr(profile, "jobbert_embedding", None):
+            profile_jobbert_embeddings += 1
+
+    recommendation_queryset = Opportunite.objects.exclude(removed_source_q("source__nom")).only(
+        "id",
+        "embedding_vector",
+        "embedding_vector_pg",
+        "jobbert_embedding_vector",
+        "jobbert_embedding_updated_at",
+    )
+    recommendation_total = recommendation_queryset.count()
+    opportunity_embeddings = 0
+    opportunity_pg_embeddings = 0
+    opportunity_jobbert_embeddings = 0
+    for opportunity in recommendation_queryset:
+        if getattr(opportunity, "embedding_vector", None) is not None:
+            opportunity_embeddings += 1
+        if getattr(opportunity, "embedding_vector_pg", None) is not None:
+            opportunity_pg_embeddings += 1
+        if (
+            getattr(opportunity, "jobbert_embedding_updated_at", None) is not None
+            or getattr(opportunity, "jobbert_embedding_vector", None) is not None
+        ):
+            opportunity_jobbert_embeddings += 1
+
+    return {
+        "modules": {
+            "moderation": {
+                "module": "Moderation AI",
+                "total": moderation_total,
+                "processed": moderation_processed,
+                "coverage": (moderation_processed / moderation_total * 100) if moderation_total else 0.0,
+                "approved": int(moderation_decisions.get("approved", 0)),
+                "pending_review": int(moderation_decisions.get("pending_review", 0)),
+                "rejected": int(moderation_decisions.get("rejected", 0)),
+                "skipped": moderation_skipped,
+                "fallbacks": moderation_fallbacks,
+                "admin_reviewed": moderation_admin_reviewed,
+                "admin_overrides": moderation_admin_overrides,
+                "override_rate": (
+                    moderation_admin_overrides / moderation_admin_reviewed * 100
+                    if moderation_admin_reviewed
+                    else 0.0
+                ),
+                "average_confidence": (
+                    moderation_confidence_sum / moderation_confidence_count
+                    if moderation_confidence_count
+                    else 0.0
+                ),
+                "top_category": _counter_top_value(moderation_categories),
+                "provider": _counter_top_value(moderation_providers),
+                "model": _counter_top_value(moderation_models),
+                "last_updated_at": moderation_last_updated,
+                "current_issue": "Fallback moderation results were stored for some offers." if moderation_fallbacks else "",
+            },
+            "opportunity_enrichment": {
+                "module": "Opportunity Enrichment",
+                "total": enrichment_total,
+                "processed": enrichment_processed,
+                "coverage": (enrichment_processed / enrichment_total * 100) if enrichment_total else 0.0,
+                "applied_to_skills": enrichment_applied_to_skills,
+                "with_warnings": enrichment_with_warnings,
+                "average_confidence": (
+                    enrichment_confidence_sum / enrichment_confidence_count
+                    if enrichment_confidence_count
+                    else 0.0
+                ),
+                "provider": _counter_top_value(enrichment_providers),
+                "model": _counter_top_value(enrichment_models),
+                "last_updated_at": enrichment_last_updated,
+                "current_issue": "Some LLM enrichments produced warnings." if enrichment_with_warnings else "",
+            },
+            "resume_semantic": {
+                "module": "Resume Semantic AI",
+                "total": resume_total,
+                "processed": int(resume_statuses.get("SUCCEEDED", 0)),
+                "coverage": (resume_statuses.get("SUCCEEDED", 0) / resume_total * 100) if resume_total else 0.0,
+                "succeeded": int(resume_statuses.get("SUCCEEDED", 0)),
+                "failed": int(resume_statuses.get("FAILED", 0)),
+                "empty": int(resume_statuses.get("EMPTY", 0)),
+                "pending": int(resume_statuses.get("PENDING", 0) + resume_statuses.get("PROCESSING", 0)),
+                "skipped": int(resume_statuses.get("SKIPPED", 0)),
+                "average_confidence": (
+                    resume_confidence_sum / resume_confidence_count
+                    if resume_confidence_count
+                    else 0.0
+                ),
+                "provider": _counter_top_value(resume_providers),
+                "model": _counter_top_value(resume_models),
+                "last_updated_at": resume_last_updated,
+                "current_issue": resume_last_error,
+            },
+            "recommendation_readiness": {
+                "module": "Recommendation Readiness",
+                "profile_total": profile_total,
+                "profile_embeddings": profile_embeddings,
+                "profile_jobbert_embeddings": profile_jobbert_embeddings,
+                "profile_coverage": (profile_embeddings / profile_total * 100) if profile_total else 0.0,
+                "opportunity_total": recommendation_total,
+                "opportunity_embeddings": opportunity_embeddings,
+                "opportunity_pg_embeddings": opportunity_pg_embeddings,
+                "opportunity_jobbert_embeddings": opportunity_jobbert_embeddings,
+                "opportunity_coverage": (
+                    opportunity_embeddings / recommendation_total * 100
+                    if recommendation_total
+                    else 0.0
+                ),
+                "current_issue": (
+                    "Some profiles or opportunities are still missing embeddings."
+                    if profile_embeddings < profile_total or opportunity_embeddings < recommendation_total
+                    else ""
+                ),
+            },
+        }
+    }
+
+
 def _serialize_pipeline_run(run):
     processed = _run_total(run, "total_processed", "processed_count")
     created = _run_total(run, "total_created", "created_count")
     updated = _run_total(run, "total_updated", "updated_count")
-    success_rate = ((created + updated) / processed * 100) if processed else 0.0
+    change_rate = ((created + updated) / processed * 100) if processed else 0.0
 
     return {
         "started_at": run.started_at,
@@ -1346,7 +1887,9 @@ def _serialize_pipeline_run(run):
         "duration_seconds": run.duration_seconds,
         "error_message": run.error_message,
         "is_stale": run.is_stale,
-        "success_rate": success_rate,
+        "change_rate": change_rate,
+        # Backward compatibility for existing consumers; prefer `change_rate`.
+        "success_rate": change_rate,
     }
 
 
@@ -1396,16 +1939,25 @@ class AdminDashboardView(APIView):
         celery = _get_celery_snapshot()
         pipeline_stats = get_pipeline_stats()
         pipeline_metrics = compute_pipeline_metrics()
-        monitoring_sources = get_source_monitoring(celery.get("running_sources", []))
         embedding_monitoring = get_embedding_monitoring()
         logo_monitoring = get_logo_monitoring()
         pipeline_lag = get_pipeline_lag_monitoring()
+        ai_supervision = get_ai_supervision_snapshot()
         platform_statistics = get_platform_statistics()
         alerts = collect_pipeline_anomalies()
+        monitoring_sources = get_source_monitoring(
+            celery.get("running_sources", []),
+            alerts=alerts,
+        )
+        pipeline_health = _derive_pipeline_health_status(
+            latest_run=latest_run,
+            celery_snapshot=celery,
+            alerts=alerts,
+            pipeline_lag=pipeline_lag,
+        )
         latest_processed = _run_total(latest_run, "total_processed", "processed_count") if latest_run else 0
         latest_created = _run_total(latest_run, "total_created", "created_count") if latest_run else 0
         latest_updated = _run_total(latest_run, "total_updated", "updated_count") if latest_run else 0
-        pipeline_running = celery.get("pipeline_running", False)
         celery_response = {
             key: value
             for key, value in celery.items()
@@ -1418,12 +1970,16 @@ class AdminDashboardView(APIView):
                     "total_opportunities": total_opportunities,
                     "pipeline_activity_today": opportunities_today,
                     "sources_count": sources_count,
+                    "change_rate": pipeline_stats["change_rate"],
+                    "run_success_rate": pipeline_stats["run_success_rate"],
                     "success_rate": pipeline_stats["success_rate"],
                     "logo_coverage": logo_monitoring["coverage"],
                 },
                 "pipeline": {
                     "last_run": latest_run.finished_at if latest_run else None,
-                    "status": "running" if pipeline_running else "idle",
+                    "status": pipeline_health["status"],
+                    "status_reason": pipeline_health["reason"],
+                    "status_detail": pipeline_health["detail"],
                     "processed": latest_processed,
                     "created": latest_created,
                     "updated": latest_updated,
@@ -1448,6 +2004,7 @@ class AdminDashboardView(APIView):
                     for item in sources
                 ],
                 "platform": platform_statistics,
+                "ai_supervision": ai_supervision,
                 "celery": celery_response,
                 "monitoring": {
                     "sources": monitoring_sources,

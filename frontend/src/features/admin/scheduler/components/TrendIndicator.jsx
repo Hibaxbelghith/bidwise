@@ -24,6 +24,11 @@ const toneStyles = {
     bar: 'bg-red-500',
     muted: 'bg-red-200',
   },
+  neutral: {
+    shell: 'border-neutral-200 bg-neutral-50 text-neutral-700',
+    bar: 'bg-neutral-400',
+    muted: 'bg-neutral-200',
+  },
 };
 
 const iconMap = {

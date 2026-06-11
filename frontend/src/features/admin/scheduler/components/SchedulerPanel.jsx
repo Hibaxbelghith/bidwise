@@ -24,7 +24,7 @@ const summaryItems = [
   },
   {
     key: 'attentionCount',
-    label: 'Needs attention',
+    label: 'Active issues',
     icon: ShieldAlert,
     tone: 'text-red-700 bg-red-50 border-red-100',
   },
@@ -69,7 +69,10 @@ const SchedulerPanel = () => {
               Adaptive Scheduler
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-neutral-600">
-              Source cadence, priority score, next run, and the metric signals behind each scheduler decision.
+              Source cadence, priority score, next run, and the signals behind each scheduler decision.
+            </p>
+            <p className="mt-2 max-w-2xl text-sm text-neutral-500">
+              Active issues count only failure-like states that may need operator review. Normal stale or cooldown decisions are not treated as incidents here.
             </p>
           </div>
         </div>

@@ -35,15 +35,21 @@ export const formatDateTime = (value) => {
 };
 
 export const getSystemStatus = (dashboard) => {
-  const activeAlerts = dashboard?.monitoring?.alerts?.length || 0;
-  const hasBacklog = Boolean(dashboard?.monitoring?.pipeline_lag?.backlog_detected);
-  const workerStatus = dashboard?.celery?.status || 'degraded';
-  const pipelineStatus = dashboard?.pipeline?.status || 'idle';
+  const pipelineStatus = dashboard?.pipeline?.status || '';
+  const pipelineDetail = dashboard?.pipeline?.status_detail || '';
 
-  if (activeAlerts > 0 || hasBacklog || workerStatus === 'degraded' || pipelineStatus === 'failed') {
+  if (pipelineStatus === 'failed') {
     return {
       status: 'Attention needed',
-      detail: 'Monitoring detected one or more items that need review.',
+      detail: pipelineDetail || 'The pipeline has a recent failure that needs review.',
+      iconTone: 'text-red-700 bg-red-100',
+    };
+  }
+
+  if (pipelineStatus === 'degraded') {
+    return {
+      status: 'Attention needed',
+      detail: pipelineDetail || 'Monitoring detected one or more items that need review.',
       iconTone: 'text-yellow-700 bg-yellow-100',
     };
   }
@@ -51,14 +57,14 @@ export const getSystemStatus = (dashboard) => {
   if (pipelineStatus === 'running') {
     return {
       status: 'Pipeline running',
-      detail: 'Ingestion is active and workers are available.',
+      detail: pipelineDetail || 'Ingestion is active and workers are available.',
       iconTone: 'text-blue-700 bg-blue-100',
     };
   }
 
   return {
     status: 'Healthy',
-    detail: 'Sources, workers, and freshness checks are within expected ranges.',
+    detail: pipelineDetail || 'Sources, workers, and freshness checks are within expected ranges.',
     iconTone: 'text-green-700 bg-green-100',
   };
 };
