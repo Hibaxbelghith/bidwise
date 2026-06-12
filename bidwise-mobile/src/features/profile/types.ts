@@ -14,6 +14,11 @@ export type ActiveResume = {
   uploaded_at?: string;
   source_type?: string;
   is_active?: boolean;
+  parsing_status?: string | null;
+  parsing_error?: string | null;
+  semantic_resume_status?: string | null;
+  semantic_resume_confidence?: number | null;
+  semantic_resume_updated_at?: string | null;
   metadata?: {
     original_filename?: string;
     content_type?: string;

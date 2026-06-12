@@ -178,7 +178,7 @@ export default function OnboardingScreen() {
 
       await updateProfile(payload);
       await loadUserProfile();
-      router.replace('/dashboard');
+      router.replace('/for-you');
     } catch {
       setError('Could not save your profile. Please try again.');
     } finally {

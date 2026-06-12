@@ -37,12 +37,12 @@ export function formatStatusLabel(value?: string | null): string {
 }
 
 export function getOpportunityTitle(item: Opportunity): string {
-  const title = String(item.titre || '').trim();
+  const title = String(item.titre || item.title || '').trim();
   return title || 'Untitled opportunity';
 }
 
 export function getOrganizationLabel(item: Opportunity): string {
-  const organization = String(item.organisation_nom || '').trim();
+  const organization = String(item.organisation_nom || item.company || '').trim();
   if (!organization || ANONYMOUS_ORGANIZATION_PATTERN.test(organization)) return '';
   return organization;
 }

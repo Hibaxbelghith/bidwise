@@ -76,7 +76,7 @@ export default function LoginScreen() {
       setError('');
       try {
         const { is_new_user, onboarding_completed } = await loginWithGoogle(idToken);
-        router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/dashboard');
+        router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/for-you');
       } catch (e: any) {
         const msg = e.response?.data?.error
           ?? (e.code === 'ERR_NETWORK' ? `Network error: cannot reach server` : `Error: ${e.message}`);

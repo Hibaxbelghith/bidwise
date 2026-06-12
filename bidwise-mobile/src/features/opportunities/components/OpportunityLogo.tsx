@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 
+import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
+
 const FALLBACK_LOGO = require('../../../../assets/images/icon.png');
 
 interface OpportunityLogoProps {
   logoUrl: string;
-  borderColor: string;
-  cardColor: string;
+  borderColor?: string;
+  cardColor?: string;
   size?: number;
 }
 
@@ -17,12 +19,16 @@ export default function OpportunityLogo({
   size = 48,
 }: OpportunityLogoProps) {
   const [imageError, setImageError] = useState(false);
+  const themeBorderColor = useThemeColor({}, 'border');
+  const themeCardColor = useThemeColor({}, 'card');
 
   useEffect(() => {
     setImageError(false);
   }, [logoUrl]);
 
   const useRemoteImage = Boolean(logoUrl) && !imageError;
+  const resolvedBorderColor = borderColor ?? themeBorderColor;
+  const resolvedCardColor = cardColor ?? themeCardColor;
 
   return (
     <View
@@ -31,8 +37,8 @@ export default function OpportunityLogo({
         {
           width: size,
           height: size,
-          borderColor,
-          backgroundColor: cardColor,
+          borderColor: resolvedBorderColor,
+          backgroundColor: resolvedCardColor,
           borderRadius: Math.round(size * 0.27),
         },
       ]}

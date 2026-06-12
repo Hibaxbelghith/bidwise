@@ -67,7 +67,7 @@ export default function OpportunitiesListScreen() {
 
   const handleBack = () => {
     if (isUserAuthenticated) {
-      router.replace('/dashboard');
+      router.replace('/for-you');
       return;
     }
 

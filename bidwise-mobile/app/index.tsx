@@ -14,5 +14,5 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={isAuthenticated ? '/dashboard' : '/opportunities'} />;
+  return <Redirect href={isAuthenticated ? '/for-you' : '/opportunities'} />;
 }
