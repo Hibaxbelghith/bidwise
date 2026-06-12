@@ -315,6 +315,7 @@ def organization_opportunities_view(request):
                     data.get("project_details", {}).get("public_buyer")
                     or organization_profile.organization_name
                 ),
+                company_logo=organization_profile.logo or "",
                 ville=data["location"],
                 contract_type=contract,
                 normalized_contract_types=normalize_contract_types(contract),
@@ -528,6 +529,7 @@ def organization_opportunity_detail_view(request, pk):
             data.get("project_details", {}).get("public_buyer")
             or organization_profile.organization_name
         )
+        opportunity.company_logo = organization_profile.logo or ""
         opportunity.ville = data["location"]
         opportunity.contract_type = data.get("contract", "")
         opportunity.normalized_contract_types = normalize_contract_types(opportunity.contract_type)

@@ -12,6 +12,7 @@ from ai.business_families import CONTROLLED_FAMILIES, normalize_family
 from ai.embeddings import enqueue_profile_embedding_refresh
 from .models import Utilisateur, Profil, ProfileResume, OrganizationProfile
 from opportunities.autocomplete.service import normalize_profile_terms
+from opportunities.utils.images import is_valid_image_url
 from opportunities.normalization.employment import (
     CANONICAL_CONTRACT_TYPES,
     WORK_MODE_UNSPECIFIED,
@@ -48,6 +49,13 @@ ALLOWED_RESUME_CONTENT_TYPES = {
     "application/rtf",
     "text/rtf",
     "text/plain",
+}
+MAX_ORGANIZATION_LOGO_SIZE_BYTES = 2 * 1024 * 1024
+ALLOWED_ORGANIZATION_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+ALLOWED_ORGANIZATION_LOGO_CONTENT_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
 }
 TUNISIA_PHONE_PATTERN = re.compile(r"^\+216\d{8}$")
 UNSAFE_PROFILE_TEXT_PATTERN = re.compile(
@@ -354,6 +362,21 @@ def _normalize_optional_url(value):
     if value in (None, ""):
         return ""
     return str(value).strip()
+
+
+def _has_expected_logo_signature(uploaded_file, extension):
+    position = uploaded_file.tell() if hasattr(uploaded_file, "tell") else 0
+    header = uploaded_file.read(12)
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(position)
+
+    if extension == ".png":
+        return header.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension in {".jpg", ".jpeg"}:
+        return header.startswith(b"\xff\xd8\xff")
+    if extension == ".webp":
+        return header.startswith(b"RIFF") and header[8:12] == b"WEBP"
+    return False
 
 
 def _normalize_tunisian_phone(value):
@@ -795,6 +818,11 @@ class OrganizationProfileSerializer(serializers.ModelSerializer):
         required=False,
         allow_blank=True,
     )
+    logo = serializers.URLField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+    )
     phone = serializers.CharField(
         max_length=16,
         trim_whitespace=True,
@@ -812,6 +840,7 @@ class OrganizationProfileSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "website",
+            "logo",
             "phone",
             "organization_type",
             "created_at",
@@ -830,6 +859,12 @@ class OrganizationProfileSerializer(serializers.ModelSerializer):
 
     def validate_website(self, value):
         return _normalize_optional_url(value)
+
+    def validate_logo(self, value):
+        normalized = _normalize_optional_url(value)
+        if normalized and not is_valid_image_url(normalized):
+            raise serializers.ValidationError("Enter a valid public image URL.")
+        return normalized
 
     def validate_phone(self, value):
         return _normalize_tunisian_phone(value)
@@ -858,6 +893,27 @@ class OrganizationProfileSerializer(serializers.ModelSerializer):
         self._clean_or_raise(instance)
         instance.save()
         return instance
+
+
+class OrganizationLogoUploadSerializer(serializers.Serializer):
+    file = serializers.FileField()
+
+    def validate_file(self, value):
+        extension = Path(value.name or "").suffix.lower()
+        if extension not in ALLOWED_ORGANIZATION_LOGO_EXTENSIONS:
+            raise serializers.ValidationError("Use a PNG, JPG, JPEG, or WEBP image.")
+
+        if getattr(value, "size", 0) > MAX_ORGANIZATION_LOGO_SIZE_BYTES:
+            raise serializers.ValidationError("Logo must be 2 MB or smaller.")
+
+        content_type = getattr(value, "content_type", "")
+        if content_type and content_type not in ALLOWED_ORGANIZATION_LOGO_CONTENT_TYPES:
+            raise serializers.ValidationError("Unsupported logo file type.")
+
+        if not _has_expected_logo_signature(value, extension):
+            raise serializers.ValidationError("Uploaded file does not look like a valid image.")
+
+        return value
 
 
 class UtilisateurSerializer(serializers.ModelSerializer):

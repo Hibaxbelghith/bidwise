@@ -19,6 +19,15 @@ export const normalizeWhitespace = (value) => String(value || '').trim().replace
 
 export const normalizeTunisiaPhone = (value) => String(value || '').trim().replace(/\s+/g, '');
 
+const isValidPublicUrl = (value) => {
+  try {
+    const url = new URL(String(value || '').trim());
+    return ['http:', 'https:'].includes(url.protocol);
+  } catch {
+    return false;
+  }
+};
+
 export const isOrganizationAccount = (user) => user?.account_type === 'organization';
 
 export const isOrganizationProfileComplete = (profile) => {
@@ -40,6 +49,7 @@ export const validateOrganizationProfileForm = (values) => {
   const lastName = normalizeWhitespace(values.last_name);
   const phone = normalizeTunisiaPhone(values.phone);
   const website = String(values.website || '').trim();
+  const logo = String(values.logo || '').trim();
 
   if (!organizationName) {
     errors.organization_name = 'Enter your organization name';
@@ -66,14 +76,13 @@ export const validateOrganizationProfileForm = (values) => {
   }
 
   if (website) {
-    try {
-      const url = new URL(website);
-      if (!['http:', 'https:'].includes(url.protocol)) {
-        errors.website = 'Enter a valid website URL.';
-      }
-    } catch {
+    if (!isValidPublicUrl(website)) {
       errors.website = 'Enter a valid website URL (e.g., https://www.example.com).';
     }
+  }
+
+  if (logo && !isValidPublicUrl(logo)) {
+    errors.logo = 'Enter a valid public logo URL (e.g., https://cdn.example.com/logo.png).';
   }
 
   if (!values.organization_type) {
@@ -90,6 +99,7 @@ export const buildOrganizationProfilePayload = (values) => ({
   first_name: normalizeWhitespace(values.first_name),
   last_name: normalizeWhitespace(values.last_name),
   website: String(values.website || '').trim(),
+  logo: String(values.logo || '').trim(),
   phone: normalizeTunisiaPhone(values.phone),
   organization_type: values.organization_type,
 });

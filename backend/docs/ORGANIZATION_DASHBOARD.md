@@ -359,6 +359,109 @@ BIDWISE_FRONTEND_URL=http://localhost:5173
 BIDWISE_SUPPORT_EMAIL=support@example.com
 ```
 
+## Candidate Recommendation Email Digest
+
+BidWise can proactively notify candidates when new opportunities matching their
+profile are available. This is implemented as a scheduled daily digest, not as
+real-time push.
+
+### Why a daily digest instead of real time
+
+This choice is intentional:
+
+- recommendation scoring already exists and can be reused in batch mode
+- daily delivery reduces email noise and avoids notification spam
+- the workload stays predictable and cheaper than recalculating on every new
+  opportunity
+- the candidate receives a short curated list instead of fragmented alerts
+
+For the soutenance, this is easy to justify:
+
+> BidWise does not wait for the candidate to come back manually.  
+> The platform can proactively push relevant opportunities, while keeping
+> frequency controlled and avoiding spam.
+
+### Trigger and frequency
+
+Celery Beat schedules one task per day:
+
+- task: `notifications.send_recommendation_digest`
+- queue: `notifications`
+- default cadence: once per day
+
+The task loops over active candidate accounts and decides whether an email
+should be sent.
+
+### Selection rules
+
+The rule set is intentionally simple and explainable:
+
+- candidate account must be active
+- candidate profile must reach a minimum completion score
+- opportunities must already be recommended by the existing recommendation
+  engine
+- only `ACTIVE` opportunities are eligible
+- only recent opportunities are considered, by default from the last 7 days
+- at least 3 new relevant opportunities must exist before sending an email
+- at most 1 digest email is sent per candidate per day
+- the same opportunity is never sent twice to the same candidate
+
+This keeps the feature useful without becoming intrusive.
+
+### Delivery content
+
+The email contains:
+
+- candidate first name when available
+- 3 to 5 opportunity cards
+- title
+- organization
+- location
+- one call to action: `View opportunities`
+
+The goal is not to replace the platform UI, but to bring the candidate back to
+BidWise with a concise and relevant shortlist.
+
+### Tracking and anti-duplicate logic
+
+BidWise stores delivery history in
+`notifications.RecommendationNotificationDispatch`.
+
+Each row links:
+
+- one user
+- one opportunity
+- one notification email batch
+- one send timestamp
+
+This gives a simple and reliable anti-spam mechanism:
+
+- if an opportunity was already sent to a candidate, it is excluded next time
+- if a digest was already sent today, the candidate is skipped for the day
+
+### Why this implementation is defendable
+
+This design is strong for an academic and product defense because it is:
+
+- useful: candidates receive relevant offers automatically
+- controlled: one email per day maximum
+- explainable: clear business rules instead of opaque heuristics
+- scalable: batch processing through Celery
+- auditable: sent opportunities are tracked in the database
+
+### Main configuration
+
+```env
+RECOMMENDATION_DIGEST_ENABLED=true
+RECOMMENDATION_DIGEST_CRON_HOUR=8
+RECOMMENDATION_DIGEST_CRON_MINUTE=30
+RECOMMENDATION_DIGEST_RECENT_DAYS=7
+RECOMMENDATION_DIGEST_MIN_NEW_ITEMS=3
+RECOMMENDATION_DIGEST_MAX_ITEMS=5
+RECOMMENDATION_DIGEST_CANDIDATE_LIMIT=20
+RECOMMENDATION_DIGEST_MIN_PROFILE_SCORE=60
+```
+
 ## Direct Candidate Applications
 
 Active organization jobs, internships, and seasonal opportunities accept

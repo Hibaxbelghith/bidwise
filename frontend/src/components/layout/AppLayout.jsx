@@ -64,6 +64,8 @@ const AppLayout = () => {
   const isOrganizationWorkspace = isOrganizationSurface && isOrganizationAccount;
   const dashboardPath = isOrganizationAccount ? '/organization/dashboard' : '/dashboard';
   const dashboardLabel = isOrganizationAccount ? 'Organization Dashboard' : 'My Dashboard';
+  const organizationLogo = user?.organization_profile?.logo || '';
+  const organizationName = user?.organization_profile?.organization_name || 'Organization';
   const profileCompletionScore = getProfileCompletionScore(user);
   const isProfileComplete = profileCompletionScore >= 60;
   
@@ -221,7 +223,19 @@ const AppLayout = () => {
                             className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
                           >
                             {isOrganizationAccount ? (
-                              <Building2 className="h-4 w-4" />
+                              organizationLogo ? (
+                                <img
+                                  src={organizationLogo}
+                                  alt={`${organizationName} logo`}
+                                  className="h-4 w-4 rounded-sm object-contain"
+                                  loading="lazy"
+                                  onError={(event) => {
+                                    event.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <Building2 className="h-4 w-4" />
+                              )
                             ) : (
                               <User className="h-4 w-4" />
                             )}
@@ -275,8 +289,22 @@ const AppLayout = () => {
                                   className="inline-flex h-9 items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-800 hover:bg-neutral-50"
                                   onClick={() => setIsOrganizationAccountMenuOpen((previous) => !previous)}
                                 >
-                                  <User className="h-4 w-4" aria-hidden="true" />
-                                  <span className="hidden max-w-[220px] truncate sm:inline">{user?.email}</span>
+                                  {organizationLogo ? (
+                                    <img
+                                      src={organizationLogo}
+                                      alt={`${organizationName} logo`}
+                                      className="h-4 w-4 rounded-sm object-contain"
+                                      loading="lazy"
+                                      onError={(event) => {
+                                        event.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    <Building2 className="h-4 w-4" aria-hidden="true" />
+                                  )}
+                                  <span className="hidden max-w-[220px] truncate sm:inline">
+                                    {organizationName}
+                                  </span>
                                   <ChevronDown className="h-4 w-4" aria-hidden="true" />
                                 </button>
                                 {isOrganizationAccountMenuOpen ? (
@@ -285,7 +313,8 @@ const AppLayout = () => {
                                       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
                                         Organization account
                                       </p>
-                                      <p className="mt-1 truncate text-sm font-medium text-neutral-950">{user?.email}</p>
+                                      <p className="mt-1 truncate text-sm font-medium text-neutral-950">{organizationName}</p>
+                                      <p className="mt-1 truncate text-xs text-neutral-500">{user?.email}</p>
                                     </div>
                                     <Link
                                       to="/organization/create-account"

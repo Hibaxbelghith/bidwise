@@ -2,6 +2,7 @@ import logging
 import hashlib
 import json
 import unicodedata
+from types import SimpleNamespace
 
 from django.conf import settings
 from django.core.cache import cache
@@ -1072,6 +1073,11 @@ def recommendations_view(request):
     response = Response(recommendations, status=status.HTTP_200_OK)
     response["X-BidWise-Recommendations-Cache"] = "miss" if cache_key else "skip"
     return response
+
+
+def build_recommendations_for_user(user, limit=10):
+    request_like = SimpleNamespace(user=user)
+    return _build_recommendations(request_like, int(limit or 10))
 
 
 def _resume_match_cache_key(request, opportunity, evidence, action):

@@ -1,4 +1,6 @@
 import logging
+import secrets
+from pathlib import Path
 
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -29,11 +31,13 @@ from .otp_service import deliver_otp, otp_response_message, resolve_client_type
 from .serializers import (
     UtilisateurSerializer,
     OrganizationProfileSerializer,
+    OrganizationLogoUploadSerializer,
     ProfileResumeSerializer,
     ProfilUpdateSerializer,
     OTPRequestSerializer,
     OTPVerifySerializer,
 )
+from .storage import ProfileResumeStorage
 from .tasks import enqueue_profile_resume_parse
 from .throttles import (
     OTPRequestThrottle,
@@ -147,6 +151,35 @@ def organization_profile_detail(request):
             status=status.HTTP_200_OK if profile else status.HTTP_201_CREATED,
         )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsSuspensionNotBlocked])
+@parser_classes([MultiPartParser, FormParser])
+def organization_logo_upload(request):
+    # This upload is also used during initial organization profile setup,
+    # before the account type is promoted to organization on first save.
+    serializer = OrganizationLogoUploadSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    uploaded_file = serializer.validated_data["file"]
+    extension = Path(uploaded_file.name or "").suffix.lower()
+    storage = ProfileResumeStorage()
+    storage_name = (
+        f"organization_logos/"
+        f"{request.user.pk}/"
+        f"{secrets.token_hex(16)}{extension}"
+    )
+    saved_name = storage.save(storage_name, uploaded_file)
+
+    return Response(
+        {
+            "url": storage.url(saved_name),
+            "filename": Path(uploaded_file.name or saved_name).name,
+            "size": getattr(uploaded_file, "size", 0),
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 def _profile_suggestion_response(request, term_type):

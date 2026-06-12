@@ -123,8 +123,14 @@ class OpportuniteSerializer(serializers.ModelSerializer):
         return text or None
 
     def get_company_logo(self, obj):
+        organization_profile_logo = ""
+        organisation_user = getattr(obj, "organisation", None)
+        if organisation_user is not None:
+            organization_profile = getattr(organisation_user, "organization_profile", None)
+            organization_profile_logo = getattr(organization_profile, "logo", "") or ""
+
         return normalize_company_logo_url(
-            getattr(obj, "company_logo", ""),
+            getattr(obj, "company_logo", "") or organization_profile_logo,
             organization_name=getattr(obj, "organisation_nom", ""),
         )
 

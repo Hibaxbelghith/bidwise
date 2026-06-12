@@ -10,6 +10,8 @@ from django.contrib.auth.hashers import make_password, check_password
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
+from opportunities.utils.images import is_valid_image_url
+
 from .storage import ProfileResumeStorage
 
 
@@ -260,6 +262,7 @@ class OrganizationProfile(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     website = models.URLField(max_length=255, blank=True, default="")
+    logo = models.URLField(max_length=1000, blank=True, default="")
     phone = models.CharField(max_length=16)
     organization_type = models.CharField(
         max_length=20,
@@ -282,6 +285,7 @@ class OrganizationProfile(models.Model):
         self.first_name = _normalize_required_text(self.first_name)
         self.last_name = _normalize_required_text(self.last_name)
         self.website = (self.website or "").strip()
+        self.logo = (self.logo or "").strip()
         self.phone = re.sub(r"\s+", "", (self.phone or "").strip())
         self.organization_type = (self.organization_type or "").strip()
 
@@ -298,6 +302,9 @@ class OrganizationProfile(models.Model):
 
         if not re.fullmatch(r"\+216\d{8}", self.phone or ""):
             errors["phone"] = "Enter a Tunisia phone number in the format +21612345678."
+
+        if self.logo and not is_valid_image_url(self.logo):
+            errors["logo"] = "Enter a valid public image URL."
 
         if errors:
             raise ValidationError(errors)

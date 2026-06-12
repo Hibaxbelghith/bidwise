@@ -66,6 +66,15 @@ export const upsertOrganizationProfile = async (values) => {
   return response.data;
 };
 
+export const uploadOrganizationLogo = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post('/profile/organization/logo/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
 export const listOrganizationOpportunities = async () => {
   const response = await api.get('/organization/opportunities/');
   return Array.isArray(response.data) ? response.data : [];

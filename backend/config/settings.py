@@ -442,6 +442,7 @@ CELERY_TASK_ROUTES = {
     "opportunities.send_organization_automatic_approval_email": {"queue": "notifications"},
     "applications.notify_organization_new_application": {"queue": "notifications"},
     "applications.notify_candidate_application_submitted": {"queue": "notifications"},
+    "notifications.send_recommendation_digest": {"queue": "notifications"},
 }
 PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS = int(
     os.getenv("PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS", "150")
@@ -487,6 +488,14 @@ OPPORTUNITY_LLM_BACKFILL_DELAY_SECONDS = float(os.getenv("OPPORTUNITY_LLM_BACKFI
 OPPORTUNITY_LLM_BACKFILL_WORKERS = int(os.getenv("OPPORTUNITY_LLM_BACKFILL_WORKERS", "1"))
 OPPORTUNITY_LLM_BACKFILL_LOCK_SECONDS = int(os.getenv("OPPORTUNITY_LLM_BACKFILL_LOCK_SECONDS", str(60 * 30)))
 OPPORTUNITY_LLM_BACKFILL_CRON_MINUTE = os.getenv("OPPORTUNITY_LLM_BACKFILL_CRON_MINUTE", "7,37")
+RECOMMENDATION_DIGEST_ENABLED = _env_flag("RECOMMENDATION_DIGEST_ENABLED", True)
+RECOMMENDATION_DIGEST_CRON_MINUTE = os.getenv("RECOMMENDATION_DIGEST_CRON_MINUTE", "30")
+RECOMMENDATION_DIGEST_CRON_HOUR = os.getenv("RECOMMENDATION_DIGEST_CRON_HOUR", "8")
+RECOMMENDATION_DIGEST_RECENT_DAYS = int(os.getenv("RECOMMENDATION_DIGEST_RECENT_DAYS", "7"))
+RECOMMENDATION_DIGEST_MIN_NEW_ITEMS = int(os.getenv("RECOMMENDATION_DIGEST_MIN_NEW_ITEMS", "3"))
+RECOMMENDATION_DIGEST_MAX_ITEMS = int(os.getenv("RECOMMENDATION_DIGEST_MAX_ITEMS", "5"))
+RECOMMENDATION_DIGEST_CANDIDATE_LIMIT = int(os.getenv("RECOMMENDATION_DIGEST_CANDIDATE_LIMIT", "20"))
+RECOMMENDATION_DIGEST_MIN_PROFILE_SCORE = int(os.getenv("RECOMMENDATION_DIGEST_MIN_PROFILE_SCORE", "60"))
 CELERY_BEAT_SCHEDULER = os.getenv(
     "CELERY_BEAT_SCHEDULER",
     "celery.beat:PersistentScheduler",
@@ -505,6 +514,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
     },
 }
+if RECOMMENDATION_DIGEST_ENABLED:
+    CELERY_BEAT_SCHEDULE["send-recommendation-digest-daily"] = {
+        "task": "notifications.send_recommendation_digest",
+        "schedule": crontab(
+            minute=RECOMMENDATION_DIGEST_CRON_MINUTE,
+            hour=RECOMMENDATION_DIGEST_CRON_HOUR,
+        ),
+    }
 if OPPORTUNITY_LLM_BACKFILL_ENABLED:
     CELERY_BEAT_SCHEDULE["enrich-opportunity-llm-backfill"] = {
         "task": "ai.enrich_opportunity_llm_backfill",
