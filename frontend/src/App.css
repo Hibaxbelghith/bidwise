@@ -1,1 +1,19 @@
-/* App-level styles — layout handled by Tailwind */
+/* App-level styles - layout handled by Tailwind. */
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero .gradient-shift {
+    animation-duration: 18s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .home-hero .slow-drift {
+    animation-duration: 20s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .home-hero .job-float {
+    animation-duration: 18s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+}

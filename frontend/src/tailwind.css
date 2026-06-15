@@ -23,3 +23,60 @@
   animation: attention-pulse 1.2s ease-in-out infinite;
 }
 
+/* Home hero animations adapted from the Lovable template. */
+.gradient-shift {
+  background: linear-gradient(120deg, #ffffff, #f8fbff, #eaf3ff, #ffffff, #f3f8ff);
+  background-size: 300% 300%;
+  animation: hero-gradient-shift 18s ease-in-out infinite;
+}
+
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(37, 99, 235, 0.12) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.slow-drift {
+  animation: hero-slow-drift 20s ease-in-out infinite;
+  will-change: transform;
+}
+
+.job-float {
+  animation: hero-job-float 18s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes hero-gradient-shift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes hero-slow-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(30px, -20px) scale(1.08);
+  }
+}
+
+@keyframes hero-job-float {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(20px, -30px) rotate(6deg);
+  }
+  50% {
+    transform: translate(-15px, -50px) rotate(-4deg);
+  }
+  75% {
+    transform: translate(25px, -25px) rotate(3deg);
+  }
+}

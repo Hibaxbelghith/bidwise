@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { AuthProvider } from '@/src/features/auth/context/AuthContext';
+import AppLaunchSplash from '@/src/shared/components/AppLaunchSplash';
 import { ThemeModeProvider, useThemeMode } from '@/src/shared/context/ThemeModeContext';
 
 const navigationThemes = {
@@ -41,6 +42,7 @@ function RootLayoutContent() {
       <ThemeProvider value={navigationThemes[colorScheme]}>
         <Stack screenOptions={{ headerShown: false }} />
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        <AppLaunchSplash />
       </ThemeProvider>
     </AuthProvider>
   );

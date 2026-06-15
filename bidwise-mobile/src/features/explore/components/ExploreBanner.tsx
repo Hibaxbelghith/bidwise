@@ -1,4 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
 export type ExploreBannerMode = 'guest' | 'incomplete_profile' | 'missing_cv' | 'ready';
 
@@ -37,41 +40,47 @@ export default function ExploreBanner({
   primaryLabel,
 }: ExploreBannerProps) {
   const copy = COPY[mode];
+  const textColor = useThemeColor({}, 'text');
+  const mutedColor = useThemeColor({}, 'muted');
+  const tintColor = useThemeColor({}, 'tint');
+  const borderColor = useThemeColor({}, 'border');
+  const bannerColor = useThemeColor({ light: '#eff6ff', dark: '#111d32' }, 'card');
+  const badgeColor = useThemeColor({ light: '#dbeafe', dark: '#1e3a5f' }, 'card');
 
   return (
-    <View style={styles.banner}>
-      <View style={styles.bannerGlowTop} />
-      <View style={styles.bannerGlowBottom} />
+    <View style={[styles.banner, { backgroundColor: bannerColor, borderColor }]}>
+      <View style={[styles.bannerGlowTop, { backgroundColor: `${tintColor}16` }]} />
+      <View style={[styles.bannerGlowBottom, { backgroundColor: `${tintColor}0D` }]} />
 
       <View style={styles.bannerTopRow}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{copy.eyebrow}</Text>
+        <View style={[styles.badge, { backgroundColor: badgeColor }]}>
+          <Ionicons name="sparkles-outline" size={14} color={tintColor} />
+          <Text style={[styles.badgeText, { color: tintColor }]}>{copy.eyebrow}</Text>
         </View>
-
       </View>
 
-      <Text style={styles.title}>{copy.title}</Text>
-      <Text style={styles.description}>{copy.description}</Text>
+      <Text style={[styles.title, { color: textColor }]}>{copy.title}</Text>
+      <Text style={[styles.description, { color: mutedColor }]}>{copy.description}</Text>
 
       <View style={styles.bannerFooter}>
-        <View style={styles.bannerFooter}>
-  {mode !== 'ready' && (
-    <View>
-      <Text style={styles.footerLabel}>BidWise mobile</Text>
-      <Text style={styles.footerHint}>
-        Explore first, then unlock stronger matches.
-      </Text>
-    </View>
-  )}
+        {mode !== 'ready' ? (
+          <Text style={[styles.footerHint, { color: mutedColor }]}>
+            Explore now. Personalize when ready.
+          </Text>
+        ) : (
+          <View />
+        )}
 
-  <TouchableOpacity
-    activeOpacity={0.85}
-    onPress={onPrimaryAction}
-    style={styles.button}
-  >
-    <Text style={styles.buttonText}>{primaryLabel}</Text>
-  </TouchableOpacity>
-</View>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onPrimaryAction}
+          style={[styles.button, { backgroundColor: tintColor }]}
+          accessibilityRole="button"
+          accessibilityLabel={primaryLabel}
+        >
+          <Text style={styles.buttonText}>{primaryLabel}</Text>
+          <Ionicons name="arrow-forward" size={16} color="#ffffff" />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -80,28 +89,26 @@ export default function ExploreBanner({
 const styles = StyleSheet.create({
   banner: {
     overflow: 'hidden',
-    borderRadius: 22,
+    borderRadius: 16,
+    borderWidth: 1,
     padding: 18,
-    backgroundColor: '#0f172a',
     gap: 10,
   },
   bannerGlowTop: {
     position: 'absolute',
-    top: -30,
-    right: -10,
-    width: 140,
-    height: 140,
-    borderRadius: 999,
-    backgroundColor: 'rgba(37, 99, 235, 0.36)',
-  },
-  bannerGlowBottom: {
-    position: 'absolute',
-    bottom: -40,
-    left: -10,
+    top: -45,
+    right: -30,
     width: 150,
     height: 150,
     borderRadius: 999,
-    backgroundColor: 'rgba(56, 189, 248, 0.18)',
+  },
+  bannerGlowBottom: {
+    position: 'absolute',
+    bottom: -65,
+    left: -35,
+    width: 145,
+    height: 145,
+    borderRadius: 999,
   },
   bannerTopRow: {
     flexDirection: 'row',
@@ -113,34 +120,23 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   badgeText: {
-    color: '#dbeafe',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     textTransform: 'uppercase',
   },
-  miniPill: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(191, 219, 254, 0.14)',
-  },
-  miniPillText: {
-    color: '#bfdbfe',
-    fontSize: 11,
-    fontWeight: '600',
-  },
   title: {
-    color: '#ffffff',
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
+    maxWidth: 420,
+    fontSize: 21,
+    lineHeight: 27,
+    fontWeight: '800',
   },
   description: {
-    color: '#cbd5e1',
     fontSize: 13,
     lineHeight: 20,
   },
@@ -151,25 +147,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  footerLabel: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   footerHint: {
-    marginTop: 3,
-    color: '#94a3b8',
+    flex: 1,
     fontSize: 12,
+    lineHeight: 17,
   },
   button: {
     minHeight: 42,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
     justifyContent: 'center',
   },
   buttonText: {
-    color: '#1d4ed8',
+    color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
   },
