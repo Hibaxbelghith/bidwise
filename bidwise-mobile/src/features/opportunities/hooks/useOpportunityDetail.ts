@@ -25,6 +25,10 @@ import {
   getOrganizationLabel,
   normalizeDescription,
 } from '../utils/opportunityFormatters';
+import {
+  isOpportunitySaved,
+  listenSavedOpportunityChanges,
+} from '../utils/savedOpportunitiesStorage';
 
 const MIN_LOADING_TIME_MS = 400;
 const QUICK_SCAN_SKILLS_LIMIT = 5;
@@ -129,8 +133,33 @@ export function useOpportunityDetail({
   useEffect(() => {
     setShowAllSkills(false);
     setIsDescriptionExpanded(false);
-    setIsSaved(false);
   }, [item?.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!item?.id || !isUserAuthenticated) {
+      setIsSaved(false);
+      return undefined;
+    }
+
+    const sync = async () => {
+      const nextValue = await isOpportunitySaved(item.id);
+      if (isMounted) {
+        setIsSaved(nextValue);
+      }
+    };
+
+    void sync();
+    const unsubscribe = listenSavedOpportunityChanges(() => {
+      void sync();
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [isUserAuthenticated, item?.id]);
 
   const extraData = useMemo(() => getExtraData(item), [item]);
   const hasExtraData = Object.keys(extraData || {}).length > 0;

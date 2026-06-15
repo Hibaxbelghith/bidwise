@@ -1,5 +1,10 @@
-import { Redirect } from 'expo-router';
+import DashboardScreen from '@/src/features/dashboard/components/DashboardScreen';
+import AppShell from '@/src/features/navigation/components/AppShell';
 
-export default function LegacyDashboardRoute() {
-  return <Redirect href="/for-you" />;
+export default function DashboardRoute() {
+  return (
+    <AppShell title="Dashboard" currentTab="dashboard">
+      <DashboardScreen embedded />
+    </AppShell>
+  );
 }

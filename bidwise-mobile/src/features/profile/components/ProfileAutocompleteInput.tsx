@@ -4,11 +4,12 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { useProfileAutocomplete } from '@/src/features/profile/hooks/useProfileAutocomplete';
 import type { ProfileSuggestion, ProfileTermType } from '@/src/features/profile/types';
 import {
-  canonicalizeInterestLabel,
-  canonicalizeSkillLabel,
+  formatBusinessFamilyLabels,
+  normalizeBusinessFamilyValues,
   isGarbageSkillInput,
   isInterestTermRejected,
   isKnownSkillTerm,
+  isKnownRoleTerm,
   isRoleTermRejected,
   normalizeTermKey,
   normalizeTextList,
@@ -49,14 +50,12 @@ function ProfileAutocompleteInput({
   const isRole = termType === 'role';
   const isSkill = termType === 'skill';
   const isInterest = termType === 'interest';
-  const requiresSuggestion = isRole || isInterest;
 
   const selected = useMemo(() => {
     const seen = new Set<string>();
     return normalizeTextList(value)
       .map((item) => {
-        if (isSkill) return canonicalizeSkillLabel(item);
-        if (isInterest) return canonicalizeInterestLabel(item);
+        if (isInterest) return formatBusinessFamilyLabels([item])[0] || item;
         return item;
       })
       .filter((item) => {
@@ -65,18 +64,28 @@ function ProfileAutocompleteInput({
         seen.add(key);
         return true;
       });
-  }, [isInterest, isSkill, value]);
+  }, [isInterest, value]);
 
   const addCanonical = (rawValue: string) => {
     const canonical = rawValue.trim().replace(/\s+/g, ' ');
     if (!canonical || selected.length >= maxItems) return;
 
     if (isRole && isRoleTermRejected(canonical)) {
-      setMessage(isKnownSkillTerm(canonical) ? `${canonical} is a skill, not a role.` : 'Choose a specific role from suggestions.');
+      setMessage(
+        isKnownSkillTerm(canonical)
+          ? `${canonical} is a skill, not a role.`
+          : isKnownRoleTerm(canonical)
+            ? `${canonical} is already normalized.`
+            : 'Enter a specific role title.',
+      );
       return;
     }
     if (isInterest && isInterestTermRejected(canonical)) {
-      setMessage(isKnownSkillTerm(canonical) ? `${canonical} is a skill, not an industry interest.` : 'Choose an industry from suggestions.');
+      setMessage(
+        isKnownSkillTerm(canonical)
+          ? `${canonical} is a skill, not a sector.`
+          : 'Choose a valid professional sector.',
+      );
       return;
     }
     if (isSkill && isGarbageSkillInput(canonical)) {
@@ -100,21 +109,32 @@ function ProfileAutocompleteInput({
     const trimmed = query.trim();
     if (!trimmed || selected.length >= maxItems) return;
 
-    const preferred = suggestions[0];
-    if (preferred) {
-      const valueToAdd = suggestionValue(preferred);
-      if (isSkill) addCanonical(canonicalizeSkillLabel(valueToAdd));
-      else if (isInterest) addCanonical(canonicalizeInterestLabel(valueToAdd));
-      else addCanonical(valueToAdd);
+    const queryKey = normalizeTermKey(trimmed);
+    const exactSuggestion = suggestions.find((suggestion) => {
+      const valueKey = normalizeTermKey(suggestionValue(suggestion));
+      return valueKey === queryKey;
+    });
+
+    if (exactSuggestion) {
+      const valueToAdd = suggestionValue(exactSuggestion);
+      if (isSkill) addCanonical(valueToAdd);
+      else if (isInterest) {
+        const canonicalInterest = normalizeBusinessFamilyValues([valueToAdd])[0] || valueToAdd;
+        addCanonical(canonicalInterest);
+      } else addCanonical(valueToAdd);
       return;
     }
 
-    if (requiresSuggestion) {
-      setMessage(isInterest ? 'Choose an industry from suggestions.' : 'Choose a role from suggestions.');
+    if (isSkill) {
+      addCanonical(trimmed);
       return;
     }
-
-    addCanonical(canonicalizeSkillLabel(trimmed));
+    if (isInterest) {
+      const canonicalInterest = normalizeBusinessFamilyValues([trimmed])[0] || trimmed;
+      addCanonical(canonicalInterest);
+      return;
+    }
+    addCanonical(trimmed);
   };
 
   const removeItem = (item: string) => {
@@ -159,7 +179,13 @@ function ProfileAutocompleteInput({
               <TouchableOpacity
                 key={`${suggestion.id}-${item}`}
                 activeOpacity={0.75}
-                onPress={() => addCanonical(isInterest ? canonicalizeInterestLabel(item) : isSkill ? canonicalizeSkillLabel(item) : item)}
+                onPress={() =>
+                  addCanonical(
+                    isInterest
+                      ? (normalizeBusinessFamilyValues([item])[0] || item)
+                      : item,
+                  )
+                }
                 style={[styles.suggestionChip, { borderColor: colors.border, backgroundColor: colors.card }]}
               >
                 <Text style={[styles.suggestionText, { color: colors.text }]}>{item}</Text>

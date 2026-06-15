@@ -29,9 +29,11 @@ const TYPE_FILTER_OPTIONS: Array<{ value: OpportunityTypeFilter; label: string }
   { value: 'FINANCEMENT', label: 'Funding' },
 ];
 
-const GUEST_STICKY_HELPER_TEXT = '1 tap to unlock AI score, save and apply';
+type OpportunitiesListScreenProps = {
+  embedded?: boolean;
+};
 
-export default function OpportunitiesListScreen() {
+export default function OpportunitiesListScreen({ embedded = false }: OpportunitiesListScreenProps) {
   const router = useRouter();
   const { isAuthenticated, loading: authLoading } = useAuth();
 
@@ -67,7 +69,7 @@ export default function OpportunitiesListScreen() {
 
   const handleBack = () => {
     if (isUserAuthenticated) {
-      router.replace('/for-you');
+      router.replace('/explore');
       return;
     }
 
@@ -91,18 +93,20 @@ export default function OpportunitiesListScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor }]}>
-      <View style={[styles.screen, { backgroundColor }]}>
-        <View style={styles.header}>
-          <Pressable
-            accessibilityLabel="Go back"
-            accessibilityRole="button"
-            onPress={handleBack}
-          >
-            <Text style={[styles.backText, { color: tintColor }]}>Back</Text>
-          </Pressable>
-          <Text style={[styles.headerTitle, { color: textColor }]}>Opportunities</Text>
-          <Text style={[styles.countText, { color: mutedColor }]}>{totalCount}</Text>
-        </View>
+      <View style={[styles.screen, { backgroundColor, paddingTop: embedded ? 16 : 56 }]}>
+        {!embedded ? (
+          <View style={styles.header}>
+            <Pressable
+              accessibilityLabel="Go back"
+              accessibilityRole="button"
+              onPress={handleBack}
+            >
+              <Text style={[styles.backText, { color: tintColor }]}>Back</Text>
+            </Pressable>
+            <Text style={[styles.headerTitle, { color: textColor }]}>Opportunities</Text>
+            <Text style={[styles.countText, { color: mutedColor }]}>{totalCount}</Text>
+          </View>
+        ) : null}
 
         {!isUserAuthenticated ? (
           <View style={[styles.guestBanner, { backgroundColor: cardColor, borderColor }]}>
@@ -271,21 +275,6 @@ export default function OpportunitiesListScreen() {
         ) : null}
       </View>
 
-      {!isUserAuthenticated ? (
-        <View style={[styles.stickyGuestBar, { borderColor, backgroundColor: cardColor }]}>
-          <Pressable
-            accessibilityLabel="Quick login"
-            accessibilityRole="button"
-            style={[styles.stickyGuestButton, { backgroundColor: tintColor }]}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.stickyGuestButtonText}>Quick login</Text>
-          </Pressable>
-          <Text style={[styles.stickyGuestText, { color: mutedColor }]}>
-            {GUEST_STICKY_HELPER_TEXT}
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -296,7 +285,6 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    paddingTop: 56,
     paddingHorizontal: 16,
     paddingBottom: 10,
   },
@@ -451,34 +439,5 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '800',
-  },
-  stickyGuestBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: 1,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  stickyGuestButton: {
-    minHeight: 44,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-  },
-  stickyGuestButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  stickyGuestText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 17,
   },
 });

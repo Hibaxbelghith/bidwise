@@ -59,6 +59,25 @@ export type BidWiseProfile = {
   profile_completion?: ProfileCompletion;
 };
 
+export type OnboardingState = Pick<
+  BidWiseProfile,
+  | 'opportunity_types'
+  | 'preferred_locations'
+  | 'work_mode_preferences'
+  | 'compensation_expectation'
+  | 'compensation_min_expectation'
+  | 'compensation_max_expectation'
+  | 'compensation_currency'
+  | 'compensation_period'
+  | 'employment_types'
+  | 'target_roles'
+  | 'competences'
+  | 'domaines_interet'
+  | 'profile_visibility'
+  | 'onboarding_completed'
+  | 'last_onboarding_step'
+>;
+
 export type ProfileUser = {
   email?: string;
   username?: string;
@@ -66,4 +85,30 @@ export type ProfileUser = {
   last_name?: string;
   profil?: BidWiseProfile;
   [key: string]: unknown;
+};
+
+export type UserProfile = ProfileUser & {
+  profil?: BidWiseProfile;
+};
+
+export type ProfileEditFormState = {
+  firstName: string;
+  lastName: string;
+  experienceLevel: string;
+  yearsOfExperience: string;
+  salaryMinExpectation: string;
+  salaryMaxExpectation: string;
+  salaryPeriod: string;
+};
+
+export type ProfileEditorState = {
+  formData: ProfileEditFormState;
+  opportunityTypes: string[];
+  preferredLocations: string[];
+  workModePreferences: string[];
+  employmentTypes: string[];
+  targetRoles: string[];
+  skills: string[];
+  interests: string[];
+  profileVisibility: boolean;
 };

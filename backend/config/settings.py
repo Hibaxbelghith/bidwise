@@ -392,6 +392,15 @@ GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "4000"))
 
 TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
 TURNSTILE_TIMEOUT_SECONDS = float(os.getenv("TURNSTILE_TIMEOUT_SECONDS", "4.0"))
+_MOBILE_OTP_DELIVERY = os.getenv("MOBILE_OTP_DELIVERY", "").strip().lower()
+if _MOBILE_OTP_DELIVERY:
+    MOBILE_OTP_DELIVERY = _MOBILE_OTP_DELIVERY
+else:
+    MOBILE_OTP_DELIVERY = (
+        "email"
+        if EMAIL_BACKEND != "django.core.mail.backends.console.EmailBackend"
+        else "simulated"
+    )
 LLM_PROVIDER_MAX_RETRIES = int(os.getenv("LLM_PROVIDER_MAX_RETRIES", "1"))
 LLM_PROVIDER_RETRY_DELAY_SECONDS = float(os.getenv("LLM_PROVIDER_RETRY_DELAY_SECONDS", "5.0"))
 LLM_PROVIDER_RETRY_BACKOFF_FACTOR = float(os.getenv("LLM_PROVIDER_RETRY_BACKOFF_FACTOR", "2.0"))

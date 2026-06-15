@@ -18,13 +18,14 @@ import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 const CODE_LENGTH = 6;
 
 export default function OTPScreen() {
-  const { email } = useLocalSearchParams<{ email: string }>();
+  const { email, delivery } = useLocalSearchParams<{ email: string; delivery?: string }>();
   const router = useRouter();
   const { loginWithOTP } = useAuth();
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const [resending, setResending] = useState(false);
+  const [deliveryHint, setDeliveryHint] = useState(String(delivery || ''));
   const inputRef = useRef<TextInput>(null);
 
   const backgroundColor = useThemeColor({}, 'background');
@@ -33,7 +34,6 @@ export default function OTPScreen() {
   const tintColor = useThemeColor({}, 'tint');
   const borderColor = useThemeColor({}, 'border');
 
-  // Auto-focus on mount
   useEffect(() => {
     const timer = setTimeout(() => inputRef.current?.focus(), 300);
     return () => clearTimeout(timer);
@@ -51,7 +51,7 @@ export default function OTPScreen() {
     setError('');
     try {
       const { is_new_user, onboarding_completed } = await loginWithOTP(email, code);
-      router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/for-you');
+      router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/explore');
     } catch (e: any) {
       const msg = e.response?.data?.error ?? e.response?.data?.detail ?? 'Invalid code. Please try again.';
       setError(msg);
@@ -61,7 +61,6 @@ export default function OTPScreen() {
     }
   }, [code, email, loginWithOTP, router]);
 
-  // Auto-submit when 6 digits are entered (e.g. from paste or autofill)
   useEffect(() => {
     if (code.length === CODE_LENGTH && !verifying) {
       void handleVerify();
@@ -73,7 +72,8 @@ export default function OTPScreen() {
     setResending(true);
     setError('');
     try {
-      await requestOTP(email);
+      const response = await requestOTP(email);
+      setDeliveryHint(String(response?.message || ''));
     } catch {
       setError('Could not resend code. Try again.');
     } finally {
@@ -81,8 +81,11 @@ export default function OTPScreen() {
     }
   };
 
-  // Render individual digit boxes
   const digits = Array.from({ length: CODE_LENGTH }, (_, i) => code[i] || '');
+  const normalizedDelivery = deliveryHint.toLowerCase();
+  const otpHelpText = normalizedDelivery.includes('simulated')
+    ? 'Development mode: your mobile login code is available in backend logs.'
+    : 'Enter the 6-digit code sent for this email address.';
 
   return (
     <KeyboardAvoidingView
@@ -91,16 +94,16 @@ export default function OTPScreen() {
     >
       <View style={styles.content}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={[styles.backText, { color: tintColor }]}>← Back</Text>
+          <Text style={[styles.backText, { color: tintColor }]}>Back</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.title, { color: textColor }]}>Check your email</Text>
+        <Text style={[styles.title, { color: textColor }]}>Enter your login code</Text>
         <Text style={[styles.subtitle, { color: mutedColor }]}>
-          We sent a 6-digit code to{'\n'}
+          Use the 6-digit code for{'\n'}
           <Text style={{ fontWeight: '600', color: textColor }}>{email}</Text>
         </Text>
+        <Text style={[styles.helperText, { color: mutedColor }]}>{otpHelpText}</Text>
 
-        {/* Error */}
         {error ? (
           <Text
             style={[styles.errorText, { color: '#ef4444' }]}
@@ -111,7 +114,6 @@ export default function OTPScreen() {
           </Text>
         ) : null}
 
-        {/* Hidden input — OTP autofill enabled */}
         <TextInput
           ref={inputRef}
           style={styles.hiddenInput}
@@ -125,10 +127,9 @@ export default function OTPScreen() {
           autoComplete="sms-otp"
           importantForAutofill="yes"
           accessibilityLabel="6-digit verification code"
-          accessibilityHint="Enter the 6-digit code sent to your email"
+          accessibilityHint="Enter the 6-digit code for your BidWise login"
         />
 
-        {/* Visual digit boxes */}
         <TouchableOpacity
           style={styles.codeRow}
           activeOpacity={1}
@@ -145,16 +146,22 @@ export default function OTPScreen() {
                   borderWidth: index === code.length ? 2 : 1,
                 },
               ]}
-              accessibilityLabel={digit ? `Digit ${index + 1} of ${CODE_LENGTH}: ${digit}` : `Digit ${index + 1} of ${CODE_LENGTH}: empty`}
+              accessibilityLabel={
+                digit
+                  ? `Digit ${index + 1} of ${CODE_LENGTH}: ${digit}`
+                  : `Digit ${index + 1} of ${CODE_LENGTH}: empty`
+              }
             >
               <Text style={[styles.digitText, { color: textColor }]}>{digit}</Text>
             </View>
           ))}
         </TouchableOpacity>
 
-        {/* Verify button */}
         <TouchableOpacity
-          style={[styles.primaryButton, { backgroundColor: tintColor, opacity: code.length === CODE_LENGTH && !verifying ? 1 : 0.5 }]}
+          style={[
+            styles.primaryButton,
+            { backgroundColor: tintColor, opacity: code.length === CODE_LENGTH && !verifying ? 1 : 0.5 },
+          ]}
           onPress={handleVerify}
           activeOpacity={0.8}
           disabled={code.length !== CODE_LENGTH || verifying}
@@ -166,7 +173,6 @@ export default function OTPScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Resend */}
         <TouchableOpacity style={styles.resendButton} onPress={handleResend} disabled={resending}>
           <Text style={[styles.resendText, { color: mutedColor }]}>
             {resending ? 'Sending...' : "Didn't receive the code? "}
@@ -206,7 +212,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 32,
+    marginBottom: 10,
+  },
+  helperText: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 22,
   },
   errorText: {
     fontSize: 14,

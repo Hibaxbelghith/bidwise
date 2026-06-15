@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { getOpportunities, type Opportunity } from '../services/opportunitiesService';
+import {
+  getOpportunities,
+  listOpportunitySources,
+  type Opportunity,
+  type OpportunitySource,
+} from '../services/opportunitiesService';
 import { getErrorMessage, wait } from '../utils/opportunityHelpers';
 
 const MIN_LOADING_TIME_MS = 400;
@@ -17,11 +22,16 @@ export type OpportunityTypeFilter =
   | 'FINANCEMENT';
 
 type FetchMode = 'initial' | 'refresh' | 'more';
+type OpportunityDatePostedFilter = '' | 'day' | '3days' | 'week' | '2weeks' | 'month';
+type OpportunityWorkModeFilter = '' | 'REMOTE' | 'HYBRID' | 'ON_SITE';
 
 export function useOpportunitiesList({ ready }: { ready: boolean }) {
   const [searchInput, setSearchInput] = useState('');
   const [cityInput, setCityInput] = useState('');
   const [typeFilter, setTypeFilter] = useState<OpportunityTypeFilter>('ALL');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [workModeFilter, setWorkModeFilter] = useState<OpportunityWorkModeFilter>('');
+  const [datePostedFilter, setDatePostedFilter] = useState<OpportunityDatePostedFilter>('');
 
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [debouncedCity, setDebouncedCity] = useState('');
@@ -30,6 +40,7 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [hasNext, setHasNext] = useState(false);
+  const [sourceOptions, setSourceOptions] = useState<OpportunitySource[]>([]);
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -52,8 +63,40 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
   }, [cityInput, searchInput]);
 
   const hasActiveFilters = useMemo(() => {
-    return Boolean(searchInput.trim() || cityInput.trim() || typeFilter !== 'ALL');
-  }, [cityInput, searchInput, typeFilter]);
+    return Boolean(
+      searchInput.trim() ||
+        cityInput.trim() ||
+        typeFilter !== 'ALL' ||
+        sourceFilter ||
+        workModeFilter ||
+        datePostedFilter,
+    );
+  }, [cityInput, datePostedFilter, searchInput, sourceFilter, typeFilter, workModeFilter]);
+
+  useEffect(() => {
+    if (!ready) return undefined;
+
+    let isCancelled = false;
+
+    const loadSources = async () => {
+      try {
+        const sources = await listOpportunitySources();
+        if (!isCancelled) {
+          setSourceOptions(sources);
+        }
+      } catch {
+        if (!isCancelled) {
+          setSourceOptions([]);
+        }
+      }
+    };
+
+    void loadSources();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [ready]);
 
   const fetchPage = useCallback(
     async (targetPage: number, mode: FetchMode) => {
@@ -75,6 +118,9 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
           search: debouncedSearch,
           city: debouncedCity,
           type: typeFilter === 'ALL' ? '' : typeFilter,
+          source: sourceFilter,
+          workMode: workModeFilter,
+          datePosted: datePostedFilter,
         });
 
         setItems((previousItems) => {
@@ -112,7 +158,7 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
         fetchLockRef.current = false;
       }
     },
-    [debouncedCity, debouncedSearch, typeFilter],
+    [datePostedFilter, debouncedCity, debouncedSearch, sourceFilter, typeFilter, workModeFilter],
   );
 
   useEffect(() => {
@@ -135,6 +181,9 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
     setSearchInput('');
     setCityInput('');
     setTypeFilter('ALL');
+    setSourceFilter('');
+    setWorkModeFilter('');
+    setDatePostedFilter('');
   }, []);
 
   return {
@@ -148,8 +197,15 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
     setSearchInput,
     cityInput,
     setCityInput,
+    sourceOptions,
     typeFilter,
     setTypeFilter,
+    sourceFilter,
+    setSourceFilter,
+    workModeFilter,
+    setWorkModeFilter,
+    datePostedFilter,
+    setDatePostedFilter,
     hasActiveFilters,
     clearFilters,
     handleRefresh,

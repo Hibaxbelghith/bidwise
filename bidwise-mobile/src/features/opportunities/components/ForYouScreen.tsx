@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Pressable,
@@ -17,7 +17,9 @@ import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 import { useForYouFeed } from '../hooks/useForYouFeed';
 import ForYouOpportunityCard from './ForYouOpportunityCard';
 
+
 function StateCard({
+  icon,
   title,
   description,
   textColor,
@@ -30,6 +32,7 @@ function StateCard({
   secondaryLabel,
   secondaryAction,
 }: {
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   description: string;
   textColor: string;
@@ -44,6 +47,9 @@ function StateCard({
 }) {
   return (
     <View style={[styles.stateCard, { backgroundColor: cardColor, borderColor }]}>
+      <View style={[styles.stateIconWrap, { borderColor }]}>
+        <Ionicons name={icon} size={18} color={textColor} />
+      </View>
       <Text style={[styles.stateTitle, { color: textColor }]}>{title}</Text>
       <Text style={[styles.stateDescription, { color: mutedColor }]}>{description}</Text>
 
@@ -88,21 +94,32 @@ function RecommendationSkeleton({
   return (
     <View style={[styles.skeletonCard, { backgroundColor: cardColor, borderColor }]}>
       <View style={styles.skeletonHeader}>
+        <View style={[styles.skeletonPill, { width: 96, backgroundColor: skeletonSoft }]} />
+        <View style={[styles.skeletonScore, { backgroundColor: skeletonSoft }]} />
+      </View>
+      <View style={styles.skeletonBody}>
         <View style={[styles.skeletonLogo, { backgroundColor: skeletonBase }]} />
         <View style={styles.skeletonHeaderText}>
           <View style={[styles.skeletonLine, { width: '88%', backgroundColor: skeletonBase }]} />
           <View style={[styles.skeletonLine, { width: '52%', backgroundColor: skeletonSoft }]} />
         </View>
-        <View style={[styles.skeletonScore, { backgroundColor: skeletonSoft }]} />
       </View>
-      <View style={[styles.skeletonLine, { width: '42%', backgroundColor: skeletonSoft }]} />
-      <View style={[styles.skeletonLine, { width: '75%', backgroundColor: skeletonBase }]} />
+      <View style={[styles.skeletonLine, { width: '78%', backgroundColor: skeletonBase }]} />
       <View style={[styles.skeletonLine, { width: '68%', backgroundColor: skeletonSoft }]} />
+      <View style={styles.skeletonFooter}>
+        <View style={[styles.skeletonPill, { width: 70, backgroundColor: skeletonSoft }]} />
+        <View style={[styles.skeletonPill, { width: 84, backgroundColor: skeletonSoft }]} />
+        <View style={[styles.skeletonPill, { width: 60, backgroundColor: skeletonSoft }]} />
+      </View>
     </View>
   );
 }
 
-export default function ForYouScreen() {
+type ForYouScreenProps = {
+  embedded?: boolean;
+};
+
+export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
   const router = useRouter();
   const { isAuthenticated, loading: authLoading, user } = useAuth();
   const typedUser = user as ProfileUser | null;
@@ -152,21 +169,10 @@ export default function ForYouScreen() {
   const showResults = isAuthenticated && qualifiedCount > 0 && !error;
   const isPartialProfile = isAuthenticated && profileTier === 'partial';
 
-  const recommendationSummary = useMemo(() => {
-    if (!showResults) return '';
-    if (strongMatches.length && relatedOpportunities.length) {
-      return `${strongMatches.length} strong match${strongMatches.length > 1 ? 'es' : ''} and ${relatedOpportunities.length} related opportunit${relatedOpportunities.length > 1 ? 'ies' : 'y'}.`;
-    }
-    if (strongMatches.length) {
-      return `${strongMatches.length} strong match${strongMatches.length > 1 ? 'es' : ''} ready to review.`;
-    }
-    return `${relatedOpportunities.length} related opportunit${relatedOpportunities.length > 1 ? 'ies' : 'y'} for you.`;
-  }, [relatedOpportunities.length, showResults, strongMatches.length]);
-
   return (
     <View style={[styles.root, { backgroundColor }]}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: embedded ? 16 : 20 }]}
         refreshControl={
           isAuthenticated ? (
             <RefreshControl
@@ -179,32 +185,32 @@ export default function ForYouScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <View style={styles.headerTextWrap}>
-            <Text style={[styles.eyebrow, { color: tintColor }]}>Personalized feed</Text>
-            <Text style={[styles.title, { color: textColor }]}>For You</Text>
-            <Text style={[styles.subtitle, { color: mutedColor }]}>
-              {showResults
-                ? recommendationSummary
-                : 'Recommended opportunities based on your profile, CV, and preferences.'}
-            </Text>
-          </View>
 
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.exploreButton, { borderColor }]}
-            onPress={() => router.push('/opportunities')}
-          >
-            <Text style={[styles.exploreButtonText, { color: textColor }]}>Explore</Text>
-          </Pressable>
-        </View>
+        {showResults ? (
+          <View style={styles.kpiRow}>
+            <View style={[styles.kpiCard, { backgroundColor: cardColor, borderColor }]}>
+              <Text style={[styles.kpiValue, { color: textColor }]}>{strongMatches.length}</Text>
+              <Text style={[styles.kpiLabel, { color: mutedColor }]}>Strong matches</Text>
+            </View>
+            <View style={[styles.kpiCard, { backgroundColor: cardColor, borderColor }]}>
+              <Text style={[styles.kpiValue, { color: textColor }]}>{relatedOpportunities.length}</Text>
+              <Text style={[styles.kpiLabel, { color: mutedColor }]}>Review next</Text>
+            </View>
+            <View style={[styles.kpiCard, { backgroundColor: cardColor, borderColor }]}>
+              <Text style={[styles.kpiValue, { color: textColor }]}>{isPartialProfile ? 'Partial' : 'Ready'}</Text>
+              <Text style={[styles.kpiLabel, { color: mutedColor }]}>Profile signal</Text>
+            </View>
+          </View>
+        ) : null}
 
         {isPartialProfile && showResults ? (
           <View style={[styles.infoBanner, { backgroundColor: cardColor, borderColor }]}>
-            <Text style={[styles.infoBannerTitle, { color: textColor }]}>Profile can be stronger</Text>
+            <View style={styles.infoBannerHeader}>
+              <Ionicons name="information-circle-outline" size={16} color={tintColor} />
+              <Text style={[styles.infoBannerTitle, { color: textColor }]}>Recommendations can still improve</Text>
+            </View>
             <Text style={[styles.infoBannerText, { color: mutedColor }]}>
-              These recommendations already use your best signals. Add more profile details or update
-              your CV to improve ranking precision.
+              Add more profile details or update your CV to improve ranking precision and unlock stronger evidence.
             </Text>
           </View>
         ) : null}
@@ -242,6 +248,7 @@ export default function ForYouScreen() {
 
         {!showLoading && error ? (
           <StateCard
+            icon="alert-circle-outline"
             title="Unable to load recommendations"
             description={error}
             textColor={textColor}
@@ -252,12 +259,13 @@ export default function ForYouScreen() {
             primaryAction={handleRefresh}
             primaryBackground={tintColor}
             secondaryLabel="Explore opportunities"
-            secondaryAction={() => router.push('/opportunities')}
+            secondaryAction={() => router.push('/explore')}
           />
         ) : null}
 
         {showGuestState ? (
           <StateCard
+            icon="person-circle-outline"
             title="Login to unlock For You"
             description="BidWise can rank opportunities for you using your profile, preferences, and CV."
             textColor={textColor}
@@ -268,14 +276,15 @@ export default function ForYouScreen() {
             primaryAction={() => router.push('/login')}
             primaryBackground={tintColor}
             secondaryLabel="Browse all opportunities"
-            secondaryAction={() => router.push('/opportunities')}
+            secondaryAction={() => router.push('/explore')}
           />
         ) : null}
 
         {showIncompleteProfile ? (
           <StateCard
+            icon="document-text-outline"
             title="Complete your profile to unlock For You"
-            description="Add more roles, preferences, skills, or a CV so BidWise can rank opportunities with stronger signals."
+            description="Add roles, preferences, skills, or a CV so BidWise can rank opportunities with stronger signals."
             textColor={textColor}
             mutedColor={mutedColor}
             borderColor={borderColor}
@@ -284,12 +293,13 @@ export default function ForYouScreen() {
             primaryAction={() => router.push('/profile')}
             primaryBackground={tintColor}
             secondaryLabel="Explore opportunities"
-            secondaryAction={() => router.push('/opportunities')}
+            secondaryAction={() => router.push('/explore')}
           />
         ) : null}
 
         {showColdState ? (
           <StateCard
+            icon="sparkles-outline"
             title="Your recommendations are being prepared"
             description="Check back in a moment. BidWise is still preparing your personalized ranking after your recent profile or CV updates."
             textColor={textColor}
@@ -300,12 +310,13 @@ export default function ForYouScreen() {
             primaryAction={handleRefresh}
             primaryBackground={tintColor}
             secondaryLabel="Explore opportunities"
-            secondaryAction={() => router.push('/opportunities')}
+            secondaryAction={() => router.push('/explore')}
           />
         ) : null}
 
         {showEmptyState ? (
           <StateCard
+            icon="search-outline"
             title="No strong recommendations yet"
             description="BidWise did not find enough qualified matches right now. You can still explore all active opportunities."
             textColor={textColor}
@@ -313,7 +324,7 @@ export default function ForYouScreen() {
             borderColor={borderColor}
             cardColor={cardColor}
             primaryLabel="Explore opportunities"
-            primaryAction={() => router.push('/opportunities')}
+            primaryAction={() => router.push('/explore')}
             primaryBackground={tintColor}
             secondaryLabel="Update profile"
             secondaryAction={() => router.push('/profile')}
@@ -324,7 +335,10 @@ export default function ForYouScreen() {
           <View style={styles.sectionsWrap}>
             {strongMatches.length ? (
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: textColor }]}>Strong matches</Text>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: textColor }]}>Strong matches</Text>
+                  <Text style={[styles.sectionCount, { color: tintColor }]}>{strongMatches.length}</Text>
+                </View>
                 <Text style={[styles.sectionDescription, { color: mutedColor }]}>
                   Best aligned with your role, skills, CV, and preferences.
                 </Text>
@@ -347,9 +361,12 @@ export default function ForYouScreen() {
 
             {relatedOpportunities.length ? (
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: textColor }]}>
-                  {strongMatches.length ? 'More opportunities for you' : 'Recommended for review'}
-                </Text>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: textColor }]}>
+                    {strongMatches.length ? 'More opportunities for you' : 'Recommended for review'}
+                  </Text>
+                  <Text style={[styles.sectionCount, { color: tintColor }]}>{relatedOpportunities.length}</Text>
+                </View>
                 <Text style={[styles.sectionDescription, { color: mutedColor }]}>
                   Lower-confidence opportunities that still match important parts of your profile.
                 </Text>
@@ -381,56 +398,46 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingTop: 56,
     paddingHorizontal: 16,
-    paddingBottom: 32,
+    paddingBottom: 112,
+    gap: 16,
   },
-  header: {
+  kpiRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 16,
+    gap: 10,
   },
-  headerTextWrap: {
+  kpiCard: {
     flex: 1,
-  },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '900',
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  exploreButton: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    minHeight: 42,
-    justifyContent: 'center',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    gap: 4,
   },
-  exploreButtonText: {
-    fontSize: 14,
-    fontWeight: '800',
+  kpiValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  kpiLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   infoBanner: {
     borderWidth: 1,
     borderRadius: 14,
     padding: 12,
-    marginBottom: 16,
+    gap: 6,
+  },
+  infoBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   infoBannerTitle: {
     fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 4,
+    fontWeight: '700',
   },
   infoBannerText: {
     fontSize: 13,
@@ -446,18 +453,28 @@ const styles = StyleSheet.create({
   },
   skeletonCard: {
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
   },
   skeletonHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  skeletonPill: {
+    height: 24,
+    borderRadius: 999,
+  },
+  skeletonBody: {
+    flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    marginBottom: 14,
   },
   skeletonLogo: {
-    width: 48,
-    height: 48,
+    width: 50,
+    height: 50,
     borderRadius: 14,
   },
   skeletonHeaderText: {
@@ -465,32 +482,48 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   skeletonScore: {
-    width: 58,
+    width: 60,
     height: 44,
     borderRadius: 12,
   },
   skeletonLine: {
     height: 12,
     borderRadius: 8,
-    marginBottom: 8,
+  },
+  skeletonFooter: {
+    flexDirection: 'row',
+    gap: 8,
   },
   stateCard: {
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 20,
+    alignItems: 'center',
+  },
+  stateIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
   stateTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 8,
+    textAlign: 'center',
   },
   stateDescription: {
     fontSize: 14,
     lineHeight: 21,
+    textAlign: 'center',
   },
   stateActions: {
     marginTop: 18,
     gap: 10,
+    width: '100%',
   },
   primaryActionButton: {
     borderRadius: 12,
@@ -502,7 +535,7 @@ const styles = StyleSheet.create({
   primaryActionText: {
     color: '#ffffff',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   secondaryActionButton: {
     borderWidth: 1,
@@ -514,7 +547,7 @@ const styles = StyleSheet.create({
   },
   secondaryActionText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   sectionsWrap: {
     gap: 22,
@@ -522,9 +555,20 @@ const styles = StyleSheet.create({
   section: {
     gap: 10,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   sectionTitle: {
+    flex: 1,
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
+  },
+  sectionCount: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   sectionDescription: {
     fontSize: 13,

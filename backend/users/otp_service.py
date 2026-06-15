@@ -14,6 +14,7 @@ SUPPORTED_CLIENT_TYPES = {CLIENT_TYPE_WEB, CLIENT_TYPE_MOBILE}
 
 OTP_SENT_MSG = "Un code de connexion a ete envoye a votre adresse email."
 OTP_SIMULATED_MOBILE_MSG = "OTP simulated for mobile"
+MOBILE_OTP_EMAIL_MSG = "Un code de connexion mobile a ete envoye a votre adresse email."
 
 
 def normalize_client_type(raw_value):
@@ -33,6 +34,8 @@ def resolve_client_type(request, body_client_type=None):
 
 def otp_response_message(client_type):
     if normalize_client_type(client_type) == CLIENT_TYPE_MOBILE:
+        if getattr(settings, "MOBILE_OTP_DELIVERY", "simulated") == "email":
+            return MOBILE_OTP_EMAIL_MSG
         return OTP_SIMULATED_MOBILE_MSG
     return OTP_SENT_MSG
 
@@ -40,7 +43,10 @@ def otp_response_message(client_type):
 def deliver_otp(email, otp_code, expiry_minutes, client_type):
     normalized_client_type = normalize_client_type(client_type)
 
-    if normalized_client_type == CLIENT_TYPE_MOBILE:
+    if (
+        normalized_client_type == CLIENT_TYPE_MOBILE
+        and getattr(settings, "MOBILE_OTP_DELIVERY", "simulated") != "email"
+    ):
         if settings.DEBUG:
             # In dev/mobile simulation, expose OTP in console logs for testing.
             logger.warning(

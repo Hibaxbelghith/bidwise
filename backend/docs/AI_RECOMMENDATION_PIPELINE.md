@@ -9,7 +9,7 @@ Ce document explique le fonctionnement du moteur de recommandation et de la page
 Il couvre:
 
 - preparation des offres;
-- enrichissement LLM;
+- enrihissement LLM;
 - embeddings et JobBERT;
 - retrieval candidats;
 - scoring metier;

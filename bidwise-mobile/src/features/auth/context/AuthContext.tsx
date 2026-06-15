@@ -11,14 +11,10 @@ import {
   getRefreshToken,
   setTokens,
 } from '@/src/shared/services/tokenStorage';
-
-interface User {
-  email: string;
-  [key: string]: unknown;
-}
+import type { ProfileUser } from '@/src/features/profile/types';
 
 interface AuthContextType {
-  user: User | null;
+  user: ProfileUser | null;
   isAuthenticated: boolean;
   loading: boolean;
   loginWithOTP: (email: string, otpCode: string) => Promise<{ is_new_user: boolean; onboarding_completed: boolean }>;
@@ -30,7 +26,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   // On app start, check for existing token and load profile

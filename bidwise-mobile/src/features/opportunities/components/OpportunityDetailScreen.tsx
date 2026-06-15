@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
@@ -22,6 +23,7 @@ import {
   formatTypeLabel,
 } from '../utils/opportunityFormatters';
 import { formatDisplayValue, hasDisplayValue } from '../utils/opportunityHelpers';
+import { toggleSavedOpportunity } from '../utils/savedOpportunitiesStorage';
 import OpportunityLogo from './OpportunityLogo';
 
 const DESCRIPTION_LINES_COLLAPSED = 7;
@@ -122,6 +124,7 @@ function DetailSkeleton({
 
 export default function OpportunityDetailScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const { isAuthenticated, loading: authLoading } = useAuth();
 
@@ -180,7 +183,7 @@ export default function OpportunityDetailScreen() {
   } = useOpportunityDetail({
     idParam: id,
     isUserAuthenticated,
-    onInvalidId: () => router.replace('/opportunities'),
+    onInvalidId: () => router.replace('/explore'),
   });
 
   const showSkeleton = loading || authLoading;
@@ -234,20 +237,28 @@ export default function OpportunityDetailScreen() {
     }
   }, [handleOpenLogin, isUserAuthenticated, item?.source_item_url]);
 
-  const handleSavePress = useCallback(() => {
+  const handleSavePress = useCallback(async () => {
     if (!isUserAuthenticated) {
       handleOpenLogin();
       return;
     }
 
-    setIsSaved((previous) => !previous);
-  }, [handleOpenLogin, isUserAuthenticated, setIsSaved]);
+    if (!item?.id) return;
+    const nextValue = await toggleSavedOpportunity(item.id);
+    setIsSaved(nextValue);
+  }, [handleOpenLogin, isUserAuthenticated, item?.id, setIsSaved]);
 
   return (
     <View style={[styles.root, { backgroundColor }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.screen, { backgroundColor }]}
+        contentContainerStyle={[
+          styles.screen,
+          {
+            backgroundColor,
+            paddingBottom: 132 + Math.max(insets.bottom, 10),
+          },
+        ]}
       >
         <View style={styles.topBar}>
           <Pressable
@@ -806,7 +817,16 @@ export default function OpportunityDetailScreen() {
         ) : null}
       </ScrollView>
 
-      <View style={[styles.stickyActionBar, { borderColor, backgroundColor: cardColor }]}>
+      <View
+        style={[
+          styles.stickyActionBar,
+          {
+            borderColor,
+            backgroundColor: cardColor,
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
+      >
         {isUserAuthenticated ? (
           <>
             <Pressable
@@ -876,7 +896,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingTop: 54,
     paddingHorizontal: 16,
-    paddingBottom: 120,
   },
   topBar: {
     marginBottom: 10,

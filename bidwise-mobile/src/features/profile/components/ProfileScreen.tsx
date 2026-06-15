@@ -1,23 +1,26 @@
 import { useMemo } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 
-import ProfileSection from '@/src/features/profile/components/ProfileSection';
-import ResumeSection from '@/src/features/profile/components/ResumeSection';
 import { useAuth } from '@/src/features/auth/context/AuthContext';
-import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
+import ProfileSectionLinkCard from '@/src/features/profile/components/ProfileSectionLinkCard';
 import type { BidWiseProfile, ProfileUser } from '@/src/features/profile/types';
 import {
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
 import {
-  normalizeInterestList,
+  formatBusinessFamilyLabels,
   normalizeLocations,
   normalizeOptionValues,
   normalizeSkillList,
   normalizeTextList,
 } from '@/src/features/profile/utils/profileValidation';
+import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
+
+type ProfileScreenProps = {
+  embedded?: boolean;
+};
 
 const formatPreference = (value: unknown) => {
   const normalized = String(value || '').trim();
@@ -30,20 +33,6 @@ const formatPreference = (value: unknown) => {
     .join(' ');
 };
 
-const formatList = (value: unknown) => normalizeTextList(value).map(formatPreference);
-
-const formatSalary = (profile?: BidWiseProfile) => {
-  const min = profile?.compensation_min_expectation;
-  const max = profile?.compensation_max_expectation;
-  if (min || max) {
-    if (min && max) return `${min} - ${max} ${profile?.compensation_currency || 'TND'} / month`;
-    return `${min || max} ${profile?.compensation_currency || 'TND'} / month`;
-  }
-  if (!profile?.compensation_expectation) return 'Not specified';
-  const period = formatPreference(profile.compensation_period || 'MONTHLY').toLowerCase();
-  return `${profile.compensation_expectation} ${profile.compensation_currency || 'TND'} / ${period}`;
-};
-
 const formatOpportunityTypes = (value: unknown) => {
   const selected = new Set(normalizeOptionValues(value, OPPORTUNITY_TYPE_OPTIONS));
   return ONBOARDING_OPPORTUNITY_TYPE_OPTIONS
@@ -51,9 +40,28 @@ const formatOpportunityTypes = (value: unknown) => {
     .map((option) => option.label);
 };
 
-export default function ProfileScreen() {
+const summarizeList = (items: string[], fallback: string) => {
+  if (!items.length) return fallback;
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} • ${items[1]}`;
+  return `${items[0]} • ${items[1]} +${items.length - 2}`;
+};
+
+const formatSalarySummary = (profile?: BidWiseProfile) => {
+  const min = profile?.compensation_min_expectation;
+  const max = profile?.compensation_max_expectation;
+  const currency = profile?.compensation_currency || 'TND';
+
+  if (min != null && max != null) return `${min}-${max} ${currency}`;
+  if (min != null) return `From ${min} ${currency}`;
+  if (max != null) return `Up to ${max} ${currency}`;
+  if (profile?.compensation_expectation != null) return `${profile.compensation_expectation} ${currency}`;
+  return 'Salary not set';
+};
+
+export default function ProfileScreen({ embedded = false }: ProfileScreenProps) {
   const router = useRouter();
-  const { user, loadUserProfile, loading } = useAuth();
+  const { user } = useAuth();
   const typedUser = user as ProfileUser | null;
   const profile = typedUser?.profil;
 
@@ -63,179 +71,129 @@ export default function ProfileScreen() {
   const tintColor = useThemeColor({}, 'tint');
   const cardColor = useThemeColor({}, 'card');
   const borderColor = useThemeColor({}, 'border');
-  const sectionColors = useMemo(
-    () => ({ card: cardColor, border: borderColor, text: textColor, muted: mutedColor }),
-    [borderColor, cardColor, mutedColor, textColor],
-  );
-  const controlColors = useMemo(
-    () => ({ tint: tintColor, border: borderColor, text: textColor, muted: mutedColor, card: cardColor }),
-    [borderColor, cardColor, mutedColor, textColor, tintColor],
-  );
 
   const completion = profile?.profile_completion || { score: 0, missing: [] };
+  const displayName =
+    [profile?.prenom, profile?.nom].filter(Boolean).join(' ')
+    || typedUser?.email
+    || 'BidWise profile';
+  const subtitle =
+    typedUser?.email
+    || 'Keep your signals clear so matching and recruiter discovery stay accurate.';
+
+  const initials = useMemo(() => {
+    const first = String(profile?.prenom || typedUser?.first_name || '').trim().charAt(0);
+    const last = String(profile?.nom || typedUser?.last_name || '').trim().charAt(0);
+    return `${first}${last}`.trim().toUpperCase() || 'BW';
+  }, [profile?.nom, profile?.prenom, typedUser?.first_name, typedUser?.last_name]);
+
+  const basicSummary = useMemo(() => {
+    const nameSummary = [profile?.prenom, profile?.nom].filter(Boolean).join(' ').trim() || 'Add your name';
+    const experience = formatPreference(profile?.niveau_experience) || 'Experience not set';
+    const years =
+      profile?.annees_experience != null ? `${profile.annees_experience} year(s)` : 'Years not set';
+    return `${nameSummary} • ${experience} • ${years}`;
+  }, [profile?.annees_experience, profile?.niveau_experience, profile?.nom, profile?.prenom]);
+
+  const preferencesSummary = useMemo(() => {
+    const types = summarizeList(formatOpportunityTypes(profile?.opportunity_types), 'Opportunity types not set');
+    const locations = summarizeList(normalizeLocations(profile?.preferred_locations), 'Locations not set');
+    return `${types} • ${locations} • ${formatSalarySummary(profile)}`;
+  }, [profile]);
+
+  const careerSummary = useMemo(() => {
+    const roles = summarizeList(normalizeTextList(profile?.target_roles), 'Roles not set');
+    const skills = summarizeList(normalizeSkillList(profile?.competences), 'Skills not set');
+    const interests = summarizeList(formatBusinessFamilyLabels(profile?.domaines_interet), 'Sectors not set');
+    return `${roles} • ${skills} • ${interests}`;
+  }, [profile?.competences, profile?.domaines_interet, profile?.target_roles]);
+
+  const resumeSummary = profile?.active_resume?.metadata?.original_filename
+    || (profile?.active_resume ? 'Resume uploaded' : 'No resume uploaded yet');
+
+  const settingsSummary = profile?.profile_visibility === false
+    ? 'Private to recruiters'
+    : 'Visible to recruiters';
+
   const missing = Array.isArray(completion.missing) ? completion.missing.slice(0, 3) : [];
-  const displayName = [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || typedUser?.email || 'BidWise profile';
-  const hasProfileData = Boolean(
-    profile?.target_roles?.length
-      || profile?.competences?.length
-      || profile?.domaines_interet?.length
-      || profile?.preferred_locations?.length,
-  );
 
-  const renderChips = (items: string[]) => {
-    if (!items.length) {
-      return <Text style={[styles.emptyText, { color: mutedColor }]}>Not specified</Text>;
-    }
-
-    return (
-      <View style={styles.chipWrap}>
-        {items.map((item) => (
-          <View key={item} style={[styles.chip, { borderColor: tintColor, backgroundColor: tintColor + '14' }]}>
-            <Text style={[styles.chipText, { color: tintColor }]}>{item}</Text>
-          </View>
-        ))}
-      </View>
-    );
-  };
-
-  const openOnboarding = () => {
-    router.push('/onboarding' as Href);
+  const openRoute = (route: string) => {
+    router.push(route as Href);
   };
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, embedded ? styles.embeddedContent : null]}
       showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadUserProfile} tintColor={tintColor} />}
     >
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.eyebrow, { color: tintColor }]}>Recommendation-ready profile</Text>
-          <Text style={[styles.title, { color: textColor }]}>{displayName}</Text>
-          <Text style={[styles.subtitle, { color: mutedColor }]}>
-            Keep your signals clean so matching stays precise.
-          </Text>
+      <View style={[styles.heroCard, { backgroundColor: cardColor, borderColor }]}>
+        <View style={styles.identityRow}>
+          <View style={[styles.avatar, { backgroundColor: `${tintColor}16`, borderColor: `${tintColor}30` }]}>
+            <Text style={[styles.avatarText, { color: tintColor }]}>{initials}</Text>
+          </View>
+          <View style={styles.identityText}>
+            <Text style={[styles.profileName, { color: textColor }]}>{displayName}</Text>
+            <Text style={[styles.profileSubtitle, { color: mutedColor }]} numberOfLines={2}>
+              {subtitle}
+            </Text>
+          </View>
         </View>
-        <TouchableOpacity activeOpacity={0.75} onPress={openOnboarding} style={[styles.editButton, { backgroundColor: tintColor }]}>
-          <Text style={styles.editButtonText}>{hasProfileData ? 'Edit' : 'Start'}</Text>
-        </TouchableOpacity>
+
+        <View style={[styles.completionCard, { backgroundColor, borderColor }]}>
+          <View style={styles.completionTop}>
+            <Text style={[styles.completionScore, { color: textColor }]}>{completion.score}% complete</Text>
+            <Text style={[styles.completionHint, { color: mutedColor }]}>
+              {missing.length ? `Next: ${missing.join(', ')}` : 'Your main profile signals are ready.'}
+            </Text>
+          </View>
+          <View style={[styles.progressTrack, { backgroundColor: borderColor }]}>
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  backgroundColor: tintColor,
+                  width: `${Math.min(Math.max(completion.score || 0, 0), 100)}%`,
+                },
+              ]}
+            />
+          </View>
+        </View>
       </View>
 
-      <View style={[styles.completionCard, { backgroundColor: cardColor, borderColor }]}>
-        <View style={styles.completionTop}>
-          <Text style={[styles.completionScore, { color: textColor }]}>{completion.score}% complete</Text>
-          <Text style={[styles.completionHint, { color: mutedColor }]}>
-            {missing.length ? `Next: ${missing.join(', ')}` : 'Core matching signals are present.'}
-          </Text>
-        </View>
-        <View style={[styles.progressTrack, { backgroundColor: borderColor }]}>
-          <View
-            style={[
-              styles.progressFill,
-              { backgroundColor: tintColor, width: `${Math.min(Math.max(completion.score || 0, 0), 100)}%` },
-            ]}
-          />
-        </View>
+      <View style={styles.sectionList}>
+        <ProfileSectionLinkCard
+          title="Basic information"
+          description="Name and experience level."
+          summary={basicSummary}
+          onPress={() => openRoute('/profile-basic')}
+        />
+        <ProfileSectionLinkCard
+          title="Preferences"
+          description="Locations, work mode, and salary."
+          summary={preferencesSummary}
+          onPress={() => openRoute('/profile-preferences')}
+        />
+        <ProfileSectionLinkCard
+          title="Career signals"
+          description="Roles, skills, and sectors."
+          summary={careerSummary}
+          onPress={() => openRoute('/profile-career')}
+        />
+        <ProfileSectionLinkCard
+          title="Resume"
+          description="CV used for applications and AI extraction."
+          summary={resumeSummary}
+          onPress={() => openRoute('/profile-resume')}
+        />
+        <ProfileSectionLinkCard
+          title="Settings"
+          description="Recruiter visibility and account status."
+          summary={settingsSummary}
+          onPress={() => openRoute('/settings')}
+        />
       </View>
-
-      <ProfileSection
-        title="Basic Information"
-        description="Identity and experience level."
-        defaultOpen
-        colors={sectionColors}
-      >
-        <View style={styles.infoGrid}>
-          <InfoItem label="First name" value={profile?.prenom || 'Not specified'} muted={mutedColor} text={textColor} />
-          <InfoItem label="Last name" value={profile?.nom || 'Not specified'} muted={mutedColor} text={textColor} />
-          <InfoItem label="Experience" value={formatPreference(profile?.niveau_experience) || 'Not specified'} muted={mutedColor} text={textColor} />
-          <InfoItem label="Years" value={profile?.annees_experience != null ? String(profile.annees_experience) : 'Not specified'} muted={mutedColor} text={textColor} />
-        </View>
-      </ProfileSection>
-
-      <ProfileSection
-        title="Work Preferences"
-        description="Location, mode, contract and compensation."
-        defaultOpen
-        colors={sectionColors}
-      >
-        <InfoItem label="Salary" value={formatSalary(profile)} muted={mutedColor} text={textColor} />
-        <InfoItem label="Locations" value={normalizeLocations(profile?.preferred_locations).join(', ') || 'Not specified'} muted={mutedColor} text={textColor} />
-        <View style={styles.block}>
-          <Text style={[styles.blockLabel, { color: mutedColor }]}>Opportunity types</Text>
-          {renderChips(formatOpportunityTypes(profile?.opportunity_types))}
-        </View>
-        <View style={styles.block}>
-          <Text style={[styles.blockLabel, { color: mutedColor }]}>Work modes</Text>
-          {renderChips(formatList(profile?.work_mode_preferences))}
-        </View>
-        <View style={styles.block}>
-          <Text style={[styles.blockLabel, { color: mutedColor }]}>Employment types</Text>
-          {renderChips(formatList(profile?.employment_types))}
-        </View>
-      </ProfileSection>
-
-      <ProfileSection
-        title="Career Signals"
-        description="Skills, target roles and industries."
-        defaultOpen
-        colors={sectionColors}
-      >
-        <View style={styles.block}>
-          <Text style={[styles.blockLabel, { color: mutedColor }]}>Target roles</Text>
-          {renderChips(normalizeTextList(profile?.target_roles))}
-        </View>
-        <View style={styles.block}>
-          <Text style={[styles.blockLabel, { color: mutedColor }]}>Skills</Text>
-          {renderChips(normalizeSkillList(profile?.competences))}
-        </View>
-        <View style={styles.block}>
-          <Text style={[styles.blockLabel, { color: mutedColor }]}>Industries / Interests</Text>
-          {renderChips(normalizeInterestList(profile?.domaines_interet))}
-        </View>
-      </ProfileSection>
-
-      <ProfileSection
-        title="Resume / CV"
-        description="Upload a resume or preview a BidWise resume draft."
-        defaultOpen
-        colors={sectionColors}
-      >
-        <ResumeSection profile={profile} onChanged={loadUserProfile} colors={controlColors} />
-      </ProfileSection>
-
-      <ProfileSection
-        title="Profile Settings"
-        description="Visibility and future recommendation controls."
-        defaultOpen={false}
-        colors={sectionColors}
-      >
-        <InfoItem
-          label="Visibility"
-          value={profile?.profile_visibility === false ? 'Hidden' : 'Visible to recruiters'}
-          muted={mutedColor}
-          text={textColor}
-        />
-        <InfoItem
-          label="Onboarding"
-          value={profile?.onboarding_completed ? 'Completed' : 'Not completed'}
-          muted={mutedColor}
-          text={textColor}
-        />
-        <Text style={[styles.settingsNote, { color: mutedColor }]}>
-          Future match tuning controls will live here when recommendation settings are introduced.
-        </Text>
-      </ProfileSection>
     </ScrollView>
-  );
-}
-
-function InfoItem({ label, value, muted, text }: { label: string; value: string; muted: string; text: string }) {
-  return (
-    <View style={styles.infoItem}>
-      <Text style={[styles.infoLabel, { color: muted }]}>{label}</Text>
-      <Text style={[styles.infoValue, { color: value === 'Not specified' ? muted : text }]}>{value}</Text>
-    </View>
   );
 }
 
@@ -246,44 +204,51 @@ const styles = StyleSheet.create({
   content: {
     gap: 16,
     padding: 16,
-    paddingBottom: 40,
-    paddingTop: 58,
+    paddingBottom: 36,
   },
-  header: {
-    alignItems: 'flex-start',
+  embeddedContent: {
+    paddingTop: 16,
+  },
+  heroCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 16,
+    padding: 18,
+  },
+  identityRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 14,
   },
-  eyebrow: {
-    fontSize: 12,
+  avatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 18,
     fontWeight: '800',
-    marginBottom: 6,
-    textTransform: 'uppercase',
   },
-  title: {
-    fontSize: 28,
+  identityText: {
+    flex: 1,
+    gap: 4,
+  },
+  profileName: {
+    fontSize: 22,
     fontWeight: '800',
-    marginBottom: 6,
   },
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  editButton: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-  },
-  editButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
+  profileSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   completionCard: {
-    borderRadius: 14,
+    borderRadius: 18,
     borderWidth: 1,
     gap: 12,
-    padding: 16,
+    padding: 14,
   },
   completionTop: {
     gap: 4,
@@ -305,50 +270,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     height: '100%',
   },
-  infoGrid: {
+  sectionList: {
     gap: 12,
-  },
-  infoItem: {
-    gap: 4,
-  },
-  infoLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  infoValue: {
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  block: {
-    gap: 8,
-  },
-  blockLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  emptyText: {
-    fontSize: 13,
-    fontStyle: 'italic',
-  },
-  settingsNote: {
-    fontSize: 13,
-    lineHeight: 19,
   },
 });

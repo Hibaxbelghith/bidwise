@@ -91,6 +91,7 @@ export interface Opportunity {
   contract_type?: string | null;
   education_level?: string | null;
   availability?: string | null;
+  normalized_work_mode?: string | null;
   salary?: string | null;
   skills?: string[];
   raw_skills?: string[];
@@ -137,6 +138,7 @@ export interface OpportunitiesResponse {
   count: number;
   next: string | null;
   previous: string | null;
+  facets?: Record<string, unknown>;
   results: Opportunity[];
 }
 
@@ -147,6 +149,8 @@ export interface OpportunitiesQueryParams {
   type?: string;
   status?: string;
   city?: string;
+  workMode?: string;
+  datePosted?: string;
   minSalary?: number;
   source?: string;
   ordering?: string;
@@ -188,6 +192,7 @@ function applyOpportunityAliases(opportunity: Opportunity): Opportunity {
     location: opportunity.location ?? opportunity.ville ?? '',
     type_opportunite: opportunity.type_opportunite ?? opportunity.type ?? '',
     type: opportunity.type ?? opportunity.type_opportunite ?? '',
+    normalized_work_mode: opportunity.normalized_work_mode ?? opportunity.availability ?? '',
     match_score: opportunity.match_score ?? opportunity.score ?? null,
     experience: buildExperience(opportunity),
     reasons,
@@ -219,6 +224,10 @@ function normalizePaginatedResponse(payload: Partial<OpportunitiesResponse> | nu
     count: Number(payload?.count ?? 0),
     next: payload?.next ?? null,
     previous: payload?.previous ?? null,
+    facets:
+      payload?.facets && typeof payload.facets === 'object' && !Array.isArray(payload.facets)
+        ? (payload.facets as Record<string, unknown>)
+        : {},
     results: Array.isArray(payload?.results)
       ? payload.results.map((item) => normalizeOpportunity(item as Opportunity))
       : [],
@@ -247,6 +256,8 @@ function buildListParams(params: OpportunitiesQueryParams = {}) {
     type = '',
     status = '',
     city = '',
+    workMode = '',
+    datePosted = '',
     minSalary,
     source = '',
     ordering = '-quality_score',
@@ -268,6 +279,8 @@ function buildListParams(params: OpportunitiesQueryParams = {}) {
     queryParams.city = city.trim();
     queryParams.ville = city.trim();
   }
+  if (workMode.trim()) queryParams.work_mode = workMode.trim();
+  if (datePosted.trim()) queryParams.date_posted = datePosted.trim();
   if (Number.isFinite(minSalary) && Number(minSalary) > 0) {
     queryParams.min_salary = Math.floor(Number(minSalary));
   }
@@ -282,6 +295,34 @@ export async function getOpportunities(params: OpportunitiesQueryParams = {}): P
   });
 
   return normalizePaginatedResponse(response.data as Partial<OpportunitiesResponse>);
+}
+
+const HIDDEN_SOURCE_PATTERNS = [
+  'bidwise recommendation benchmark',
+  'bidwise recommendation',
+  'bidwise recommendations',
+];
+
+function isPublicSource(source: OpportunitySource): boolean {
+  const name = String(source.nom || '').trim().toLowerCase();
+  if (!name) return false;
+  return !HIDDEN_SOURCE_PATTERNS.some((pattern) => name.includes(pattern));
+}
+
+export async function listOpportunitySources(): Promise<OpportunitySource[]> {
+  const response = await api.get('/sources/');
+  const rawItems = Array.isArray(response.data?.results) ? response.data.results : response.data;
+
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .map((item) => ({
+      id: Number(item?.id),
+      nom: String(item?.nom || '').trim(),
+      url: String(item?.url || '').trim() || null,
+      type_source: String(item?.type_source || '').trim() || null,
+    }))
+    .filter((item) => Number.isFinite(item.id) && item.id > 0 && isPublicSource(item));
 }
 
 export async function listOpportunityRecommendations({

@@ -19,7 +19,8 @@ import { requestOTP } from '@/src/features/auth/services/authService';
 import { useThemeMode } from '@/src/shared/context/ThemeModeContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
-const bidwiseLogo = require('@/assets/images/favicon.png');
+const bidwiseLogo = require('@/assets/images/bidwise-logo-web.png');
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -40,12 +41,29 @@ export default function LoginScreen() {
   const iconColor = useThemeColor({}, 'icon');
 
   const handleRequestOTP = async () => {
-    if (!email.trim()) return;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      setError('Email is required.');
+      return;
+    }
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
     setSending(true);
     setError('');
     try {
-      await requestOTP(email.trim());
-      router.push({ pathname: '/otp', params: { email: email.trim() } });
+      const response = await requestOTP(normalizedEmail);
+      router.push({
+        pathname: '/otp',
+        params: {
+          email: normalizedEmail,
+          delivery: String(response?.message || ''),
+        },
+      });
     } catch (e: any) {
       console.error('[OTP Request Error]', {
         message: e.message,
@@ -56,7 +74,9 @@ export default function LoginScreen() {
       });
       const msg = e.response?.data?.error
         ?? e.response?.data?.detail
-        ?? (e.code === 'ERR_NETWORK' ? `Network error: cannot reach server` : `Error: ${e.message}`);
+        ?? (e.code === 'ERR_NETWORK'
+          ? 'Network error: cannot reach the server.'
+          : 'We could not send a login code right now. Please try again.');
       setError(msg);
     } finally {
       setSending(false);
@@ -76,7 +96,7 @@ export default function LoginScreen() {
       setError('');
       try {
         const { is_new_user, onboarding_completed } = await loginWithGoogle(idToken);
-        router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/for-you');
+        router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/explore');
       } catch (e: any) {
         const msg = e.response?.data?.error
           ?? (e.code === 'ERR_NETWORK' ? `Network error: cannot reach server` : `Error: ${e.message}`);
@@ -115,7 +135,7 @@ export default function LoginScreen() {
           </View>
           <Text style={[styles.title, { color: textColor }]}>BidWise</Text>
           <Text style={[styles.subtitle, { color: mutedColor }]}>
-            Sign in to find your next opportunity
+            Discover matching opportunities with BidWise AI
           </Text>
         </View>
 
@@ -134,6 +154,9 @@ export default function LoginScreen() {
             </Text>
           )}
         </TouchableOpacity>
+        <Text style={[styles.helperText, { color: mutedColor }]}>
+          In Expo Go, Google sign-in requires a development build. Use email login here.
+        </Text>
 
         {/* Separator */}
         <View style={styles.separator}>
@@ -180,6 +203,9 @@ export default function LoginScreen() {
             <Text style={styles.primaryButtonText}>Send login code</Text>
           )}
         </TouchableOpacity>
+        <Text style={[styles.helperText, { color: mutedColor }]}>
+          Mobile OTP can be delivered by email or shown in backend logs, depending on your server mode.
+        </Text>
       </View>
     </KeyboardAvoidingView>
   );
@@ -243,7 +269,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 10,
   },
   googleButtonText: {
     fontSize: 16,
@@ -253,6 +279,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 24,
+    marginTop: 20,
   },
   separatorLine: {
     flex: 1,
@@ -274,6 +301,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 12,
+  },
+  helperText: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   primaryButton: {
     borderRadius: 12,

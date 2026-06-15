@@ -1,1 +1,5 @@
-export { default } from '@/src/features/opportunities/components/OpportunitiesListScreen';
+import { Redirect } from 'expo-router';
+
+export default function LegacyOpportunitiesRoute() {
+  return <Redirect href="/explore" />;
+}
