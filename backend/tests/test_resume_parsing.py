@@ -91,7 +91,7 @@ class ResumeParsingServiceTests(TestCase):
 
         parsed = parse_resume_file(upload)
 
-        self.assertEqual(parsed.parser, "pypdf")
+        self.assertEqual(parsed.parser, "pymupdf")
         self.assertIn("Backend Django APIs PostgreSQL", parsed.text)
 
     def test_docx_extraction_preserves_arabic_and_french_accents(self):

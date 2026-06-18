@@ -74,6 +74,85 @@ def _normalize_text_for_fingerprint(value):
     return cleaned
 
 
+def _semantic_terms(value):
+    normalized = _normalize_text_for_fingerprint(value)
+    return {token for token in normalized.split() if len(token) > 2}
+
+
+def _as_list(value):
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item or "").strip()]
+    if value:
+        return [str(value).strip()]
+    return []
+
+
+def _llm_enrichment(opportunity):
+    extra_data = getattr(opportunity, "extra_data", None)
+    if not isinstance(extra_data, dict):
+        return {}
+    enrichment = extra_data.get("llm_enrichment") or {}
+    return enrichment if isinstance(enrichment, dict) else {}
+
+
+def _opportunity_similarity_terms(opportunity):
+    enrichment = _llm_enrichment(opportunity)
+    values = [
+        getattr(opportunity, "titre", ""),
+        *_as_list(getattr(opportunity, "skills", [])),
+        *_as_list(enrichment.get("canonical_role")),
+        *_as_list(enrichment.get("target_roles")),
+        *_as_list(enrichment.get("skills")),
+        *_as_list(enrichment.get("tools")),
+        *_as_list(enrichment.get("domains")),
+    ]
+    terms = set()
+    for value in values:
+        terms.update(_semantic_terms(value))
+    return terms - _opportunity_location_terms(opportunity)
+
+
+def _opportunity_location_terms(opportunity):
+    return _semantic_terms(getattr(opportunity, "ville", ""))
+
+
+def _opportunity_business_families(opportunity):
+    families = set()
+    for family in _as_list(_llm_enrichment(opportunity).get("business_families")):
+        key = str(family or "").strip()
+        if key and key != "other":
+            families.add(key)
+    return families
+
+
+def _has_structured_similarity_signals(opportunity):
+    enrichment = _llm_enrichment(opportunity)
+    return bool(
+        _as_list(getattr(opportunity, "skills", []))
+        or _as_list(enrichment.get("skills"))
+        or _as_list(enrichment.get("tools"))
+        or _as_list(enrichment.get("domains"))
+        or _as_list(enrichment.get("business_families"))
+    )
+
+
+def _passes_similarity_business_guard(anchor, candidate):
+    if not _has_structured_similarity_signals(anchor) and not _has_structured_similarity_signals(candidate):
+        return True
+
+    anchor_terms = _opportunity_similarity_terms(anchor)
+    candidate_terms = _opportunity_similarity_terms(candidate)
+    if anchor_terms and candidate_terms and anchor_terms.intersection(candidate_terms):
+        return True
+
+    anchor_families = _opportunity_business_families(anchor)
+    candidate_families = _opportunity_business_families(candidate)
+    if anchor_families and candidate_families and anchor_families.intersection(candidate_families):
+        return True
+
+    return False
+
+
 def _build_content_fingerprint(title, description):
     normalized_title = _normalize_text_for_fingerprint(title)[:50]
     normalized_description = _normalize_text_for_fingerprint(description)[:200]
@@ -172,13 +251,18 @@ def find_similar_opportunities(opportunity, top_k=5, queryset=None, enforce_same
         "titre",
         "description",
         "embedding_vector",
+        "extra_data",
+        "skills",
         "source_id",
         "type_opportunite",
         "date_publication",
+        "ville",
     )[:MAX_CANDIDATES]:
         processed_candidates += 1
         candidate_fingerprint = _build_content_fingerprint(candidate.titre, candidate.description)
         if source_fingerprint and candidate_fingerprint and candidate_fingerprint == source_fingerprint:
+            continue
+        if not _passes_similarity_business_guard(opportunity, candidate):
             continue
 
         base_similarity = cosine_similarity(source_vector, candidate.embedding_vector, assume_normalized=True)
@@ -296,13 +380,18 @@ def find_similar_opportunities_pgvector(opportunity, top_k=5, queryset=None, enf
         "id",
         "titre",
         "description",
+        "extra_data",
+        "skills",
         "source_id",
         "type_opportunite",
         "date_publication",
+        "ville",
     )[:MAX_CANDIDATES]:
         processed_candidates += 1
         candidate_fingerprint = _build_content_fingerprint(candidate.titre, candidate.description)
         if source_fingerprint and candidate_fingerprint and candidate_fingerprint == source_fingerprint:
+            continue
+        if not _passes_similarity_business_guard(opportunity, candidate):
             continue
 
         distance = getattr(candidate, "pg_distance", None)

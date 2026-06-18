@@ -7,6 +7,8 @@ import {
   FETCHING_SKELETON_DELAY_MS,
   FETCHING_SKELETON_MIN_VISIBLE_MS,
   FILTERS_STORAGE_KEY,
+  RESULTS_CACHE_STORAGE_KEY,
+  RESULTS_CACHE_TTL_MS,
   SEARCH_DEBOUNCE_MS,
 } from '../constants/opportunityBrowse.js';
 import { listOpportunities, listOpportunitySources } from '../services/opportunitiesService.js';
@@ -36,8 +38,96 @@ const readPersistedBrowseState = () => {
   }
 };
 
+const buildResultsCacheKey = ({
+  debouncedSearch,
+  typeFilter,
+  statusFilter,
+  cityFilter,
+  sourceFilter,
+  workModeFilter,
+  experienceFilter,
+  datePostedFilter,
+  page,
+}) => {
+  const hasSearch = String(debouncedSearch || '').trim().length > 0;
+  return JSON.stringify({
+    search: debouncedSearch,
+    type: typeFilter,
+    status: statusFilter,
+    city: cityFilter,
+    source: sourceFilter,
+    workMode: workModeFilter,
+    experienceLevel: experienceFilter,
+    datePosted: datePostedFilter,
+    sort: hasSearch ? 'relevance' : DEFAULT_SORT,
+    page,
+    pageSize: DEFAULT_PAGE_SIZE,
+  });
+};
+
+const readResultsCacheStore = () => {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const raw = window.sessionStorage.getItem(RESULTS_CACHE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const readCachedResults = (cacheKey) => {
+  const cached = readResultsCacheStore()[cacheKey];
+  if (!cached || typeof cached !== 'object') return null;
+  if (Date.now() - Number(cached.cachedAt || 0) > RESULTS_CACHE_TTL_MS) return null;
+  if (!Array.isArray(cached.results)) return null;
+
+  return cached;
+};
+
+const writeCachedResults = (cacheKey, data) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const store = readResultsCacheStore();
+    const nextStore = {
+      ...store,
+      [cacheKey]: {
+        cachedAt: Date.now(),
+        count: data.count ?? 0,
+        next: data.next ?? null,
+        previous: data.previous ?? null,
+        facets: data.facets ?? {},
+        results: data.results ?? [],
+      },
+    };
+
+    const entries = Object.entries(nextStore)
+      .filter(([, value]) => Date.now() - Number(value?.cachedAt || 0) <= RESULTS_CACHE_TTL_MS)
+      .sort(([, a], [, b]) => Number(b?.cachedAt || 0) - Number(a?.cachedAt || 0))
+      .slice(0, 12);
+
+    window.sessionStorage.setItem(RESULTS_CACHE_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // Ignore storage errors; the API result is still rendered normally.
+  }
+};
+
 export const useOpportunitiesBrowse = () => {
   const [initialState] = useState(() => readPersistedBrowseState());
+  const initialCacheKey = buildResultsCacheKey({
+    debouncedSearch: initialState.searchInput.trim(),
+    typeFilter: initialState.typeFilter,
+    statusFilter: initialState.statusFilter,
+    cityFilter: initialState.cityFilter,
+    sourceFilter: initialState.sourceFilter,
+    workModeFilter: initialState.workModeFilter,
+    experienceFilter: initialState.experienceFilter,
+    datePostedFilter: initialState.datePostedFilter,
+    page: initialState.page,
+  });
+  const [initialCachedResults] = useState(() => readCachedResults(initialCacheKey));
   const [searchInput, setSearchInput] = useState(initialState.searchInput);
   const [debouncedSearch, setDebouncedSearch] = useState(initialState.searchInput.trim());
   const [typeFilter, setTypeFilter] = useState(initialState.typeFilter);
@@ -49,17 +139,17 @@ export const useOpportunitiesBrowse = () => {
   const [datePostedFilter, setDatePostedFilter] = useState(initialState.datePostedFilter);
   const [page, setPage] = useState(initialState.page);
 
-  const [count, setCount] = useState(0);
-  const [opportunities, setOpportunities] = useState([]);
+  const [count, setCount] = useState(initialCachedResults?.count ?? 0);
+  const [opportunities, setOpportunities] = useState(initialCachedResults?.results ?? []);
   const [cityOptions, setCityOptions] = useState([]);
   const [sourceOptions, setSourceOptions] = useState([]);
-  const [facets, setFacets] = useState({});
-  const [next, setNext] = useState(null);
-  const [previous, setPrevious] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [facets, setFacets] = useState(initialCachedResults?.facets ?? {});
+  const [next, setNext] = useState(initialCachedResults?.next ?? null);
+  const [previous, setPrevious] = useState(initialCachedResults?.previous ?? null);
+  const [loading, setLoading] = useState(!initialCachedResults);
   const [isFetching, setIsFetching] = useState(false);
   const [showFetchingSpinner, setShowFetchingSpinner] = useState(false);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(Boolean(initialCachedResults));
   const [error, setError] = useState('');
   const [reloadToken, setReloadToken] = useState(0);
   const hasInitializedSearchRef = useRef(false);
@@ -205,8 +295,30 @@ export const useOpportunitiesBrowse = () => {
     let isCancelled = false;
 
     const fetchData = async () => {
+      const cacheKey = buildResultsCacheKey({
+        debouncedSearch,
+        typeFilter,
+        statusFilter,
+        cityFilter,
+        sourceFilter,
+        workModeFilter,
+        experienceFilter,
+        datePostedFilter,
+        page,
+      });
+      const cachedResults = readCachedResults(cacheKey);
+
       try {
-        if (!hasLoadedOnce) {
+        if (cachedResults) {
+          setCount(cachedResults.count ?? 0);
+          setNext(cachedResults.next ?? null);
+          setPrevious(cachedResults.previous ?? null);
+          setFacets(cachedResults.facets ?? {});
+          setOpportunities(cachedResults.results ?? []);
+          setHasLoadedOnce(true);
+          setLoading(false);
+          setIsFetching(true);
+        } else if (!hasLoadedOnce) {
           setLoading(true);
         } else {
           setIsFetching(true);
@@ -236,6 +348,7 @@ export const useOpportunitiesBrowse = () => {
         setFacets(data.facets ?? {});
         setOpportunities(data.results ?? []);
         setHasLoadedOnce(true);
+        writeCachedResults(cacheKey, data);
 
         const facetCities = (data.facets?.locations ?? [])
           .map((item) => String(item?.key || '').trim())

@@ -38,17 +38,19 @@ const formatApiError = (error, fallbackMessage) => {
  * @param {string} email
  * @returns {Promise<object>} { message }
  */
-export const requestOTP = async (email) => {
+export const requestOTP = async (email, turnstileToken = '') => {
   try {
     const response = await api.post('/auth/passwordless/request/', {
       email,
       client_type: 'web',
+      ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
     });
     return response.data;
   } catch (error) {
     const errorMessage =
       error.response?.data?.detail ||
       error.response?.data?.email?.[0] ||
+      error.response?.data?.turnstile_token?.[0] ||
       'Erreur lors de l\'envoi du code';
     throw new Error(errorMessage);
   }

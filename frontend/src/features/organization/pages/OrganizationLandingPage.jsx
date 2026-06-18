@@ -206,20 +206,6 @@ const OrganizationLandingPage = () => {
         </div>
       </section>
 
-      {/* Trust section */}
-      <section className="border-t border-neutral-200 bg-neutral-50 py-12">
-        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
-          <p className="text-sm font-medium uppercase tracking-wide text-neutral-400">
-            Trusted by organizations across Tunisia
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-8 opacity-50">
-            <span className="text-sm font-semibold text-neutral-500">Company</span>
-            <span className="text-sm font-semibold text-neutral-500">Company</span>
-            <span className="text-sm font-semibold text-neutral-500">Company</span>
-            <span className="text-sm font-semibold text-neutral-500">Company</span>
-          </div>
-        </div>
-      </section>
 
       {/* Footer */}
       <footer className="bg-white py-8">

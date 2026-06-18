@@ -36,7 +36,10 @@ from opportunities.normalization.industries import normalize_industries
 logger = logging.getLogger(__name__)
 
 
-BUSINESS_BONUS_CAP = 0.25
+BUSINESS_BONUS_CAP = 0.45
+PREFERENCE_BONUS_CAP = 0.16
+OPPORTUNITY_QUALITY_ADJUSTMENT_WEIGHT = 0.08
+STRUCTURED_SOURCE_ADJUSTMENT_WEIGHT = 0.06
 FEEDBACK_BOOST = 0.05
 DUPLICATE_COMPANY_PENALTY = 0.05
 DUPLICATE_TITLE_PENALTY = 0.05
@@ -49,6 +52,8 @@ EXPERIENCE_MATCH_BONUS = 0.05
 ROLE_MATCH_BONUS = 0.06
 ROLE_MATCH_FINAL_BOOST = 0.035
 ROLE_AND_PROFILE_SKILL_DENSITY_BOOST = 0.03
+STRUCTURED_STRONG_EVIDENCE_SCORE_FLOOR = 0.64
+STRUCTURED_VERY_STRONG_EVIDENCE_SCORE_FLOOR = 0.66
 ROLE_ONLY_EVIDENCE_PENALTY = 0.035
 ISOLATED_SKILL_EVIDENCE_PENALTY = 0.035
 ISOLATED_SINGLE_SKILL_PENALTY = 0.08
@@ -120,6 +125,23 @@ HYBRID_KEYWORDS = ("hybrid", "hybride")
 FULL_TIME_CONTRACT_TYPES = {CONTRACT_TYPE_CDI}
 INTERNSHIP_CONTRACT_TYPES = {CONTRACT_TYPE_INTERNSHIP}
 VAGUE_ROLE_TITLES = {"developer", "engineer", "consultant", "assistant", "specialist"}
+SOURCE_RELIABILITY_RANKS = {
+    "keejob": 3,
+    "emploitunisie": 2,
+    "linkedin": 1,
+}
+SOURCE_RELIABILITY_ADJUSTMENTS = {
+    "keejob": 0.045,
+    "emploitunisie": 0.03,
+    "linkedin": -0.015,
+}
+SOURCE_BALANCED_RERANK_QUOTAS = (
+    ("keejob", 0.40),
+    ("emploitunisie", 0.25),
+    ("bidwiseorganizations", 0.10),
+    ("linkedin", 0.15),
+)
+SOURCE_BALANCED_MIN_JOBBERT_SCORE = 0.25
 
 
 def get_score_label(score, *, is_fallback=False):
@@ -998,18 +1020,21 @@ def _business_score(features, opportunity, *, semantic_score=0.0, role_semantic_
         else 0.0
     )
 
-    total_bonus = (
+    preference_bonus = min(
+        PREFERENCE_BONUS_CAP,
         location_bonus
         + strict_location_adjustment
         + remote_bonus
-        + raw_skill_bonus
         + employment_bonus
-        + experience_bonus
+        + salary_bonus
+    )
+    metier_bonus = (
+        raw_skill_bonus
         + role_bonus
         + llm_family_bonus
         + sector_bonus
-        + salary_bonus
     )
+    total_bonus = preference_bonus + metier_bonus + experience_bonus
 
     debug_payload = {
         "raw_skill_match_count": len(raw_skill_matches),
@@ -1040,6 +1065,8 @@ def _business_score(features, opportunity, *, semantic_score=0.0, role_semantic_
             "llm_business_family_bonus": round(float(llm_family_bonus), 6),
             "sector_bonus": round(float(sector_bonus), 6),
             "salary_bonus": round(float(salary_bonus), 6),
+            "preference_bonus_capped": round(float(preference_bonus), 6),
+            "metier_bonus": round(float(metier_bonus), 6),
         },
         "profile_business_families": sorted(profile_business_families(features)),
         "opportunity_llm_business_families": sorted(opportunity_llm_business_families(opportunity)),
@@ -1052,6 +1079,123 @@ def _business_signal(business_score):
     if business_score <= 0:
         return 0.0
     return _clamp_score(business_score / BUSINESS_BONUS_CAP)
+
+
+def _opportunity_quality_score(opportunity):
+    skills_count = len(_clean_list(_get_value(opportunity, "skills", [])))
+    description_length = len(str(_get_value(opportunity, "description", "") or "").strip())
+    enrichment = _opportunity_llm_enrichment(opportunity)
+    enrichment_item_count = 0
+    for field in ("skills", "tools", "responsibilities", "requirements", "business_families"):
+        value = enrichment.get(field) if isinstance(enrichment, dict) else None
+        if isinstance(value, list):
+            enrichment_item_count += len([item for item in value if str(item or "").strip()])
+        elif value:
+            enrichment_item_count += 1
+
+    has_location = bool(str(_get_value(opportunity, "ville", "") or "").strip())
+    has_contract = bool(
+        _clean_list(_get_value(opportunity, "normalized_contract_types", []))
+        or str(_get_value(opportunity, "contract_type", "") or "").strip()
+        or str(_get_value(opportunity, "type_opportunite", "") or "").strip()
+    )
+    has_experience = any(
+        _get_value(opportunity, field) is not None
+        for field in ("experience_min", "experience_max", "experience_years")
+    )
+    has_education = bool(str(_get_value(opportunity, "education_level", "") or "").strip())
+    has_salary = bool(str(_get_value(opportunity, "salary", "") or "").strip())
+    has_jobbert = bool(_to_float_vector(_get_value(opportunity, "jobbert_embedding_vector", [])))
+
+    description_score = 0.0
+    if description_length >= 1500:
+        description_score = 0.16
+    elif description_length >= 700:
+        description_score = 0.12
+    elif description_length >= 300:
+        description_score = 0.07
+    elif description_length > 0:
+        description_score = 0.03
+
+    skills_score = 0.0
+    if skills_count >= 8:
+        skills_score = 0.22
+    elif skills_count >= 5:
+        skills_score = 0.18
+    elif skills_count >= 3:
+        skills_score = 0.12
+    elif skills_count >= 1:
+        skills_score = 0.05
+
+    enrichment_score = 0.0
+    if enrichment_item_count >= 8:
+        enrichment_score = 0.18
+    elif enrichment_item_count >= 4:
+        enrichment_score = 0.14
+    elif enrichment_item_count > 0 or enrichment:
+        enrichment_score = 0.08
+
+    score = _clamp_score(
+        description_score
+        + skills_score
+        + enrichment_score
+        + (0.08 if has_location else 0.0)
+        + (0.08 if has_contract else 0.0)
+        + (0.10 if has_experience else 0.0)
+        + (0.06 if has_education else 0.0)
+        + (0.04 if has_salary else 0.0)
+        + (0.08 if has_jobbert else 0.0)
+    )
+    return score, {
+        "description_length": description_length,
+        "skills_count": skills_count,
+        "llm_enrichment_items": enrichment_item_count,
+        "has_location": has_location,
+        "has_contract": has_contract,
+        "has_experience": has_experience,
+        "has_education": has_education,
+        "has_salary": has_salary,
+        "has_jobbert_embedding": has_jobbert,
+        "description_score": round(float(description_score), 6),
+        "skills_score": round(float(skills_score), 6),
+        "llm_enrichment_score": round(float(enrichment_score), 6),
+    }
+
+
+def _source_reliability_key(opportunity):
+    source = _get_value(opportunity, "source", None)
+    source_name = _get_value(source, "nom", "") if source is not None else ""
+    return _normalize_text(source_name).replace(" ", "")
+
+
+def _source_reliability_rank(opportunity):
+    return SOURCE_RELIABILITY_RANKS.get(_source_reliability_key(opportunity), 0)
+
+
+def _source_reliability_adjustment(opportunity, quality_score):
+    source_key = _source_reliability_key(opportunity)
+    adjustment = SOURCE_RELIABILITY_ADJUSTMENTS.get(source_key, 0.0)
+    if adjustment > 0 and float(quality_score or 0.0) < 0.35:
+        return 0.0
+    if adjustment < 0 and float(quality_score or 0.0) >= 0.55:
+        return 0.0
+    return adjustment
+
+
+def _opportunity_quality_score_cap(features, opportunity, recommendation_debug, quality_score, semantic_score):
+    debug = recommendation_debug if isinstance(recommendation_debug, dict) else {}
+    raw_skill_count = int(debug.get("raw_skill_match_count") or 0)
+    role_match = bool(_role_matches(features or {}, opportunity))
+
+    if quality_score >= 0.45:
+        return None
+    if role_match and float(semantic_score or 0.0) >= 0.60 and quality_score >= 0.35:
+        return 0.62
+    if role_match and raw_skill_count >= 2 and float(semantic_score or 0.0) >= 0.62:
+        return 0.62
+    if role_match and raw_skill_count >= 1:
+        return 0.58
+    return 0.55
 
 
 def _has_metier_evidence(features, opportunity, semantic_score):
@@ -1380,6 +1524,29 @@ def _metier_density_adjustment(features, opportunity, *, semantic_score=0.0):
     return 0.0
 
 
+def _structured_evidence_score_floor(features, opportunity, recommendation_debug):
+    debug = recommendation_debug if isinstance(recommendation_debug, dict) else {}
+    components = debug.get("business_components") if isinstance(debug.get("business_components"), dict) else {}
+    raw_skill_count = int(debug.get("raw_skill_match_count") or 0)
+    family_bonus = float(components.get("llm_business_family_bonus") or 0.0)
+    location_signal = float(components.get("location_bonus") or 0.0) > 0.0 or float(
+        components.get("strict_location_adjustment") or 0.0
+    ) > 0.0
+
+    if not location_signal:
+        return None
+    if not _role_matches(features or {}, opportunity):
+        return None
+
+    if raw_skill_count >= 3:
+        return STRUCTURED_VERY_STRONG_EVIDENCE_SCORE_FLOOR
+    if raw_skill_count >= 2:
+        return STRUCTURED_STRONG_EVIDENCE_SCORE_FLOOR
+    if raw_skill_count >= 1:
+        return STRUCTURED_STRONG_EVIDENCE_SCORE_FLOOR
+    return None
+
+
 def _popularity_score(opportunity):
     application_count = _safe_int(_get_value(opportunity, "application_count"))
     if application_count:
@@ -1498,6 +1665,9 @@ def _copy_recommendation_runtime_fields(source, target):
     for field in (
         "match_score",
         "semantic_score",
+        "business_score",
+        "feedback_score",
+        "opportunity_quality_score",
         "score",
         "score_label",
         "score_percent",
@@ -1605,9 +1775,61 @@ def _sort_key(item):
     date_key = publication_date.toordinal() if hasattr(publication_date, "toordinal") else 0
     return (
         float(_get_value(item, "match_score", 0.0) or 0.0),
+        _source_reliability_rank(item),
+        float(_get_value(item, "opportunity_quality_score", 0.0) or 0.0),
         date_key,
         int(_get_value(item, "id", 0) or 0),
     )
+
+
+def select_source_balanced_candidates(candidates, scores, limit):
+    try:
+        effective_limit = max(1, int(limit or 1))
+    except (TypeError, ValueError):
+        effective_limit = len(candidates)
+    if effective_limit >= len(candidates):
+        return list(candidates)
+
+    def score_for(item):
+        try:
+            return float(scores.get(int(_get_value(item, "id", 0) or 0), 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    ranked = sorted(candidates, key=score_for, reverse=True)
+    groups = {}
+    for item in ranked:
+        groups.setdefault(_source_reliability_key(item), []).append(item)
+
+    selected = []
+    selected_ids = set()
+
+    def add_item(item):
+        item_id = int(_get_value(item, "id", 0) or 0)
+        if item_id in selected_ids:
+            return False
+        selected.append(item)
+        selected_ids.add(item_id)
+        return True
+
+    for source_key, ratio in SOURCE_BALANCED_RERANK_QUOTAS:
+        quota = max(1, int(round(effective_limit * ratio)))
+        taken = 0
+        for item in groups.get(source_key, []):
+            if score_for(item) < SOURCE_BALANCED_MIN_JOBBERT_SCORE:
+                continue
+            if add_item(item):
+                taken += 1
+            if taken >= quota or len(selected) >= effective_limit:
+                break
+        if len(selected) >= effective_limit:
+            break
+
+    for item in ranked:
+        if add_item(item) and len(selected) >= effective_limit:
+            break
+
+    return selected[:effective_limit]
 
 
 def rank_opportunities(
@@ -1680,6 +1902,7 @@ def rank_opportunities(
             semantic_score=ranking_semantic_score,
             role_semantic_score=role_semantic_score,
         )
+        opportunity_quality_score, opportunity_quality_debug = _opportunity_quality_score(opportunity)
         feedback_score = _feedback_bonus(feedback or {}, opportunity, reasons)
         if mode == "partial":
             score = _clamp_score(
@@ -1694,6 +1917,11 @@ def rank_opportunities(
                 + (0.3 * _business_signal(business_score))
                 + feedback_score
             )
+        quality_adjustment = (opportunity_quality_score - 0.5) * OPPORTUNITY_QUALITY_ADJUSTMENT_WEIGHT
+        score = _clamp_score(score + quality_adjustment)
+        source_reliability_adjustment = _source_reliability_adjustment(opportunity, opportunity_quality_score)
+        if source_reliability_adjustment:
+            score = _clamp_score(score + source_reliability_adjustment)
         experience_gap_penalty, experience_gap_debug = _experience_gap_penalty(
             features or {},
             opportunity,
@@ -1765,6 +1993,18 @@ def rank_opportunities(
             score = _clamp_score(score + jobbert_delta)
             if jobbert_delta > 0:
                 _append_reason(reasons, "Strong semantic job match")
+        structured_floor = _structured_evidence_score_floor(features or {}, opportunity, recommendation_debug)
+        if structured_floor is not None and score < structured_floor:
+            score = structured_floor
+        opportunity_quality_cap = _opportunity_quality_score_cap(
+            features or {},
+            opportunity,
+            recommendation_debug,
+            opportunity_quality_score,
+            ranking_semantic_score,
+        )
+        if opportunity_quality_cap is not None and score > opportunity_quality_cap:
+            score = opportunity_quality_cap
         experience_score_cap = _experience_gap_score_cap(experience_gap_debug)
         if experience_score_cap is not None and score > experience_score_cap:
             score = experience_score_cap
@@ -1793,6 +2033,10 @@ def rank_opportunities(
             feedback_score=feedback_score,
             reasons=reasons,
         )
+        if isinstance(scored_item, dict):
+            scored_item["opportunity_quality_score"] = opportunity_quality_score
+        else:
+            setattr(scored_item, "opportunity_quality_score", opportunity_quality_score)
         _set_recommendation_debug(scored_item, recommendation_debug)
         _update_recommendation_debug(scored_item, llm_family_penalty_debug)
         _update_recommendation_debug(scored_item, experience_gap_debug)
@@ -1804,6 +2048,21 @@ def rank_opportunities(
                 "base_semantic_score": round(float(semantic_score or 0.0), 4),
                 "jobbert_score": round(float(jobbert_score or 0.0), 4),
                 "jobbert_adjustment": round(float(jobbert_delta or 0.0), 6),
+                "opportunity_quality_score": round(float(opportunity_quality_score or 0.0), 6),
+                "opportunity_quality_adjustment": round(float(quality_adjustment or 0.0), 6),
+                "source_reliability_adjustment": round(float(source_reliability_adjustment or 0.0), 6),
+                "source_reliability_rank": _source_reliability_rank(opportunity),
+                "opportunity_quality_components": opportunity_quality_debug,
+                "opportunity_quality_score_cap": (
+                    round(float(opportunity_quality_cap), 6)
+                    if opportunity_quality_cap is not None
+                    else 0.0
+                ),
+                "structured_evidence_score_floor": (
+                    round(float(structured_floor), 6)
+                    if structured_floor is not None
+                    else 0.0
+                ),
                 "skill_only_explicit_role_score_cap": (
                     round(float(skill_only_role_cap), 6)
                     if skill_only_role_cap is not None

@@ -109,18 +109,15 @@ export const getRecommendationScorePercent = (value) => {
 };
 
 export const getRecommendationLevel = (recommendation) => {
-  const explicitLevel = normalizeText(recommendation?.score_level).toUpperCase();
-  if (explicitLevel) return explicitLevel;
-
   const scorePercent = getRecommendationScorePercent(
     recommendation?.score ?? recommendation?.match_score,
   );
   if (scorePercent === null) return SCORE_LEVELS.LOW;
-  if (scorePercent >= 80) return SCORE_LEVELS.HIGH;
-  if (scorePercent >= 60) return SCORE_LEVELS.MEDIUM;
   if (scorePercent <= 0 && normalizeText(recommendation?.score_label).toLowerCase() === 'recent') {
     return SCORE_LEVELS.TRENDING;
   }
+  if (scorePercent >= 75) return SCORE_LEVELS.HIGH;
+  if (scorePercent >= 45) return SCORE_LEVELS.MEDIUM;
   return SCORE_LEVELS.LOW;
 };
 

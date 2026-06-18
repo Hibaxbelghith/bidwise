@@ -79,30 +79,36 @@ def _append_bounded(parts: list[str], text: str) -> bool:
 
 def _extract_pdf_text(stream) -> str:
     try:
-        from pypdf import PdfReader
-        from pypdf.errors import PdfReadError
+        import fitz
     except ImportError as exc:
-        raise ResumeParserDependencyMissing("pypdf is required for PDF resume parsing.") from exc
+        raise ResumeParserDependencyMissing("PyMuPDF is required for PDF resume parsing.") from exc
 
     try:
-        reader = PdfReader(stream, strict=False)
+        payload = stream.read()
+        document = fitz.open(stream=payload, filetype="pdf")
     except Exception as exc:
         raise ResumeParsingError("PDF could not be opened.") from exc
 
-    if getattr(reader, "is_encrypted", False):
+    if getattr(document, "is_encrypted", False):
         try:
-            decrypted = reader.decrypt("")
+            authenticated = document.authenticate("")
         except Exception as exc:
             raise EncryptedResumeError("Encrypted PDF resumes are not supported.") from exc
-        if not decrypted:
+        if not authenticated:
             raise EncryptedResumeError("Encrypted PDF resumes are not supported.")
 
     parts: list[str] = []
     try:
-        for page in reader.pages:
+        for page in document:
             try:
-                page_text = page.extract_text() or ""
-            except PdfReadError as exc:
+                blocks = page.get_text("blocks") or []
+                block_texts = [
+                    str(block[4] or "").strip()
+                    for block in sorted(blocks, key=lambda block: (round(float(block[1]) / 20), float(block[0])))
+                    if len(block) >= 5 and str(block[4] or "").strip()
+                ]
+                page_text = "\n".join(block_texts) if block_texts else (page.get_text() or "")
+            except Exception as exc:
                 raise ResumeParsingError("PDF text extraction failed.") from exc
             if _append_bounded(parts, page_text):
                 break
@@ -112,6 +118,12 @@ def _extract_pdf_text(stream) -> str:
         raise
     except Exception as exc:
         raise ResumeParsingError("PDF text extraction failed.") from exc
+
+    finally:
+        try:
+            document.close()
+        except Exception:
+            pass
 
     return "\n".join(parts)
 
@@ -158,7 +170,7 @@ def parse_resume_file(
     with _opened_binary(file_obj) as stream:
         if extension == ".pdf":
             raw_text = _extract_pdf_text(stream)
-            parser = "pypdf"
+            parser = "pymupdf"
         elif extension == ".docx":
             raw_text = _extract_docx_text(stream)
             parser = "python-docx"

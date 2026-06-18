@@ -647,6 +647,7 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             "semantic_resume_version",
             "semantic_resume_metadata",
             "extracted_skills",
+            "extracted_tools",
             "profile_suggestions",
         ]
         read_only_fields = [
@@ -665,6 +666,7 @@ class ProfileResumeSerializer(serializers.ModelSerializer):
             "semantic_resume_version",
             "semantic_resume_metadata",
             "extracted_skills",
+            "extracted_tools",
             "profile_suggestions",
         ]
 
@@ -1192,6 +1194,13 @@ class OTPRequestSerializer(serializers.Serializer):
         choices=[("web", "web"), ("mobile", "mobile")],
         required=False,
         default="web",
+    )
+    turnstile_token = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=4096,
+        trim_whitespace=True,
+        write_only=True,
     )
 
 

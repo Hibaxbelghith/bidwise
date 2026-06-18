@@ -1,11 +1,13 @@
-import { memo } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { memo, useEffect } from 'react';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import {
-  COMPENSATION_PERIOD_OPTIONS,
   DEFAULT_COMPENSATION_PERIOD,
 } from '@/src/features/profile/constants/profileOptions';
-import { validateSalaryExpectation } from '@/src/features/profile/utils/profileValidation';
+import {
+  normalizeCompensationPeriod,
+  validateSalaryExpectation,
+} from '@/src/features/profile/utils/profileValidation';
 
 type SalaryExpectationFieldProps = {
   amount: string;
@@ -28,8 +30,14 @@ function SalaryExpectationField({
   onPeriodChange,
   colors,
 }: SalaryExpectationFieldProps) {
-  const selectedPeriod = period || DEFAULT_COMPENSATION_PERIOD;
+  const selectedPeriod = normalizeCompensationPeriod(period || DEFAULT_COMPENSATION_PERIOD);
   const validation = validateSalaryExpectation(amount, selectedPeriod);
+
+  useEffect(() => {
+    if (selectedPeriod !== (period || DEFAULT_COMPENSATION_PERIOD)) {
+      onPeriodChange(selectedPeriod);
+    }
+  }, [onPeriodChange, period, selectedPeriod]);
 
   return (
     <View style={styles.container}>
@@ -55,30 +63,8 @@ function SalaryExpectationField({
         ]}
       />
 
-      <View style={styles.periodRow}>
-        {COMPENSATION_PERIOD_OPTIONS.map((option) => {
-          const active = selectedPeriod === option.value;
-          return (
-            <TouchableOpacity
-              key={option.value}
-              activeOpacity={0.75}
-              onPress={() => onPeriodChange(option.value)}
-              style={[
-                styles.periodChip,
-                {
-                  backgroundColor: active ? colors.tint : colors.card,
-                  borderColor: active ? colors.tint : colors.border,
-                },
-              ]}
-            >
-              <Text style={[styles.periodLabel, { color: active ? '#fff' : colors.text }]}>{option.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
       <Text style={[styles.helper, { color: validation.error ? '#dc2626' : colors.muted }]}>
-        {validation.error || 'Use a realistic Tunisian monthly expectation. Monthly is selected by default.'}
+        {validation.error || 'Use a realistic Tunisian monthly expectation.'}
       </Text>
     </View>
   );
@@ -110,21 +96,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     paddingHorizontal: 14,
     paddingVertical: 12,
-  },
-  periodRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  periodChip: {
-    borderRadius: 999,
-    borderWidth: 1.25,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
-  },
-  periodLabel: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   helper: {
     fontSize: 12,

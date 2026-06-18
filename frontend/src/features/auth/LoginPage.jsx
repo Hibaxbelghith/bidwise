@@ -4,10 +4,11 @@ import { Button } from '../../components/ui/button.jsx';
 import { Input } from '../../components/ui/input.jsx';
 import { Label } from '../../components/ui/label.jsx';
 import { Alert, AlertDescription } from '../../components/ui/alert.jsx';
-import { Briefcase, ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
 import { Spinner } from '../../components/ui/spinner.jsx';
 import { useAuth } from './AuthContext.jsx';
 import { useGoogleIdentity } from './useGoogleIdentity.js';
+import TurnstileChallenge, { isTurnstileEnabled } from '../organization/components/TurnstileChallenge.jsx';
 import {
   ORGANIZATION_AUTH_INTENT,
   getPostAuthRedirectPath,
@@ -15,6 +16,7 @@ import {
 
 const COOLDOWN_SECONDS = 60;
 const VITE_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const BRAND_LOGO_SRC = '/BidWise Icon.png';
 
 /* ─────────────────────────────────────────────────────────────
    AuthLoadingState
@@ -39,9 +41,11 @@ const AuthLoadingState = () => (
         <div className="h-full bg-blue-600" style={{ animation: 'indeterminate 1.6s ease-in-out infinite' }} />
       </div>
 
-      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600">
-        <Briefcase className="h-7 w-7 text-white" aria-hidden="true" />
-      </div>
+      <img
+        src={BRAND_LOGO_SRC}
+        alt="BidWise"
+        className="mx-auto mb-5 h-16 w-16 object-contain"
+      />
 
       <p className="font-semibold text-neutral-900">Preparing your workspace</p>
       <p className="mt-1 text-sm text-neutral-500">This should only take a moment.</p>
@@ -56,6 +60,66 @@ const AuthLoadingState = () => (
    navigate() fires immediately with no artificial delay.
    No overlay. No skeleton. No transition component.
 ───────────────────────────────────────────────────────────── */
+const SecurityCheckModal = ({
+  open,
+  status,
+  error,
+  resetSignal,
+  onVerify,
+  onExpire,
+  onStatusChange,
+  onClose,
+}) => {
+  if (!open) return null;
+
+  const isSending = status === 'verified' && !error;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/50 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="security-check-title"
+    >
+      <div className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-5 shadow-xl">
+        <div className="mb-4">
+          <h2 id="security-check-title" className="text-lg font-semibold text-neutral-950">
+            Quick verification
+          </h2>
+        </div>
+
+        {error ? (
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <TurnstileChallenge
+          onVerify={onVerify}
+          onExpire={onExpire}
+          onStatusChange={onStatusChange}
+          resetSignal={resetSignal}
+        />
+
+        {isSending ? (
+          <div className="mt-4 flex items-center justify-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            <Spinner size={14} className="text-blue-700" />
+            Sending code...
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-4 w-full rounded-md border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const OTPLogin = () => {
   const {
     requestOTP,
@@ -65,6 +129,7 @@ const OTPLogin = () => {
     isAuthenticated,
     user,
     loading,
+    setError: setAuthError,
   } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -119,6 +184,20 @@ const OTPLogin = () => {
   const [formError, setFormError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
+  const [securityStatus, setSecurityStatus] = useState(isTurnstileEnabled() ? 'loading' : 'disabled');
+  const [securityError, setSecurityError] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const otpRequestInFlightRef = useRef(false);
+
+  const clearTransientErrors = useCallback(() => {
+    setEmailError('');
+    setOtpError('');
+    setFormError('');
+    setGoogleError('');
+    setSecurityError('');
+    setAuthError(null);
+  }, [setAuthError]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -149,15 +228,43 @@ const OTPLogin = () => {
     return true;
   };
 
+  const sendOTPRequest = async (turnstileToken = '') => {
+    if (otpRequestInFlightRef.current) return;
+    otpRequestInFlightRef.current = true;
+    setIsLoading(true);
+    setSecurityError('');
+    const result = await requestOTP(email, turnstileToken);
+    setIsLoading(false);
+    otpRequestInFlightRef.current = false;
+
+    if (result.success) {
+      setSecurityModalOpen(false);
+      setStep(2);
+      setCooldown(COOLDOWN_SECONDS);
+    } else {
+      setTurnstileResetKey((value) => value + 1);
+      if (securityModalOpen) {
+        setSecurityError(result.error);
+        setSecurityStatus(isTurnstileEnabled() ? 'loading' : 'disabled');
+      } else {
+        setFormError(result.error);
+      }
+    }
+  };
+
   const handleRequestOTP = async (event) => {
     event.preventDefault();
-    setFormError('');
+    clearTransientErrors();
     if (!validateEmail()) return;
-    setIsLoading(true);
-    const result = await requestOTP(email);
-    setIsLoading(false);
-    if (result.success) { setStep(2); setCooldown(COOLDOWN_SECONDS); }
-    else setFormError(result.error);
+
+    if (isTurnstileEnabled()) {
+      setSecurityStatus('loading');
+      setSecurityModalOpen(true);
+      setTurnstileResetKey((value) => value + 1);
+      return;
+    }
+
+    await sendOTPRequest();
   };
 
   const validateOTP = () => {
@@ -173,6 +280,7 @@ const OTPLogin = () => {
   const handleVerifyOTP = async (event) => {
     event.preventDefault();
     setFormError('');
+    setAuthError(null);
     if (!validateOTP()) return;
     setIsLoading(true);
     const result = await verifyOTP(email, otp.trim());
@@ -193,16 +301,25 @@ const OTPLogin = () => {
 
   const handleResend = useCallback(async () => {
     if (cooldown > 0) return;
-    setFormError(''); setOtp(''); setOtpError('');
-    setIsLoading(true);
-    const result = await requestOTP(email);
-    setIsLoading(false);
-    if (result.success) setCooldown(COOLDOWN_SECONDS);
-    else setFormError(result.error);
-  }, [cooldown, email, requestOTP]);
+    setFormError('');
+    setOtp('');
+    setOtpError('');
+    setAuthError(null);
+    if (isTurnstileEnabled()) {
+      setSecurityError('');
+      setSecurityStatus('loading');
+      setSecurityModalOpen(true);
+      setTurnstileResetKey((value) => value + 1);
+      return;
+    }
+    await sendOTPRequest();
+  }, [cooldown, requestOTP, setAuthError]);
 
   const handleBack = () => {
-    setStep(1); setOtp(''); setOtpError(''); setFormError(''); setCooldown(0);
+    setStep(1);
+    setOtp('');
+    setCooldown(0);
+    clearTransientErrors();
   };
 
   if (loading) return <AuthLoadingState />;
@@ -212,6 +329,25 @@ const OTPLogin = () => {
       className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-12"
       aria-labelledby="login-heading"
     >
+      <SecurityCheckModal
+        open={securityModalOpen}
+        status={securityStatus}
+        error={securityError}
+        resetSignal={turnstileResetKey}
+        onVerify={(token) => {
+          setSecurityStatus('verified');
+          void sendOTPRequest(token);
+        }}
+        onExpire={() => {
+          setSecurityError('');
+        }}
+        onStatusChange={setSecurityStatus}
+        onClose={() => {
+          if (isLoading) return;
+          setSecurityModalOpen(false);
+          setSecurityError('');
+        }}
+      />
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-8 text-center">
@@ -220,7 +356,7 @@ const OTPLogin = () => {
             className="mb-4 inline-flex items-center gap-2"
             aria-label="BidWise home"
           >
-            <img src="/BidWise Icon.png" alt="BidWise Logo" className="h-32 w-auto object-contain" />
+            <img src={BRAND_LOGO_SRC} alt="BidWise Logo" className="h-30 w-30 object-contain" />
           </Link>
           {step === 1 ? (
             <>
@@ -234,8 +370,8 @@ const OTPLogin = () => {
               </h1>
               <p className="text-neutral-600">
                 {organizationIntent
-                  ? 'Continue with the same secure sign-in before creating your organization account'
-                  : 'Enter your email to receive a login code'}
+                  ? ''
+                  : ''}
               </p>
             </>
           ) : (
@@ -380,7 +516,15 @@ const OTPLogin = () => {
                     type="email"
                     placeholder="you@example.com"
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError(''); }}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) setEmailError('');
+                      if (formError || authError || googleError) {
+                        setFormError('');
+                        setGoogleError('');
+                        setAuthError(null);
+                      }
+                    }}
                     disabled={isLoading || googleLoading}
                     autoComplete="email"
                     autoFocus
@@ -443,6 +587,10 @@ const OTPLogin = () => {
                     const val = e.target.value.replace(/\D/g, '');
                     setOtp(val);
                     if (otpError) setOtpError('');
+                    if (formError || authError) {
+                      setFormError('');
+                      setAuthError(null);
+                    }
                   }}
                   disabled={isLoading}
                   autoComplete="one-time-code"
@@ -495,9 +643,7 @@ const OTPLogin = () => {
           )}
         </div>
 
-        <p className="mt-6 text-center text-sm text-neutral-500">
-          No password needed — we'll email you a login code every time.
-        </p>
+
       </div>
     </section>
   );

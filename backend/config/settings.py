@@ -401,6 +401,7 @@ else:
         if EMAIL_BACKEND != "django.core.mail.backends.console.EmailBackend"
         else "simulated"
     )
+AUTH_OTP_EMAIL_ASYNC = _env_flag("AUTH_OTP_EMAIL_ASYNC", True)
 LLM_PROVIDER_MAX_RETRIES = int(os.getenv("LLM_PROVIDER_MAX_RETRIES", "1"))
 LLM_PROVIDER_RETRY_DELAY_SECONDS = float(os.getenv("LLM_PROVIDER_RETRY_DELAY_SECONDS", "5.0"))
 LLM_PROVIDER_RETRY_BACKOFF_FACTOR = float(os.getenv("LLM_PROVIDER_RETRY_BACKOFF_FACTOR", "2.0"))
@@ -451,6 +452,7 @@ CELERY_TASK_ROUTES = {
     "opportunities.send_organization_automatic_approval_email": {"queue": "notifications"},
     "applications.notify_organization_new_application": {"queue": "notifications"},
     "applications.notify_candidate_application_submitted": {"queue": "notifications"},
+    "users.send_otp_email": {"queue": "notifications"},
     "notifications.send_recommendation_digest": {"queue": "notifications"},
 }
 PROFILE_RESUME_TASK_SOFT_TIME_LIMIT_SECONDS = int(
@@ -481,7 +483,7 @@ PROFILE_RESUME_QWEN_MODEL = os.getenv("PROFILE_RESUME_QWEN_MODEL", OLLAMA_MODEL)
 PROFILE_RESUME_QWEN_TIMEOUT_SECONDS = float(os.getenv("PROFILE_RESUME_QWEN_TIMEOUT_SECONDS", "180"))
 PROFILE_RESUME_QWEN_TEMPERATURE = float(os.getenv("PROFILE_RESUME_QWEN_TEMPERATURE", "0.0"))
 PROFILE_RESUME_QWEN_MAX_TOKENS = int(os.getenv("PROFILE_RESUME_QWEN_MAX_TOKENS", "300"))
-PROFILE_RESUME_QWEN_TEXT_CHARS = int(os.getenv("PROFILE_RESUME_QWEN_TEXT_CHARS", "1200"))
+PROFILE_RESUME_QWEN_TEXT_CHARS = int(os.getenv("PROFILE_RESUME_QWEN_TEXT_CHARS", "2500"))
 PROFILE_RESUME_QWEN_KEEP_ALIVE = os.getenv("PROFILE_RESUME_QWEN_KEEP_ALIVE", "30m").strip()
 PROFILE_FEATURES_USE_RESUME_NORMALIZED_SKILLS = _env_flag(
     "PROFILE_FEATURES_USE_RESUME_NORMALIZED_SKILLS",

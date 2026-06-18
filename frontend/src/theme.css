@@ -223,6 +223,28 @@
     line-height: 1.5;
   }
 
+  a[href],
+  button,
+  summary,
+  [role="button"],
+  [role="tab"],
+  [role="option"],
+  [role="menuitem"],
+  [role="combobox"],
+  [type="button"],
+  [type="submit"],
+  [type="reset"],
+  label[for],
+  select {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"],
+  [disabled] {
+    cursor: not-allowed;
+  }
+
   input {
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);

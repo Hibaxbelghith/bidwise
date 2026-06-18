@@ -49,6 +49,7 @@ export default function ProfileEditorPage({
   const cardColor = useThemeColor({}, 'card');
   const borderColor = useThemeColor({}, 'border');
   const backgroundColor = useThemeColor({}, 'background');
+  const hasFeedback = Boolean(formError || successMessage);
 
   return (
     <View style={[styles.root, { backgroundColor }]}>
@@ -72,14 +73,14 @@ export default function ProfileEditorPage({
           <Text style={[styles.subtitle, { color: mutedColor }]}>{subtitle}</Text>
         </View>
 
-        {formError ? (
+        {!showSaveBar && formError ? (
           <View style={[styles.feedbackCard, { backgroundColor: cardColor, borderColor: '#fecaca' }]}>
             <Text style={[styles.feedbackTitle, { color: textColor }]}>Unable to save changes</Text>
             <Text style={[styles.feedbackText, { color: mutedColor }]}>{formError}</Text>
           </View>
         ) : null}
 
-        {successMessage ? (
+        {!showSaveBar && successMessage ? (
           <View style={[styles.feedbackCard, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
             <Text style={[styles.feedbackTitle, { color: '#166534' }]}>Saved</Text>
             <Text style={[styles.feedbackText, { color: '#166534' }]}>{successMessage}</Text>
@@ -100,24 +101,55 @@ export default function ProfileEditorPage({
             },
           ]}
         >
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.back()}
-            style={[styles.secondaryButton, { borderColor }]}
-          >
-            <Text style={[styles.secondaryButtonText, { color: textColor }]}>Back</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => void onSave()}
-            disabled={saving || !isDirty}
-            style={[
-              styles.primaryButton,
-              { backgroundColor: saving || !isDirty ? `${tintColor}55` : tintColor },
-            ]}
-          >
-            <Text style={styles.primaryButtonText}>{saving ? 'Saving...' : saveLabel}</Text>
-          </Pressable>
+          {hasFeedback ? (
+            <View
+              style={[
+                styles.inlineFeedback,
+                formError
+                  ? { backgroundColor: '#fef2f2', borderColor: '#fecaca' }
+                  : { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.inlineFeedbackTitle,
+                  { color: formError ? '#991b1b' : '#166534' },
+                ]}
+              >
+                {formError ? 'Unable to save changes' : 'Saved'}
+              </Text>
+              <Text
+                style={[
+                  styles.inlineFeedbackText,
+                  { color: formError ? '#991b1b' : '#166534' },
+                ]}
+                numberOfLines={2}
+              >
+                {formError || successMessage}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.saveActionsRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.back()}
+              style={[styles.secondaryButton, { borderColor }]}
+            >
+              <Text style={[styles.secondaryButtonText, { color: textColor }]}>Back</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void onSave()}
+              disabled={saving || !isDirty}
+              style={[
+                styles.primaryButton,
+                { backgroundColor: saving || !isDirty ? `${tintColor}55` : tintColor },
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>{saving ? 'Saving...' : saveLabel}</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
     </View>
@@ -164,10 +196,28 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderTopWidth: 1,
-    flexDirection: 'row',
     gap: 10,
     paddingHorizontal: 16,
     paddingTop: 10,
+  },
+  inlineFeedback: {
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  inlineFeedbackTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  inlineFeedbackText: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  saveActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
   secondaryButton: {
     flex: 1,

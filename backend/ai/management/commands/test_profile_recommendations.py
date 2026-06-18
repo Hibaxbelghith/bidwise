@@ -26,7 +26,7 @@ from ai.quality_gates import (
     evidence_summary,
     filter_ranked_recommendations,
 )
-from ai.recommendation_service import rank_opportunities
+from ai.recommendation_service import rank_opportunities, select_source_balanced_candidates
 from ai.user_features import build_user_features
 from ai.validation_profiles import VALIDATION_PROFILES
 from opportunities.models import Opportunite, StatutOpportunite
@@ -171,11 +171,7 @@ class Command(BaseCommand):
         if not raw_jobbert_scores:
             raise CommandError("No compatible JobBERT vectors found for selected opportunities.")
 
-        selected = sorted(
-            candidates,
-            key=lambda item: raw_jobbert_scores.get(int(getattr(item, "id", 0) or 0), 0.0),
-            reverse=True,
-        )[:rerank_limit]
+        selected = select_source_balanced_candidates(candidates, raw_jobbert_scores, rerank_limit)
 
         ranking_features = dict(features)
         ranking_features["_jobbert_profile_vector"] = profile_vector

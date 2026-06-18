@@ -19,7 +19,7 @@ import {
 
 const VISIBLE_PAGE_BUTTONS = 5;
 const OPPORTUNITY_TAB_STORAGE_KEY = 'bidwise:opportunities-active-tab:v1';
-const RECOMMENDATION_ENGINE_VERSION = 'jobbert-hybrid-v2';
+const RECOMMENDATION_ENGINE_VERSION = 'jobbert-hybrid-v3';
 const VALID_TABS = new Set(['for-you', 'explore']);
 
 const getInitialOpportunityTab = (location) => {

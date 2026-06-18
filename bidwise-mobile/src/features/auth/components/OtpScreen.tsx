@@ -50,8 +50,8 @@ export default function OTPScreen() {
     setVerifying(true);
     setError('');
     try {
-      const { is_new_user, onboarding_completed } = await loginWithOTP(email, code);
-      router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/explore');
+      const { onboarding_completed } = await loginWithOTP(email, code);
+      router.replace(onboarding_completed ? '/explore' : '/onboarding');
     } catch (e: any) {
       const msg = e.response?.data?.error ?? e.response?.data?.detail ?? 'Invalid code. Please try again.';
       setError(msg);

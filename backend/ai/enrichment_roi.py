@@ -26,9 +26,9 @@ DEFAULT_WEAK_BENCHMARK_FAMILIES = {
 }
 
 LOW_COVERAGE_SOURCE_WEIGHTS = {
-    "linkedin": 28,
-    "emploitunisie": 18,
-    "keejob": 8,
+    "keejob": 36,
+    "emploitunisie": 28,
+    "linkedin": 6,
 }
 
 NON_JOB_SOURCE_NAMES = {"marchespublics", "marches publics", "marches_publics"}

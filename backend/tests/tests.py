@@ -895,6 +895,22 @@ class OpportunityTextEnrichmentTests(TestCase):
         self.assertIsNone(enriched["experience_max"])
         self.assertEqual(enriched["experience_years"], 0)
 
+    def test_enrichment_prefers_explicit_description_experience_over_stale_bounds(self):
+        payload = {
+            "description": (
+                "Profil recherche: titulaire Bac+3 en comptabilite, finance ou gestion, "
+                "justifiant d'une experience de 3 a 4 ans minimum dans un poste similaire."
+            ),
+            "experience_min": 2,
+            "experience_max": 5,
+        }
+
+        enriched = enrich_opportunity_text(payload)
+
+        self.assertEqual(enriched["experience_min"], 3)
+        self.assertEqual(enriched["experience_max"], 4)
+        self.assertEqual(enriched["experience_years"], 3)
+
     def test_shared_parser_parses_multi_value_structured_experience(self):
         payload = {
             "description": "Description générique.",
@@ -2300,6 +2316,36 @@ class OpportuniteAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         returned_ids = [item["id"] for item in response.data]
         self.assertEqual(returned_ids, [active_same_type.pk])
+
+    def test_similar_endpoint_does_not_use_location_as_business_overlap(self):
+        model_identifier = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@prod-v1-fr"
+        anchor = self.create_opp(
+            titre="Comptable Junior - Tunis",
+            ville="Tunis",
+            skills=["Comptabilité", "Gestion financière"],
+            embedding_vector=[1.0, 0.0, 0.0],
+            embedding_model=model_identifier,
+        )
+        accounting_match = self.create_opp(
+            titre="Assistante Comptable et Administrative - Tunis",
+            ville="Tunis",
+            skills=["Comptabilité", "Facturation"],
+            embedding_vector=[0.8, 0.2, 0.0],
+            embedding_model=model_identifier,
+        )
+        self.create_opp(
+            titre="Vendeuse - Tunis",
+            ville="Tunis",
+            skills=["Vente", "Accueil client"],
+            embedding_vector=[0.99, 0.01, 0.0],
+            embedding_model=model_identifier,
+        )
+
+        response = self.client.get(f"{self.base_url}{anchor.pk}/similar/", {"k": 5})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = [item["id"] for item in response.data]
+        self.assertEqual(returned_ids, [accounting_match.pk])
 
     def test_similar_endpoint_returns_empty_list_when_source_has_no_embedding(self):
         anchor = self.create_opp(titre="No Embedding Anchor", embedding_vector=None, embedding_model="")

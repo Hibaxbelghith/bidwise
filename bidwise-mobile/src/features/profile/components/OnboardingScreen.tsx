@@ -14,7 +14,10 @@ import { useAuth } from '@/src/features/auth/context/AuthContext';
 import OnboardingFooter from '@/src/features/profile/components/onboarding/OnboardingFooter';
 import OnboardingProgress from '@/src/features/profile/components/onboarding/OnboardingProgress';
 import OnboardingStepContent from '@/src/features/profile/components/onboarding/OnboardingStepContent';
-import { ONBOARDING_OPPORTUNITY_TYPE_OPTIONS } from '@/src/features/profile/constants/profileOptions';
+import {
+  getEmploymentTypeOptionsForOpportunityTypes,
+  ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
+} from '@/src/features/profile/constants/profileOptions';
 import {
   INITIAL_ONBOARDING_DATA,
   STEP_DEFINITIONS,
@@ -165,12 +168,22 @@ export default function OnboardingScreen() {
   ) => {
     const selected = option.values.every((value) => data.opportunity_types.includes(value));
 
-    setData((prev) => ({
-      ...prev,
-      opportunity_types: selected
+    setData((prev) => {
+      const opportunityTypes = selected
         ? prev.opportunity_types.filter((value) => !option.values.includes(value))
-        : Array.from(new Set([...prev.opportunity_types, ...option.values])),
-    }));
+        : Array.from(new Set([...prev.opportunity_types, ...option.values]));
+      const allowedEmploymentTypes = new Set(
+        getEmploymentTypeOptionsForOpportunityTypes(opportunityTypes).map((item) => item.value),
+      );
+
+      return {
+        ...prev,
+        opportunity_types: opportunityTypes,
+        employment_types: prev.employment_types.filter((value) =>
+          allowedEmploymentTypes.has(value),
+        ),
+      };
+    });
   };
 
   const validateCurrentStep = () =>

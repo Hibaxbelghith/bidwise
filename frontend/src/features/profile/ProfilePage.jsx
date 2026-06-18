@@ -32,8 +32,10 @@ import ProfileAutocompleteInput from './components/ProfileAutocompleteInput.jsx'
 import PreferenceChipGroup from './components/PreferenceChipGroup.jsx';
 import ResumeSection from './components/ResumeSection.jsx';
 import {
-	EMPLOYMENT_TYPE_OPTIONS,
+	ALL_EMPLOYMENT_TYPE_OPTIONS,
+	OPPORTUNITY_TYPE_OPTIONS,
 	WORK_MODE_OPTIONS,
+	getEmploymentTypeOptionsForOpportunityTypes,
 	normalizeBusinessFamilyValues,
 	normalizeLocations,
 	normalizeOptionValues,
@@ -156,6 +158,7 @@ const Profile = () => {
 	const [skills, setSkills] = useState([]);
 	const [interests, setInterests] = useState([]);
 	const [targetRoles, setTargetRoles] = useState([]);
+	const [opportunityTypes, setOpportunityTypes] = useState([]);
 	const [preferredLocations, setPreferredLocations] = useState([]);
 	const [workModePreferences, setWorkModePreferences] = useState([]);
 	const [employmentTypes, setEmploymentTypes] = useState([]);
@@ -175,8 +178,12 @@ const Profile = () => {
 		() => normalizeOptionValues(workModePreferences, WORK_MODE_OPTIONS),
 		[workModePreferences]
 	);
+	const employmentTypeOptions = useMemo(
+		() => getEmploymentTypeOptionsForOpportunityTypes(opportunityTypes),
+		[opportunityTypes]
+	);
 	const employmentTypesPayload = useMemo(
-		() => normalizeOptionValues(employmentTypes, EMPLOYMENT_TYPE_OPTIONS),
+		() => normalizeOptionValues(employmentTypes, ALL_EMPLOYMENT_TYPE_OPTIONS),
 		[employmentTypes]
 	);
 	const salaryValidation = useMemo(
@@ -220,6 +227,7 @@ const Profile = () => {
 			setSkills(nextEditorState.skills);
 			setInterests(nextEditorState.interests);
 			setTargetRoles(nextEditorState.targetRoles);
+			setOpportunityTypes(nextEditorState.opportunityTypes);
 			setPreferredLocations(nextEditorState.preferredLocations);
 			setWorkModePreferences(nextEditorState.workModePreferences);
 			setEmploymentTypes(nextEditorState.employmentTypes);
@@ -278,6 +286,20 @@ const Profile = () => {
 			setValidationSummary('');
 		}
 	};
+
+	const handleOpportunityTypesChange = (values) => {
+		const normalizedValues = normalizeOptionValues(values, OPPORTUNITY_TYPE_OPTIONS);
+		setOpportunityTypes(normalizedValues);
+		const allowedEmploymentTypes = new Set(
+			getEmploymentTypeOptionsForOpportunityTypes(normalizedValues).map((option) => option.value)
+		);
+		setEmploymentTypes((prev) => prev.filter((value) => allowedEmploymentTypes.has(value)));
+	};
+
+	useEffect(() => {
+		const allowed = new Set(employmentTypeOptions.map((option) => option.value));
+		setEmploymentTypes((prev) => prev.filter((value) => allowed.has(value)));
+	}, [employmentTypeOptions]);
 
 	useEffect(() => {
 		if (!validationSummary) return undefined;
@@ -347,6 +369,7 @@ const Profile = () => {
 			niveau_experience: formData.experienceLevel || null,
 			annees_experience: yearsValidation.value,
 			target_roles: targetRolesPayload,
+			opportunity_types: normalizeOptionValues(opportunityTypes, OPPORTUNITY_TYPE_OPTIONS),
 			preferred_locations: preferredLocationsPayload,
 			work_mode_preferences: workModePreferencesPayload,
 			employment_types: employmentTypesPayload,
@@ -371,6 +394,7 @@ const Profile = () => {
 			setSkills(normalizeTextList(persistedProfile.competences));
 			setInterests(normalizeBusinessFamilyValues(persistedProfile.domaines_interet));
 			setTargetRoles(normalizeTextList(persistedProfile.target_roles));
+			setOpportunityTypes(normalizeOptionValues(persistedProfile.opportunity_types, OPPORTUNITY_TYPE_OPTIONS));
 			setShowSuccess(true);
 			setTimeout(() => setShowSuccess(false), 3000);
 		} else if (result.error) {
@@ -487,17 +511,6 @@ const Profile = () => {
 								<AlertDescription>{formError}</AlertDescription>
 							</Alert>
 						)}
-
-						{validationSummary ? (
-							<Alert variant="destructive">
-								<AlertDescription>
-									{validationSummary}
-									{getFirstErrorKey(fieldErrors)
-										? ` First issue: ${FIELD_ERROR_LABELS[getFirstErrorKey(fieldErrors)]}.`
-										: ''}
-								</AlertDescription>
-							</Alert>
-						) : null}
 
 						<form onSubmit={handleSubmit} className="space-y-6" noValidate>
 							{/* Section 1: Personal Information */}
@@ -713,9 +726,18 @@ const Profile = () => {
 									</div>
 
 									<div>
+										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Opportunity types</Label>
+										<PreferenceChipGroup
+											options={OPPORTUNITY_TYPE_OPTIONS}
+											value={opportunityTypes}
+											onChange={handleOpportunityTypesChange}
+										/>
+									</div>
+
+									<div>
 										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Contract types</Label>
 										<PreferenceChipGroup
-											options={EMPLOYMENT_TYPE_OPTIONS}
+											options={employmentTypeOptions}
 											value={employmentTypes}
 											onChange={setEmploymentTypes}
 										/>

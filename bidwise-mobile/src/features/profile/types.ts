@@ -25,6 +25,18 @@ export type ActiveResume = {
     size?: number;
   };
   parsed_text_available?: boolean;
+  extracted_skills?: string[];
+  profile_suggestions?: {
+    competences?: string[];
+    target_roles?: string[];
+    domaines_interet?: string[];
+    preferred_locations?: string[];
+    employment_types?: string[];
+    work_mode_preferences?: string[];
+    niveau_experience?: string;
+    annees_experience?: number;
+  };
+  semantic_resume_metadata?: Record<string, unknown> | null;
 };
 
 export type ProfileCompletion = {

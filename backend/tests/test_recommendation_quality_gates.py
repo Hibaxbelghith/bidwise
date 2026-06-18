@@ -16,6 +16,7 @@ from ai.quality_gates import (
     build_recommendation_evidence,
     classify_recommendation_bucket,
     compute_recommendation_confidence,
+    filter_ranked_recommendations,
     passes_recommendation_quality_gate,
 )
 from opportunities.models import Opportunite, SourceOpportunite, StatutOpportunite, TypeOpportunite
@@ -112,6 +113,52 @@ class RecommendationQualityGateTests(TestCase):
 
         self.assertEqual(bucket, BUCKET_STRONG_MATCH)
         self.assertIn("limited details", reason)
+
+    def test_filter_orders_close_strong_matches_by_source_quality(self):
+        linkedin = SourceOpportunite.objects.create(
+            nom="LinkedIn",
+            url="https://linkedin.example",
+            type_source="SITE_EMPLOI",
+        )
+        keejob = SourceOpportunite.objects.create(
+            nom="Keejob",
+            url="https://keejob.example",
+            type_source="SITE_EMPLOI",
+        )
+        linkedin_opportunity = self.create_opportunity(
+            "Comptable LinkedIn",
+            0.70,
+            source=linkedin,
+            skills=["Saisie comptable", "Excel"],
+            match_score=0.73,
+            semantic_score=0.70,
+        )
+        keejob_opportunity = self.create_opportunity(
+            "Comptable Keejob",
+            0.68,
+            source=keejob,
+            skills=["Saisie comptable", "Excel"],
+            match_score=0.68,
+            semantic_score=0.68,
+        )
+        features = {
+            "target_roles": ["Comptable"],
+            "roles": ["Comptable"],
+            "skills": ["Saisie comptable", "Excel"],
+            "profile_skills": ["Saisie comptable", "Excel"],
+            "experience_level": "JUNIOR",
+            "locations": ["Tunis"],
+        }
+
+        ordered = filter_ranked_recommendations(
+            [linkedin_opportunity, keejob_opportunity],
+            features=features,
+            profile_strength={"level": "HIGH"},
+            limit=2,
+        )
+
+        self.assertEqual([item.pk for item in ordered], [keejob_opportunity.pk, linkedin_opportunity.pk])
+        self.assertGreater(linkedin_opportunity.match_score, keejob_opportunity.match_score)
 
     def test_bucket_moves_mid_senior_frontend_to_related_for_junior_profile(self):
         opportunity = self.create_opportunity(
@@ -466,7 +513,7 @@ class RecommendationQualityGateTests(TestCase):
         self.assertFalse(evidence["role_match"])
         self.assertGreater(evidence["profile_skill_overlap"], 0)
         self.assertEqual(bucket, BUCKET_RELATED_REVIEW)
-        self.assertIn("without confirmed role alignment", reason)
+        self.assertEqual(reason, "Relevant finance role, but accounting evidence needs review")
 
     def test_assistant_comptable_stays_strong_with_confirmed_role_alignment(self):
         opportunity = self.create_opportunity(
@@ -756,6 +803,38 @@ class RecommendationQualityGateTests(TestCase):
                 profile_strength=profile_strength,
             )
         )
+
+    def test_accounting_profile_keeps_management_control_role_in_related(self):
+        features = {
+            "profile_skills": ["Comptabilite generale", "Saisie comptable", "Excel"],
+            "skills": ["Comptabilite generale", "Saisie comptable", "Excel"],
+            "target_roles": ["Comptable"],
+            "roles": ["Comptable"],
+            "experience_level": "JUNIOR",
+            "experience_years": 2,
+        }
+        opportunity = SimpleNamespace(
+            titre="Assistant controle de gestion",
+            skills=[
+                "Controle de gestion",
+                "Analyse de performance",
+                "Reporting financier",
+                "Excel",
+            ],
+            semantic_score=0.63,
+            match_score=0.63,
+            experience_min=2,
+            experience_max=5,
+            recommendation_debug={"opportunity_quality_score": 0.90},
+        )
+
+        bucket, reason = classify_recommendation_bucket(
+            features=features,
+            opportunity=opportunity,
+        )
+
+        self.assertEqual(bucket, BUCKET_RELATED_REVIEW)
+        self.assertEqual(reason, "Relevant finance role, but accounting evidence needs review")
 
     def test_explicit_backend_profile_rejects_resume_only_hr_false_positive(self):
         features = {

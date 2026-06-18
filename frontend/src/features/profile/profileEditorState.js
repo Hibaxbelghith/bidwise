@@ -2,7 +2,7 @@ import {
   DEFAULT_COMPENSATION_PERIOD,
 } from './profileValidation.js';
 import {
-  EMPLOYMENT_TYPE_OPTIONS,
+  ALL_EMPLOYMENT_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
   WORK_MODE_OPTIONS,
   normalizeBusinessFamilyValues,
@@ -37,7 +37,7 @@ export const buildProfileEditorState = ({
   );
   const backendEmploymentTypes = normalizeOptionValues(
     profile?.employment_types,
-    EMPLOYMENT_TYPE_OPTIONS,
+    ALL_EMPLOYMENT_TYPE_OPTIONS,
   );
 
   return {

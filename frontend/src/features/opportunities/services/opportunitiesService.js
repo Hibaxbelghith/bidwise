@@ -195,7 +195,7 @@ export const listOpportunitySources = async () => {
 export const listOpportunityRecommendations = async ({ limit = 20 } = {}) => {
   const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 50));
   const response = await api.get(RECOMMENDATIONS_ENDPOINT, {
-    params: { limit: safeLimit },
+    params: { limit: safeLimit, _ts: Date.now() },
   });
   return normalizeArray(response.data).map(normalizeRecommendation);
 };
@@ -284,7 +284,7 @@ export const generateResumeMatchAction = async (opportunityId, action) => {
   return normalizeObject(response.data);
 };
 
-export const askOpportunityAssistant = async (opportunityId, question, history = []) => {
+export const askOpportunityAssistant = async (opportunityId, question, history = [], recommendation = null) => {
   if (!opportunityId) {
     throw new Error('Opportunity id is required');
   }
@@ -312,10 +312,16 @@ export const askOpportunityAssistant = async (opportunityId, question, history =
         }))
     : [];
 
-  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${opportunityId}/assistant/questions/`, {
+  const payload = {
     question: normalizedQuestion,
     history: normalizedHistory,
-  });
+  };
+
+  if (recommendation && typeof recommendation === 'object' && !Array.isArray(recommendation)) {
+    payload.recommendation = normalizeRecommendation(recommendation);
+  }
+
+  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${opportunityId}/assistant/questions/`, payload);
   return normalizeObject(response.data);
 };
 

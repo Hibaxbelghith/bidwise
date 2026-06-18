@@ -34,22 +34,14 @@ const OpportunityAssistantCard = ({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-24 right-4 z-40 flex items-center gap-3 rounded-2xl bg-blue-600 px-4 py-3 text-white shadow-xl ring-1 ring-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-2xl lg:bottom-6 lg:right-6"
+        className="fixed bottom-24 right-12 z-40 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl ring-1 ring-blue-500/30 transition-all hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-blue-200 lg:bottom-6 lg:right-12"
         aria-label={locked ? 'Sign in to ask BidWise AI' : 'Open BidWise AI'}
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15">
-          {locked ? (
-            <Lock className="h-5 w-5" aria-hidden="true" />
-          ) : (
-            <MessageCircle className="h-5 w-5" aria-hidden="true" />
-          )}
-        </span>
-        <span className="flex flex-col items-start leading-tight">
-          <span className="text-sm font-semibold">BidWise AI</span>
-          <span className="text-xs text-blue-100">
-            {locked ? 'Sign in to ask' : 'Is your resume a good match?'}
-          </span>
-        </span>
+        {locked ? (
+          <Lock className="h-7 w-7" aria-hidden="true" />
+        ) : (
+          <MessageCircle className="h-7 w-7" aria-hidden="true" />
+        )}
       </button>
     );
   }

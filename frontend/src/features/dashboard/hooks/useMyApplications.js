@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchMyApplications, withdrawApplication } from '../services/Applicationsservice';
+import { fetchMyApplications, withdrawApplication } from '../services/applicationsservice';
 
 const useMyApplications = () => {
   const [applications, setApplications] = useState([]);

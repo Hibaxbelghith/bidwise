@@ -105,12 +105,6 @@ export default function SettingsScreen() {
             {user?.email || user?.username || 'Unavailable'}
           </Text>
         </View>
-        <View style={styles.metaBlock}>
-          <Text style={[styles.metaLabel, { color: mutedColor }]}>Onboarding</Text>
-          <Text style={[styles.metaValue, { color: textColor }]}>
-            {user?.profil?.onboarding_completed ? 'Completed' : 'Not completed'}
-          </Text>
-        </View>
       </View>
 
       {error ? (

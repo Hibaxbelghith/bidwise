@@ -42,7 +42,7 @@ const StepSalary = ({ data, onChange }) => {
 						aria-label="Maximum expected salary"
 					/>
 				</div>
-				<p className="text-sm text-neutral-500">TND/month. Optional.</p>
+				
 				{validation.error ? (
 					<p className="text-sm text-red-600" role="alert">
 						{validation.error}

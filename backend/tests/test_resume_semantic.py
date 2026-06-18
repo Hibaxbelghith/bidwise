@@ -12,6 +12,7 @@ from users.resume_semantic.models import (
     SEMANTIC_STATUS_SUCCEEDED,
 )
 from users.resume_semantic.service import process_profile_resume_semantics
+from users.resume_semantic.normalization import clean_resume_semantic_text
 from users.resume_semantic.structured_llm import extract_structured_resume_signals
 
 
@@ -50,6 +51,58 @@ def qwen_payload(**overrides):
 
 
 class StructuredResumeExtractionTests(TestCase):
+    def test_semantic_text_truncation_keeps_late_tools_section(self):
+        long_experience = " ".join(f"mission backend {index}" for index in range(180))
+        resume_text = f"""
+Hiba Belghith
+Développeuse Backend Senior
+
+Expérience Professionnelle
+{long_experience}
+
+Technologies & Outils
+Python Django PostgreSQL Redis Celery Docker JWT
+"""
+
+        cleaned = clean_resume_semantic_text(resume_text, max_chars=450)
+
+        self.assertIn("Python", cleaned)
+        self.assertIn("Django", cleaned)
+        self.assertIn("PostgreSQL", cleaned)
+        self.assertLessEqual(len(cleaned), 450)
+
+    def test_resume_tools_preserve_mixed_case_product_names(self):
+        signals = extract_structured_resume_signals(
+            "Backend developer using PostgreSQL / MySQL / MongoDB.",
+            provider=FakeProvider(
+                qwen_payload(
+                    skills=[],
+                    tools=["PostgreSQL / MySQL / MongoDB"],
+                )
+            ),
+        )
+
+        self.assertEqual(signals.tools, ["PostgreSQL", "MySQL", "MongoDB"])
+
+    def test_resume_labels_restore_exact_source_surface_form(self):
+        signals = extract_structured_resume_signals(
+            "Comptable junior using Microsoft Excel, PowerPoint and Sage Comptabilité.",
+            provider=FakeProvider(
+                qwen_payload(
+                    canonical_role="Comptable Junior",
+                    target_roles=["Comptable Junior"],
+                    skills=["Reporting Comptable"],
+                    tools=["Microsoft Excel", "Power Point", "Sage Comptabilité"],
+                    business_families=["accounting_finance_audit"],
+                    domains=["Comptabilité"],
+                )
+            ),
+        )
+
+        self.assertIn("PowerPoint", signals.tools)
+        self.assertNotIn("Power Point", signals.tools)
+        self.assertIn("PowerPoint", signals.llm_enrichment["profile_suggestions"]["competences"])
+
     def test_qwen_extraction_produces_profile_ready_signals(self):
         signals = extract_structured_resume_signals(
             "Data Engineer with Python SQL Spark Airflow ETL in Tunis.",

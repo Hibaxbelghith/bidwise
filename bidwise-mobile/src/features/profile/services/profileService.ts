@@ -123,3 +123,14 @@ export async function uploadProfileResume(asset: { uri: string; name?: string | 
 export async function deleteProfileResume() {
   await api.delete('/profile/resume/');
 }
+
+export async function applyResumeProfileSuggestions(
+  resumeId: number,
+  selected: Record<string, unknown>,
+) {
+  const response = await api.post('/profile/resume/apply-suggestions/', {
+    resume_id: resumeId,
+    selected,
+  });
+  return response.data;
+}

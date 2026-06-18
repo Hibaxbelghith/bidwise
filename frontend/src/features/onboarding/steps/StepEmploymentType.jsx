@@ -1,22 +1,31 @@
 import PreferenceChipGroup from '../../profile/components/PreferenceChipGroup.jsx';
-import { EMPLOYMENT_TYPE_OPTIONS } from '../../profile/profilePreferences.js';
+import { getEmploymentTypeOptionsForOpportunityTypes } from '../../profile/profilePreferences.js';
 
-const StepEmploymentType = ({ data, onChange }) => {
+const StepEmploymentType = ({ data, onChange, error = '' }) => {
 	const selected = data.employment_types || [];
+	const options = getEmploymentTypeOptionsForOpportunityTypes(data.opportunity_types);
+	const visibleValues = new Set(options.map((option) => option.value));
+	const visibleSelected = selected.filter((value) => visibleValues.has(value));
 
 	return (
 		<div className="space-y-4">
 			<PreferenceChipGroup
-				options={EMPLOYMENT_TYPE_OPTIONS}
-				value={selected}
+				options={options}
+				value={visibleSelected}
 				onChange={(values) => onChange('employment_types', values)}
 			/>
 
-			{selected.length > 0 && (
+			{visibleSelected.length > 0 && (
 				<p className="text-xs text-neutral-400">
-					{selected.length} selected
+					{visibleSelected.length} selected
 				</p>
 			)}
+
+			{error ? (
+				<p className="text-sm text-red-600" role="alert">
+					{error}
+				</p>
+			) : null}
 		</div>
 	);
 };

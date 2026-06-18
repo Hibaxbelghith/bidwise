@@ -29,7 +29,7 @@ const OpportunitiesBrowseHeader = ({ isUserAuthenticated, authLoading = false, u
               Find multi-source opportunities that match you
             </h1>
             <p className="mt-2 max-w-2xl text-base leading-7 text-neutral-700">
-              Browse jobs, internships, projects and funding opportunities aggregated from multiple
+              Browse jobs, internships and calls for tenders aggregated from multiple
               sources or jump right in and create a free profile to find the opportunities that fit
               you best.
             </p>

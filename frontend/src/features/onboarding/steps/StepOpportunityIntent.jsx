@@ -4,7 +4,7 @@ import { ONBOARDING_OPPORTUNITY_TYPE_OPTIONS } from '../../profile/profilePrefer
 const OPTION_META = {
 	JOB: { icon: Briefcase },
 	INTERNSHIP: { icon: GraduationCap },
-	PROJECTS: { icon: Rocket },
+	CALLS_FOR_TENDER: { icon: Rocket },
 };
 
 const OPTIONS = ONBOARDING_OPPORTUNITY_TYPE_OPTIONS.map((option) => ({
@@ -34,7 +34,7 @@ const StepOpportunityIntent = ({ data, onChange, error = '' }) => {
 			<div className="grid grid-cols-2 gap-3">
 				{OPTIONS.map((opt) => {
 					const isSelected = isOptionSelected(opt);
-					const Icon = opt.icon;
+					const Icon = opt.icon || Briefcase;
 					return (
 						<button
 							key={opt.value}

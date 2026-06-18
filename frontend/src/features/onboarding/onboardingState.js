@@ -133,6 +133,10 @@ export const getOnboardingStepError = (step, data) => {
     return salaryValidation.error || '';
   }
 
+  if (step === 5 && normalized.employment_types.length === 0) {
+    return 'Select at least one employment type.';
+  }
+
   if (step === 6 && normalized.target_roles.length === 0) {
     return 'Add at least one target role.';
   }

@@ -71,7 +71,7 @@ def apply_llm_hierarchy_validation_to_ranked(
     cache_only: bool = False,
 ) -> dict[str, int]:
     if not recommendation_llm_hierarchy_enabled():
-        return {"eligible": 0, "validated": 0, "errors": 0, "cache_misses": 0}
+        return {"eligible": 0, "validated": 0, "errors": 0}
 
     effective_top_n = recommendation_llm_top_n() if top_n is None else max(1, int(top_n))
     effective_min_score = recommendation_llm_min_score() if min_score is None else min_score

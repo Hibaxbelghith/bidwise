@@ -17,6 +17,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from ai.embeddings import enqueue_profile_embedding_refresh
 from opportunities.autocomplete.service import coerce_limit, suggest_profile_terms
 from opportunities.models import ProfileSuggestionType
+from opportunities.turnstile import verify_turnstile_token
 
 from .permissions import IsSuspensionNotBlocked
 from .models import (
@@ -27,7 +28,7 @@ from .models import (
     OTPChallenge,
     LoginEvent,
 )
-from .otp_service import deliver_otp, otp_response_message, resolve_client_type
+from .otp_service import otp_response_message, resolve_client_type
 from .serializers import (
     UtilisateurSerializer,
     OrganizationProfileSerializer,
@@ -38,7 +39,7 @@ from .serializers import (
     OTPVerifySerializer,
 )
 from .storage import ProfileResumeStorage
-from .tasks import enqueue_profile_resume_parse
+from .tasks import enqueue_otp_delivery, enqueue_profile_resume_parse
 from .throttles import (
     OTPRequestThrottle,
     OTPVerifyEmailThrottle,
@@ -47,6 +48,13 @@ from .throttles import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _client_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.META.get("REMOTE_ADDR")
 
 
 @ensure_csrf_cookie
@@ -503,6 +511,17 @@ def request_otp(request):
         serializer.validated_data.get('client_type'),
     )
 
+    if client_type == "web":
+        turnstile = verify_turnstile_token(
+            serializer.validated_data.get("turnstile_token"),
+            remote_ip=_client_ip(request),
+        )
+        if not turnstile.success:
+            return Response(
+                {"turnstile_token": [turnstile.reason]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     # Housekeeping — delete expired/used rows globally
     OTPChallenge.purge_expired()
 
@@ -526,7 +545,7 @@ def request_otp(request):
 
     # Send or simulate based on client type.
     try:
-        deliver_otp(
+        enqueue_otp_delivery(
             email=email,
             otp_code=plaintext_otp,
             expiry_minutes=OTPChallenge.OTP_EXPIRY_MINUTES,
@@ -618,7 +637,7 @@ def verify_otp(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    # Record login event and detect suspicious activity
+    # Record a lightweight login event for session history.
     LoginEvent.record(user, request)
 
     refresh = RefreshToken.for_user(user)

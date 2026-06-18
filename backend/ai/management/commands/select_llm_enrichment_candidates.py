@@ -116,6 +116,14 @@ class Command(BaseCommand):
             help="Optional benchmark_final_recommendation_profiles JSON to identify dark offers.",
         )
         parser.add_argument(
+            "--benchmark-only",
+            action="store_true",
+            help=(
+                "When --benchmark-report is provided, only score opportunities that appeared "
+                "in that report. This keeps demo enrichment focused on recommendation candidates."
+            ),
+        )
+        parser.add_argument(
             "--weak-families",
             default=",".join(sorted(DEFAULT_WEAK_BENCHMARK_FAMILIES)),
             help="Comma-separated business families to boost first.",
@@ -145,6 +153,10 @@ class Command(BaseCommand):
         if source_name and source_name.casefold() != "all":
             queryset = queryset.filter(source__nom__iexact=source_name)
         queryset = queryset.exclude(source__nom__iexact="BidWise Recommendation Benchmark")
+        if bool(options.get("benchmark_only")):
+            if not recommendation_stats:
+                raise CommandError("--benchmark-only requires a non-empty --benchmark-report.")
+            queryset = queryset.filter(id__in=list(recommendation_stats.keys()))
 
         # Cheap DB prefilter: still score in Python because skill arrays/JSON and ROI reasons need full context.
         queryset = queryset.filter(description_length__gte=max(50, min_process_description_chars)).filter(
@@ -191,6 +203,7 @@ class Command(BaseCommand):
                 "weak_skill_threshold": weak_skill_threshold,
                 "exclude_expiring_days": exclude_expiring_days,
                 "benchmark_report": str(options.get("benchmark_report") or ""),
+                "benchmark_only": bool(options.get("benchmark_only")),
                 "weak_families": sorted(weak_families),
                 "priority_filter": sorted(priorities),
             },

@@ -141,6 +141,12 @@ def google_authenticate(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    if user.is_suspended:
+        return Response(
+            {"error": "Votre compte a été suspendu. Veuillez contacter le support pour plus d'informations."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     # Record login event and detect suspicious activity
     LoginEvent.record(user, request)
 

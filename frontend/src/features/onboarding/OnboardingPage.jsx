@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { Button } from '../../components/ui/button.jsx';
-import { Briefcase, ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { Spinner } from '../../components/ui/spinner.jsx';
 
 import StepOpportunityIntent from './steps/StepOpportunityIntent.jsx';
@@ -13,7 +13,10 @@ import StepSalary from './steps/StepSalary.jsx';
 import StepEmploymentType from './steps/StepEmploymentType.jsx';
 import StepTargetRoles from './steps/StepTargetRoles.jsx';
 import StepVisibility from './steps/StepVisibility.jsx';
-import { normalizeProfilePreferenceData } from '../profile/profilePreferences.js';
+import {
+	getEmploymentTypeOptionsForOpportunityTypes,
+	normalizeProfilePreferenceData,
+} from '../profile/profilePreferences.js';
 import {
 	DEFAULT_COMPENSATION_PERIOD,
 	validateSalaryRange,
@@ -23,10 +26,12 @@ import {
 	ORGANIZATION_DASHBOARD_PATH,
 	isOrganizationAccount,
 	isOrganizationProfileComplete,
+	shouldStartCandidateOnboarding,
 } from '../organization/organizationFlow.js';
 
 const STORAGE_KEY = 'bidwise_onboarding';
 const USER_PROFILE_STORAGE_KEY = 'bidwise_user_profile';
+const BRAND_LOGO_SRC = '/BidWise Icon.png';
 
 const STEPS = [
 	StepOpportunityIntent,
@@ -45,11 +50,11 @@ const STEP_META = [
 	{
 		title: 'What brings you to BidWise?',
 		subtitle:
-			'Select the type of opportunities you are looking for. This helps us personalize your experience.',
+			'',
 	},
 	{
 		title: 'Where would you like to work?',
-		subtitle: 'Location is required for on-site or hybrid work, and optional for remote.',
+		subtitle: '',
 	},
 	{
 		title: 'Add your key skills',
@@ -99,6 +104,25 @@ const buildStoredProfileData = (data, onboardingCompleted = false) => ({
 	onboarding_completed: Boolean(onboardingCompleted),
 });
 
+const buildDeferredOnboardingPayload = (data, currentStep) => {
+	const normalized = normalizeProfilePreferenceData(data);
+
+	return Object.fromEntries(
+		Object.entries({
+			...normalized,
+			onboarding_completed: false,
+			last_onboarding_step: currentStep,
+		}).filter(([key, value]) => {
+			if (key === 'onboarding_completed' || key === 'last_onboarding_step') {
+				return true;
+			}
+			if (Array.isArray(value)) return value.length > 0;
+			if (value === '' || value == null) return false;
+			return true;
+		})
+	);
+};
+
 const getStepValidationError = (step, data) => {
 	if (step === 0 && (!Array.isArray(data.opportunity_types) || data.opportunity_types.length === 0)) {
 		return 'Select at least one opportunity type to help us recommend relevant matches.';
@@ -133,6 +157,10 @@ const getStepValidationError = (step, data) => {
 		).error;
 	}
 
+	if (step === 5 && (!Array.isArray(data.employment_types) || data.employment_types.length === 0)) {
+		return 'Select at least one employment type.';
+	}
+
 	if (step === 6 && (!Array.isArray(data.target_roles) || data.target_roles.length === 0)) {
 		return 'Add at least one target role.';
 	}
@@ -141,7 +169,7 @@ const getStepValidationError = (step, data) => {
 };
 
 const findFirstIncompleteRequiredStep = (data) => {
-	for (const step of [0, 1, 2, 3, 4, 6]) {
+	for (const step of [0, 1, 2, 3, 4, 5, 6]) {
 		const error = getStepValidationError(step, data);
 		if (error) {
 			return { step, error };
@@ -194,7 +222,7 @@ const Onboarding = () => {
 			);
 			return;
 		}
-		if (user?.profil?.onboarding_completed) {
+		if (!shouldStartCandidateOnboarding(user)) {
 			navigate('/opportunities', { replace: true });
 		}
 	}, [user, loading, navigate]);
@@ -213,7 +241,16 @@ const Onboarding = () => {
 	}, [currentStep, data]);
 
 	const handleChange = (field, value) => {
-		setData((prev) => ({ ...prev, [field]: value }));
+		setData((prev) => {
+			const next = { ...prev, [field]: value };
+			if (field === 'opportunity_types') {
+				const allowed = new Set(
+					getEmploymentTypeOptionsForOpportunityTypes(value).map((option) => option.value)
+				);
+				next.employment_types = (prev.employment_types || []).filter((item) => allowed.has(item));
+			}
+			return next;
+		});
 		setValidationError('');
 	};
 
@@ -279,18 +316,14 @@ const Onboarding = () => {
 		setSubmissionError(null);
 		setIsSubmitting(true);
 		try {
-			const result = await updateUserProfile({
-				...normalizeProfilePreferenceData(data),
-				onboarding_completed: false,
-				last_onboarding_step: currentStep,
-			});
+			const result = await updateUserProfile(buildDeferredOnboardingPayload(data, currentStep));
 			if (result.success) {
 				localStorage.setItem(
 					USER_PROFILE_STORAGE_KEY,
 					JSON.stringify(buildStoredProfileData(data, false))
 				);
 				sessionStorage.removeItem(STORAGE_KEY);
-				navigate('/opportunities', { replace: true });
+				navigate('/opportunities?tab=explore', { replace: true });
 			} else {
 				setSubmissionError(result.error || 'Failed to save profile');
 			}
@@ -320,13 +353,8 @@ const Onboarding = () => {
 			<div className="w-full max-w-xl">
 				{/* Logo */}
 				<div className="mb-8 text-center">
-					<Link to="/" className="inline-flex items-center gap-2" aria-label="BidWise home">
-						<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-							<Briefcase className="h-6 w-6 text-white" aria-hidden="true" />
-						</div>
-						<span className="text-xl font-semibold text-neutral-900">
-							BidWise
-						</span>
+					<Link to="/" className="inline-flex items-center gap-1" aria-label="BidWise home">
+						<img src={BRAND_LOGO_SRC} alt="BidWise" className="h-20 w-20 object-contain" />
 					</Link>
 				</div>
 

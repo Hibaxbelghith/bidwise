@@ -19,9 +19,16 @@ export const normalizeWhitespace = (value) => String(value || '').trim().replace
 
 export const normalizeTunisiaPhone = (value) => String(value || '').trim().replace(/\s+/g, '');
 
+export const normalizePublicUrl = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^https?:\/\//i.test(text)) return text;
+  return `https://${text}`;
+};
+
 const isValidPublicUrl = (value) => {
   try {
-    const url = new URL(String(value || '').trim());
+    const url = new URL(normalizePublicUrl(value));
     return ['http:', 'https:'].includes(url.protocol);
   } catch {
     return false;
@@ -29,6 +36,18 @@ const isValidPublicUrl = (value) => {
 };
 
 export const isOrganizationAccount = (user) => user?.account_type === 'organization';
+
+export const getCandidateProfileCompletionScore = (user) => {
+  const score = Number(user?.profil?.profile_completion?.score);
+  return Number.isFinite(score) ? Math.max(0, Math.min(score, 100)) : 0;
+};
+
+export const shouldStartCandidateOnboarding = (user) => {
+  if (!user?.profil) return true;
+  if (user.profil.onboarding_completed) return false;
+
+  return getCandidateProfileCompletionScore(user) <= 0;
+};
 
 export const isOrganizationProfileComplete = (profile) => {
   if (!profile) return false;
@@ -48,8 +67,8 @@ export const validateOrganizationProfileForm = (values) => {
   const firstName = normalizeWhitespace(values.first_name);
   const lastName = normalizeWhitespace(values.last_name);
   const phone = normalizeTunisiaPhone(values.phone);
-  const website = String(values.website || '').trim();
-  const logo = String(values.logo || '').trim();
+  const website = normalizePublicUrl(values.website);
+  const logo = normalizePublicUrl(values.logo);
 
   if (!organizationName) {
     errors.organization_name = 'Enter your organization name';
@@ -98,8 +117,8 @@ export const buildOrganizationProfilePayload = (values) => ({
   organization_name: normalizeWhitespace(values.organization_name),
   first_name: normalizeWhitespace(values.first_name),
   last_name: normalizeWhitespace(values.last_name),
-  website: String(values.website || '').trim(),
-  logo: String(values.logo || '').trim(),
+  website: normalizePublicUrl(values.website),
+  logo: normalizePublicUrl(values.logo),
   phone: normalizeTunisiaPhone(values.phone),
   organization_type: values.organization_type,
 });
@@ -111,5 +130,5 @@ export const getPostAuthRedirectPath = ({ user, isNewUser = false, organizationI
       : ORGANIZATION_CREATE_ACCOUNT_PATH;
   }
 
-  return isNewUser || !user?.profil?.onboarding_completed ? '/onboarding' : '/opportunities';
+  return shouldStartCandidateOnboarding(user) ? '/onboarding' : '/opportunities';
 };

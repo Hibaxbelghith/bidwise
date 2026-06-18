@@ -13,7 +13,7 @@ import {
   normalizeTextList,
 } from '@/src/features/profile/utils/profileValidation';
 import {
-  EMPLOYMENT_TYPE_OPTIONS,
+  ALL_EMPLOYMENT_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
   WORK_MODE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
@@ -33,7 +33,7 @@ export function buildProfileEditorState(user: ProfileUser | null): ProfileEditor
     opportunityTypes: normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS),
     preferredLocations: normalizeLocations(profile?.preferred_locations),
     workModePreferences: normalizeOptionValues(profile?.work_mode_preferences, WORK_MODE_OPTIONS),
-    employmentTypes: normalizeOptionValues(profile?.employment_types, EMPLOYMENT_TYPE_OPTIONS),
+    employmentTypes: normalizeOptionValues(profile?.employment_types, ALL_EMPLOYMENT_TYPE_OPTIONS),
     targetRoles: normalizeTextList(profile?.target_roles),
     skills: normalizeSkillList(profile?.competences),
     interests: normalizeBusinessFamilyValues(profile?.domaines_interet),

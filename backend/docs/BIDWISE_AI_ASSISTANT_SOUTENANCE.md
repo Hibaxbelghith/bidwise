@@ -558,7 +558,57 @@ Non. Le chatbot est disponible dans For You et dans les pages detail des offres 
 - Le chatbot ne doit pas etre utilise comme source officielle sur l'entreprise si l'information n'est pas dans l'offre.
 - Le quota Gemini gratuit est suffisant pour la soutenance, mais un usage multi-utilisateurs necessite un quota adapte ou un fallback local.
 
-## 14. Conclusion
+## 14. Configuration de demonstration
+
+Configuration LLM active pour la soutenance :
+
+```text
+LLM_PROVIDER=gemini
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TIMEOUT_SECONDS=45
+GEMINI_TEMPERATURE=0.1
+GEMINI_MAX_OUTPUT_TOKENS=6000
+```
+
+Interpretation :
+
+- Gemini est utilise pour les reponses conversationnelles et les actions RH specialisees.
+- La temperature faible limite la variabilite des reponses.
+- Les scores ne sont pas calcules par Gemini : ils sont produits par le backend a partir des donnees structurees.
+- Le LLM sert a expliquer, reformuler et generer des contenus de candidature a partir du contexte BidWise.
+
+Commande de verification de la configuration :
+
+```powershell
+docker compose exec backend python manage.py shell -c "from django.conf import settings; print(settings.LLM_PROVIDER); print(settings.GEMINI_MODEL); print(settings.GEMINI_TIMEOUT_SECONDS); print(settings.GEMINI_TEMPERATURE); print(settings.GEMINI_MAX_OUTPUT_TOKENS)"
+```
+
+## 15. Tests de validation
+
+Tests cibles executes pour valider l'assistant IA :
+
+```powershell
+docker compose run --rm backend python manage.py test --keepdb ai.tests.test_opportunity_assistant_questions ai.tests.test_opportunity_assistant_chatbot ai.tests.test_resume_match_evidence
+```
+
+Resultat de validation :
+
+```text
+27 tests executed
+Status: OK
+```
+
+Ces tests couvrent :
+
+- construction du contexte structure transmis a l'assistant ;
+- distinction entre recommendation score, CV-to-job fit score et ATS score ;
+- questions libres sur l'offre ;
+- support des questions multilingues avec reponse en anglais ;
+- cache lie a l'opportunite, au CV actif, a l'historique recent et au provider ;
+- routage des questions vers les actions specialisees : analyse CV, optimisation CV, lettre de motivation et preparation d'entretien ;
+- gestion propre des erreurs LLM.
+
+## 16. Conclusion
 
 BidWise AI combine une approche deterministe et une couche LLM controlee.
 

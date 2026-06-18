@@ -13,14 +13,23 @@ export const WORK_MODE_OPTIONS = [
 export const EMPLOYMENT_TYPE_OPTIONS = [
 	{ value: 'CDI', label: 'CDI' },
 	{ value: 'CDD', label: 'CDD' },
-	{ value: 'INTERNSHIP', label: 'Internship' },
 	{ value: 'SIVP', label: 'SIVP' },
 	{ value: 'FREELANCE', label: 'Freelance' },
-	{ value: 'ALTERNANCE', label: 'Alternance' },
-	{ value: 'TEMPORARY_INTERIM', label: 'Temporary / Interim' },
-	{ value: 'SEASONAL', label: 'Seasonal' },
-	{ value: 'PUBLIC_SECTOR', label: 'Public sector' },
 ];
+
+export const INTERNSHIP_EMPLOYMENT_TYPE_OPTION = { value: 'INTERNSHIP', label: 'Internship' };
+
+export const ALL_EMPLOYMENT_TYPE_OPTIONS = [
+	...EMPLOYMENT_TYPE_OPTIONS,
+	INTERNSHIP_EMPLOYMENT_TYPE_OPTION,
+];
+
+export const getEmploymentTypeOptionsForOpportunityTypes = (opportunityTypes = []) => {
+	const selected = new Set(Array.isArray(opportunityTypes) ? opportunityTypes : []);
+	return selected.has('INTERNSHIP')
+		? ALL_EMPLOYMENT_TYPE_OPTIONS
+		: EMPLOYMENT_TYPE_OPTIONS;
+};
 
 export const OPPORTUNITY_TYPE_OPTIONS = [
 	{ value: 'JOB', label: 'Jobs' },
@@ -157,7 +166,7 @@ export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
 	{
 		value: 'JOB',
 		label: 'Jobs',
-		description: 'Full-time, part-time, contract, SIVP',
+		description: 'CDI, CDD, SIVP and freelance',
 		values: ['JOB'],
 	},
 	{
@@ -324,7 +333,7 @@ export const normalizeProfilePreferenceData = (data = {}) => ({
 	compensation_period: data.compensation_period || DEFAULT_COMPENSATION_PERIOD,
 	employment_types: normalizeOptionValues(
 		data.employment_types,
-		EMPLOYMENT_TYPE_OPTIONS
+		ALL_EMPLOYMENT_TYPE_OPTIONS
 	),
 	target_roles: normalizeTextList(data.target_roles),
 	competences: normalizeSkillList(data.competences),

@@ -114,6 +114,48 @@ class OpportunityAssistantQuestionViewTests(APITestCase):
             ],
         )
 
+    @patch("ai.views._cached_recommendation_context", return_value={})
+    @patch("ai.views.answer_opportunity_question")
+    def test_uses_recommendation_context_sent_by_frontend(self, answer_question, _recommendation_context):
+        self.client.force_authenticate(self.user)
+        answer_question.return_value = {
+            "answer": "The recommendation score shown in Your fit is 73.",
+            "answered": True,
+            "provider": "gemini",
+            "model": "gemini-test",
+        }
+
+        response = self.client.post(
+            self.url,
+            {
+                "question": "what is the score",
+                "recommendation": {
+                    "match_score": 0.73,
+                    "semantic_score": 0.68,
+                    "business_score": 0.42,
+                    "feedback_score": 0.0,
+                    "score_label": "Recommended to apply",
+                    "recommendation_confidence": "MEDIUM",
+                    "recommendation_bucket": "STRONG_MATCH",
+                    "recommendation_scoring_mode": "complete",
+                    "reasons": ["Data Scientist role aligned"],
+                    "gaps": ["Azure"],
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        recommendation = answer_question.call_args.args[1]["recommendation"]
+        self.assertEqual(recommendation["score_percent"], 73)
+        self.assertEqual(recommendation["semantic_score_percent"], 68)
+        self.assertEqual(recommendation["business_score_percent"], 42)
+        self.assertEqual(recommendation["score_label"], "Recommended to apply")
+        self.assertEqual(recommendation["bucket"], "STRONG_MATCH")
+        self.assertEqual(recommendation["scoring_mode"], "complete")
+        self.assertEqual(recommendation["reasons"], ["Data Scientist role aligned"])
+        self.assertEqual(recommendation["gaps"], ["Azure"])
+
     @patch("ai.views.answer_opportunity_question")
     def test_does_not_share_cache_between_different_histories(self, answer_question):
         self.client.force_authenticate(self.user)

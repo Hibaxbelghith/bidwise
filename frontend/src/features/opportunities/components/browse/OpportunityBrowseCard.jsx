@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Bookmark,
@@ -42,8 +42,11 @@ const OpportunityBrowseCard = memo(({
   returnTab = 'explore',
 }) => {
   const location = useLocation();
-  const viewModel = buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated);
-  const recommendation = getRecommendationPayload(opportunity);
+  const viewModel = useMemo(
+    () => buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated),
+    [isUserAuthenticated, opportunity],
+  );
+  const recommendation = useMemo(() => getRecommendationPayload(opportunity), [opportunity]);
   const [isSaved, setIsSaved] = useState(() => isOpportunitySaved(opportunity?.id));
   const hasRoleDetails = Boolean(
     viewModel.salaryLabel ||
@@ -58,6 +61,7 @@ const OpportunityBrowseCard = memo(({
     returnTab,
     scrollY: typeof window !== 'undefined' ? window.scrollY : 0,
     opportunityId: opportunity?.id ?? null,
+    recommendation,
   };
 
   useEffect(() => {

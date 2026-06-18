@@ -99,6 +99,7 @@ const ResumeMatchPanel = ({
   onSendQuestion,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
+  const [pendingSuggestionKey, setPendingSuggestionKey] = useState('');
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -467,13 +468,22 @@ const ResumeMatchPanel = ({
                         key={suggestion.key}
                         type="button"
                         className={`ml-auto flex w-fit max-w-full rounded-lg border px-4 py-2 text-left text-sm font-medium shadow-sm transition-colors ${
-                          actionLoading === suggestion.key
+                          pendingSuggestionKey === suggestion.key
                             ? 'border-blue-100 bg-white text-blue-800 ring-1 ring-blue-100'
                             : 'border-gray-200 bg-white text-gray-800 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-950'
                         }`}
-                        onClick={() => onAction?.(suggestion.key)}
+                        onClick={async () => {
+                          if (chatLoading || pendingSuggestionKey) return;
+
+                          setPendingSuggestionKey(suggestion.key);
+                          try {
+                            await onSendQuestion?.(suggestion.label);
+                          } finally {
+                            setPendingSuggestionKey('');
+                          }
+                        }}
                       >
-                        {actionLoading === suggestion.key ? (
+                        {pendingSuggestionKey === suggestion.key ? (
                           <Loader2 className="mr-2 h-3.5 w-3.5 shrink-0 animate-spin text-blue-600" />
                         ) : null}
                         <span>{suggestion.label}</span>

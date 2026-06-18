@@ -6,7 +6,7 @@ import ProfileFormField from '@/src/features/profile/components/ProfileFormField
 import ProfileSection from '@/src/features/profile/components/ProfileSection';
 import SalaryExpectationField from '@/src/features/profile/components/SalaryExpectationField';
 import {
-  EMPLOYMENT_TYPE_OPTIONS,
+  getEmploymentTypeOptionsForOpportunityTypes,
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
   TUNISIAN_LOCATION_OPTIONS,
   WORK_MODE_OPTIONS,
@@ -56,6 +56,25 @@ export default function ProfilePreferencesScreen() {
     if (!locationInput.trim()) return true;
     return location.toLowerCase().includes(locationInput.trim().toLowerCase());
   }).slice(0, 8);
+  const employmentTypeOptions = getEmploymentTypeOptionsForOpportunityTypes(
+    editorState.opportunityTypes,
+  );
+  const visibleEmploymentTypeValues = new Set(
+    employmentTypeOptions.map((option) => option.value),
+  );
+  const visibleEmploymentTypes = editorState.employmentTypes.filter((value) =>
+    visibleEmploymentTypeValues.has(value),
+  );
+  const setOpportunityTypes = (values: string[]) => {
+    const allowedEmploymentTypes = new Set(
+      getEmploymentTypeOptionsForOpportunityTypes(values).map((option) => option.value),
+    );
+    setStateField('opportunityTypes', values);
+    setStateField(
+      'employmentTypes',
+      editorState.employmentTypes.filter((value) => allowedEmploymentTypes.has(value)),
+    );
+  };
 
   return (
     <ProfileEditorPage
@@ -80,7 +99,7 @@ export default function ProfilePreferencesScreen() {
           <PreferenceChipGroup
             options={ONBOARDING_OPPORTUNITY_TYPE_OPTIONS}
             value={editorState.opportunityTypes}
-            onChange={(values) => setStateField('opportunityTypes', values)}
+            onChange={setOpportunityTypes}
             colors={colors}
           />
         </View>
@@ -165,8 +184,8 @@ export default function ProfilePreferencesScreen() {
         <View style={styles.fieldBlock}>
           <Text style={[styles.fieldLabel, { color: textColor }]}>Employment types</Text>
           <PreferenceChipGroup
-            options={EMPLOYMENT_TYPE_OPTIONS}
-            value={editorState.employmentTypes}
+            options={employmentTypeOptions}
+            value={visibleEmploymentTypes}
             onChange={(values) => setStateField('employmentTypes', values)}
             colors={colors}
             compact

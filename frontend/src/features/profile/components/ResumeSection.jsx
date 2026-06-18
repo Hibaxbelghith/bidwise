@@ -141,7 +141,10 @@ const ResumeSuggestionsCard = ({
 	const skillLimit = Math.max(0, MAX_PROFILE_SKILLS - currentSkills.length);
 	const role = getResumeCanonicalRole(resume);
 	const suggestedRole = role && !hasValue(currentRoles, role) ? role : '';
-	const suggestedSkills = normalizeSkillList(resume?.extracted_skills)
+	const suggestedSkills = normalizeSkillList([
+		...(Array.isArray(resume?.extracted_skills) ? resume.extracted_skills : []),
+		...(Array.isArray(resume?.extracted_tools) ? resume.extracted_tools : []),
+	])
 		.filter((skill) => !hasValue(currentSkills, skill))
 		.slice(0, skillLimit);
 	const hasSelected = Boolean(selectedRole) || selectedSkills.length > 0;
@@ -151,7 +154,10 @@ const ResumeSuggestionsCard = ({
 		|| !resume?.id
 		|| shouldHideResumeSuggestions(resume)
 		|| !getPendingResumeSuggestionId(resume)
-		|| normalizeSuggestionItems(resume?.extracted_skills).length === 0
+		|| normalizeSuggestionItems([
+			...(Array.isArray(resume?.extracted_skills) ? resume.extracted_skills : []),
+			...(Array.isArray(resume?.extracted_tools) ? resume.extracted_tools : []),
+		]).length === 0
 		|| (!suggestedRole && suggestedSkills.length === 0)
 	) {
 		return null;
@@ -402,7 +408,10 @@ const ResumeSection = ({ profile, activeResume, onChanged }) => {
 		const role = getResumeCanonicalRole(displayedResume);
 		setSelectedRole(role && !hasValue(currentRoles, role) ? role : '');
 		setSelectedSkills(
-			normalizeSkillList(displayedResume?.extracted_skills)
+			normalizeSkillList([
+				...(Array.isArray(displayedResume?.extracted_skills) ? displayedResume.extracted_skills : []),
+				...(Array.isArray(displayedResume?.extracted_tools) ? displayedResume.extracted_tools : []),
+			])
 				.filter((skill) => !hasValue(currentSkills, skill))
 				.slice(0, skillLimit)
 		);

@@ -330,9 +330,6 @@ const CreateOrganizationAccountPage = () => {
                     )}
                   </Button>
                 </div>
-                <p id="logo-help" className="mt-1.5 text-sm text-neutral-500">
-                  Optional. Paste a public image URL or upload a PNG, JPG, or WEBP logo up to 2 MB.
-                </p>
                 <FieldError id="logo-error" message={errors.logo} />
                 {logoUploadError ? (
                   <p className="mt-1.5 text-sm text-red-600">{logoUploadError}</p>

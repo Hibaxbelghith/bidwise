@@ -16,6 +16,7 @@ import {
   normalizeSkillList,
   normalizeTextList,
 } from '@/src/features/profile/utils/profileValidation';
+import { EXPERIENCE_LEVEL_OPTIONS } from '@/src/features/profile/utils/profileEditorState';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
 type ProfileScreenProps = {
@@ -31,6 +32,25 @@ const formatPreference = (value: unknown) => {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+};
+
+const EXPERIENCE_LEVEL_LABELS = Object.fromEntries(
+  EXPERIENCE_LEVEL_OPTIONS.map((option) => [option.value, option.label.replace(/\s*\(.+\)$/, '')]),
+) as Record<string, string>;
+
+const PROFILE_COMPLETION_LABELS: Record<string, string> = {
+  first_name: 'first name',
+  last_name: 'last name',
+  experience_level: 'experience level',
+  years_experience: 'years of experience',
+  locations: 'locations',
+  work_modes: 'work modes',
+  employment_types: 'employment types',
+  opportunity_types: 'opportunity types',
+  skills: 'skills',
+  target_roles: 'target roles',
+  interests: 'sectors',
+  resume: 'resume',
 };
 
 const formatOpportunityTypes = (value: unknown) => {
@@ -81,15 +101,12 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
     typedUser?.email
     || 'Keep your signals clear so matching and recruiter discovery stay accurate.';
 
-  const initials = useMemo(() => {
-    const first = String(profile?.prenom || typedUser?.first_name || '').trim().charAt(0);
-    const last = String(profile?.nom || typedUser?.last_name || '').trim().charAt(0);
-    return `${first}${last}`.trim().toUpperCase() || 'BW';
-  }, [profile?.nom, profile?.prenom, typedUser?.first_name, typedUser?.last_name]);
-
   const basicSummary = useMemo(() => {
     const nameSummary = [profile?.prenom, profile?.nom].filter(Boolean).join(' ').trim() || 'Add your name';
-    const experience = formatPreference(profile?.niveau_experience) || 'Experience not set';
+    const normalizedExperience = String(profile?.niveau_experience || '').trim().toUpperCase();
+    const experience = EXPERIENCE_LEVEL_LABELS[normalizedExperience]
+      || formatPreference(profile?.niveau_experience)
+      || 'Experience not set';
     const years =
       profile?.annees_experience != null ? `${profile.annees_experience} year(s)` : 'Years not set';
     return `${nameSummary} • ${experience} • ${years}`;
@@ -115,7 +132,11 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
     ? 'Private to recruiters'
     : 'Visible to recruiters';
 
-  const missing = Array.isArray(completion.missing) ? completion.missing.slice(0, 3) : [];
+  const missing = Array.isArray(completion.missing)
+    ? completion.missing
+      .slice(0, 3)
+      .map((item) => PROFILE_COMPLETION_LABELS[item] || formatPreference(item))
+    : [];
 
   const openRoute = (route: string) => {
     router.push(route as Href);
@@ -128,16 +149,11 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.heroCard, { backgroundColor: cardColor, borderColor }]}>
-        <View style={styles.identityRow}>
-          <View style={[styles.avatar, { backgroundColor: `${tintColor}16`, borderColor: `${tintColor}30` }]}>
-            <Text style={[styles.avatarText, { color: tintColor }]}>{initials}</Text>
-          </View>
-          <View style={styles.identityText}>
-            <Text style={[styles.profileName, { color: textColor }]}>{displayName}</Text>
-            <Text style={[styles.profileSubtitle, { color: mutedColor }]} numberOfLines={2}>
-              {subtitle}
-            </Text>
-          </View>
+        <View style={styles.identityText}>
+          <Text style={[styles.profileName, { color: textColor }]}>{displayName}</Text>
+          <Text style={[styles.profileSubtitle, { color: mutedColor }]} numberOfLines={2}>
+            {subtitle}
+          </Text>
         </View>
 
         <View style={[styles.completionCard, { backgroundColor, borderColor }]}>
@@ -215,25 +231,7 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 18,
   },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  avatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
   identityText: {
-    flex: 1,
     gap: 4,
   },
   profileName: {

@@ -1,7 +1,7 @@
 import {
   BUSINESS_FAMILY_OPTIONS,
   DEFAULT_COMPENSATION_PERIOD,
-  EMPLOYMENT_TYPE_OPTIONS,
+  ALL_EMPLOYMENT_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
   WORK_MODE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
@@ -116,9 +116,6 @@ const toBusinessFamilyKey = (value: unknown) => normalizeTermKey(value).replace(
 
 export const SALARY_LIMITS_BY_PERIOD: Record<string, { min: number; max: number }> = {
   MONTHLY: { min: 200, max: 30000 },
-  YEARLY: { min: 2400, max: 360000 },
-  DAILY: { min: 10, max: 1500 },
-  HOURLY: { min: 2, max: 150 },
 };
 
 export const PROFILE_NAME_ERROR = 'Input must contain between 2 and 100 characters.';
@@ -268,8 +265,8 @@ export const normalizeProfilePreferenceData = (data: Record<string, unknown>) =>
       ? null
       : data.compensation_max_expectation,
   compensation_currency: data.compensation_currency || 'TND',
-  compensation_period: data.compensation_period || DEFAULT_COMPENSATION_PERIOD,
-  employment_types: normalizeOptionValues(data.employment_types, EMPLOYMENT_TYPE_OPTIONS),
+  compensation_period: normalizeCompensationPeriod(data.compensation_period),
+  employment_types: normalizeOptionValues(data.employment_types, ALL_EMPLOYMENT_TYPE_OPTIONS),
   target_roles: normalizeTextList(data.target_roles),
   competences: normalizeSkillList(data.competences),
   domaines_interet: normalizeBusinessFamilyValues(data.domaines_interet),
@@ -284,6 +281,11 @@ export const parseSalaryInput = (value: unknown) => {
   return Number.parseInt(cleaned, 10);
 };
 
+export const normalizeCompensationPeriod = (value: unknown) => {
+  const period = String(value || DEFAULT_COMPENSATION_PERIOD).trim().toUpperCase();
+  return SALARY_LIMITS_BY_PERIOD[period] ? period : DEFAULT_COMPENSATION_PERIOD;
+};
+
 export const validateSalaryExpectation = (
   value: unknown,
   period = DEFAULT_COMPENSATION_PERIOD,
@@ -291,13 +293,14 @@ export const validateSalaryExpectation = (
   const amount = parseSalaryInput(value);
   if (amount === null) return { value: null, error: '' };
 
-  const limits = SALARY_LIMITS_BY_PERIOD[period] || SALARY_LIMITS_BY_PERIOD.MONTHLY;
+  const normalizedPeriod = normalizeCompensationPeriod(period);
+  const limits = SALARY_LIMITS_BY_PERIOD[normalizedPeriod];
   if (amount < 0) return { value: amount, error: 'Salary cannot be negative.' };
   if (amount < limits.min) {
-    return { value: amount, error: `Enter at least ${limits.min} TND for ${period.toLowerCase()}.` };
+    return { value: amount, error: `Enter at least ${limits.min} TND for ${normalizedPeriod.toLowerCase()}.` };
   }
   if (amount > limits.max) {
-    return { value: amount, error: `Enter ${limits.max} TND or less for ${period.toLowerCase()}.` };
+    return { value: amount, error: `Enter ${limits.max} TND or less for ${normalizedPeriod.toLowerCase()}.` };
   }
   return { value: amount, error: '' };
 };

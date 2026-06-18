@@ -37,8 +37,8 @@ const StepLocation = ({ data, onChange, error = '' }) => {
 			/>
 			<p className="text-xs text-neutral-500">
 				{locationRequired
-					? 'Location is required for on-site or hybrid work.'
-					: 'Location is optional when you are open to remote work.'}
+					? ''
+					: ''}
 			</p>
 
 			<div className="space-y-2">

@@ -1331,6 +1331,9 @@ class OrganizationProfileDetailViewTests(APITestCase):
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="test@bidwise.com",
+    TURNSTILE_SECRET_KEY="",
+    MOBILE_OTP_DELIVERY="simulated",
+    AUTH_OTP_EMAIL_ASYNC=False,
 )
 class RequestOTPViewTests(APITestCase):
     """Tests for POST /api/auth/passwordless/request/"""
@@ -1760,88 +1763,6 @@ class LoginEventModelTests(TestCase):
 
 
 # ═══════════════════════════════════════════════════════════
-# SPRINT 1.1 — SUSPICIOUS LOGIN DETECTION TESTS
-# ═══════════════════════════════════════════════════════════
-
-
-@override_settings(
-    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-    DEFAULT_FROM_EMAIL="test@bidwise.com",
-)
-class SuspiciousLoginDetectionTests(TestCase):
-    """Tests for LoginEvent.is_suspicious() and LoginEvent.record()."""
-
-    def setUp(self):
-        from .models import LoginEvent
-        self.LoginEvent = LoginEvent
-        self.user = Utilisateur.objects.create_user(
-            username="suspuser", email="susp@test.com", password="pass1234"
-        )
-
-    def test_first_login_not_suspicious(self):
-        """Very first login for a user is never flagged as suspicious."""
-        result = self.LoginEvent.is_suspicious(self.user, "1.2.3.4", "AgentA")
-        self.assertFalse(result)
-
-    def test_same_ip_same_ua_not_suspicious(self):
-        """Login from same IP + same UA is not suspicious."""
-        self.LoginEvent.objects.create(
-            user=self.user, ip_address="1.2.3.4", user_agent="AgentA"
-        )
-        result = self.LoginEvent.is_suspicious(self.user, "1.2.3.4", "AgentA")
-        self.assertFalse(result)
-
-    def test_new_ip_is_suspicious(self):
-        """Login from a new IP triggers suspicious."""
-        self.LoginEvent.objects.create(
-            user=self.user, ip_address="1.2.3.4", user_agent="AgentA"
-        )
-        result = self.LoginEvent.is_suspicious(self.user, "5.6.7.8", "AgentA")
-        self.assertTrue(result)
-
-    def test_new_ua_is_suspicious(self):
-        """Login from a new user agent triggers suspicious."""
-        self.LoginEvent.objects.create(
-            user=self.user, ip_address="1.2.3.4", user_agent="AgentA"
-        )
-        result = self.LoginEvent.is_suspicious(self.user, "1.2.3.4", "AgentB")
-        self.assertTrue(result)
-
-    def test_record_creates_event(self):
-        """record() creates a LoginEvent in the DB."""
-        request = MagicMock()
-        request.META = {"REMOTE_ADDR": "10.0.0.1", "HTTP_USER_AGENT": "TestBrowser"}
-        event = self.LoginEvent.record(self.user, request)
-        self.assertEqual(event.ip_address, "10.0.0.1")
-        self.assertEqual(event.user_agent, "TestBrowser")
-        self.assertEqual(event.device_type, "Desktop")
-        self.assertEqual(self.LoginEvent.objects.filter(user=self.user).count(), 1)
-
-    @patch("users.models.LoginEvent._send_suspicious_email")
-    def test_record_sends_email_on_suspicious(self, mock_email):
-        """record() sends a suspicious-login email when the device/IP is new."""
-        # First login — not suspicious
-        request1 = MagicMock()
-        request1.META = {"REMOTE_ADDR": "10.0.0.1", "HTTP_USER_AGENT": "BrowserA"}
-        self.LoginEvent.record(self.user, request1)
-        mock_email.assert_not_called()
-
-        # Second login from new IP — suspicious
-        request2 = MagicMock()
-        request2.META = {"REMOTE_ADDR": "99.99.99.99", "HTTP_USER_AGENT": "BrowserA"}
-        self.LoginEvent.record(self.user, request2)
-        mock_email.assert_called_once()
-
-    @patch("users.models.LoginEvent._send_suspicious_email")
-    def test_record_no_email_on_known_device(self, mock_email):
-        """record() does not send email when logging from a known device."""
-        request = MagicMock()
-        request.META = {"REMOTE_ADDR": "10.0.0.1", "HTTP_USER_AGENT": "BrowserA"}
-        self.LoginEvent.record(self.user, request)
-        self.LoginEvent.record(self.user, request)
-        mock_email.assert_not_called()
-
-
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="test@bidwise.com",

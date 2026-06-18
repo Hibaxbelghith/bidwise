@@ -25,6 +25,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const hasStartedCandidateProfile = (profile: ProfileUser | null) => {
+  const score = Number(profile?.profil?.profile_completion?.score);
+  return Number.isFinite(score) && score > 0;
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const profile = await getProfile();
     setUser(profile);
 
-    const onboarding_completed = profile?.profil?.onboarding_completed ?? false;
+    const onboarding_completed = Boolean(profile?.profil?.onboarding_completed) || hasStartedCandidateProfile(profile);
     return { is_new_user: data.is_new_user, onboarding_completed };
   }, []);
 
@@ -65,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const profile = await getProfile();
     setUser(profile);
 
-    const onboarding_completed = profile?.profil?.onboarding_completed ?? false;
+    const onboarding_completed = Boolean(profile?.profil?.onboarding_completed) || hasStartedCandidateProfile(profile);
     return { is_new_user: data.is_new_user, onboarding_completed };
   }, []);
 

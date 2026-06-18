@@ -2,7 +2,7 @@ import { forwardRef, cloneElement, isValidElement } from 'react';
 import { cn } from './utils.js';
 
 const baseClasses =
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all " +
+  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all " +
   "disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
 const variants = {

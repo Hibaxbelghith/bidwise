@@ -106,8 +106,8 @@ export default function LoginScreen() {
       setGoogleSending(true);
       setError('');
       try {
-        const { is_new_user, onboarding_completed } = await loginWithGoogle(idToken);
-        router.replace((!onboarding_completed || is_new_user) ? '/onboarding' : '/explore');
+        const { onboarding_completed } = await loginWithGoogle(idToken);
+        router.replace(onboarding_completed ? '/explore' : '/onboarding');
       } catch (e: any) {
         const msg = e.response?.data?.error
           ?? (e.code === 'ERR_NETWORK' ? `Network error: cannot reach server` : `Error: ${e.message}`);
@@ -317,7 +317,7 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <Text style={[styles.securityText, { color: mutedColor }]}>Password-free and secure</Text>
+            
           </View>
         </View>
       </ScrollView>

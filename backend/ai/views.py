@@ -36,7 +36,7 @@ from .quality_gates import (
     sanitize_recommendation_gaps,
     sanitize_recommendation_reasons,
 )
-from .recommendation_service import get_score_label, rank_opportunities
+from .recommendation_service import get_score_label, rank_opportunities, select_source_balanced_candidates
 from .recommendation_llm import apply_llm_hierarchy_validation_to_ranked
 from .resume_match.evidence import READY_STATUS, build_resume_match_evidence
 from .resume_match.chatbot import OpportunityAssistantError, answer_opportunity_question
@@ -295,6 +295,7 @@ def _recommendations_cache_key(request, limit):
     }
     key_payload = {
         "version": 1,
+        "cache_bust": request.query_params.get("_ts") or "",
         "user_id": getattr(request.user, "pk", None),
         "profile_id": getattr(profile, "pk", None),
         "limit": int(limit),
@@ -352,43 +353,50 @@ def _opportunity_payload(opportunity):
     date_limite = getattr(opportunity, "date_limite", None)
     date_creation = getattr(opportunity, "date_creation", None)
     date_modification = getattr(opportunity, "date_modification", None)
+    experience_min = getattr(opportunity, "experience_min", None)
+    experience_max = getattr(opportunity, "experience_max", None)
+    experience_years = getattr(opportunity, "experience_years", None)
     return {
-        "id": opportunity.id,
-        "titre": opportunity.titre,
-        "title": opportunity.titre,
-        "description": opportunity.description or "",
-        "description_html": opportunity.description_html or "",
-        "organisation_nom": opportunity.organisation_nom or "",
-        "company": opportunity.organisation_nom or "",
-        "company_logo": opportunity.company_logo or "",
-        "ville": opportunity.ville or "",
-        "location": opportunity.ville or "",
-        "type_opportunite": opportunity.type_opportunite,
-        "type": opportunity.type_opportunite,
-        "statut": opportunity.statut,
+        "id": getattr(opportunity, "id", None),
+        "titre": getattr(opportunity, "titre", ""),
+        "title": getattr(opportunity, "titre", ""),
+        "description": getattr(opportunity, "description", "") or "",
+        "description_html": getattr(opportunity, "description_html", "") or "",
+        "organisation_nom": getattr(opportunity, "organisation_nom", "") or "",
+        "company": getattr(opportunity, "organisation_nom", "") or "",
+        "company_logo": getattr(opportunity, "company_logo", "") or "",
+        "ville": getattr(opportunity, "ville", "") or "",
+        "location": getattr(opportunity, "ville", "") or "",
+        "type_opportunite": getattr(opportunity, "type_opportunite", ""),
+        "type": getattr(opportunity, "type_opportunite", ""),
+        "statut": getattr(opportunity, "statut", ""),
         "date_publication": date_publication.isoformat() if date_publication else None,
         "date_limite": date_limite.isoformat() if date_limite else None,
         "date_creation": date_creation.isoformat() if date_creation else None,
         "date_modification": date_modification.isoformat() if date_modification else None,
-        "source_item_url": opportunity.source_item_url or "",
+        "source_item_url": getattr(opportunity, "source_item_url", "") or "",
         "source": _source_payload(opportunity),
-        "salary": opportunity.salary or "",
-        "contract_type": opportunity.contract_type or "",
-        "availability": opportunity.availability or "",
-        "education_level": opportunity.education_level or "",
-        "experience_min": opportunity.experience_min,
-        "experience_max": opportunity.experience_max,
-        "experience_years": opportunity.experience_years,
-        "normalized_contract_types": _as_list(opportunity.normalized_contract_types),
-        "normalized_work_mode": opportunity.normalized_work_mode or "",
-        "normalized_schedule": opportunity.normalized_schedule or "",
-        "normalized_industries": _as_list(opportunity.normalized_industries),
-        "skills": _as_list(opportunity.skills),
-        "raw_skills": _as_list(opportunity.raw_skills),
-        "normalized_skills": _as_list(opportunity.normalized_skills),
-        "languages": _as_list(opportunity.languages),
-        "languages_fallback": _as_list(opportunity.languages_fallback),
-        "extra_data": opportunity.extra_data if isinstance(opportunity.extra_data, dict) else {},
+        "salary": getattr(opportunity, "salary", "") or "",
+        "contract_type": getattr(opportunity, "contract_type", "") or "",
+        "availability": getattr(opportunity, "availability", "") or "",
+        "education_level": getattr(opportunity, "education_level", "") or "",
+        "experience_min": experience_min,
+        "experience_max": experience_max,
+        "experience_years": experience_years,
+        "experience": {
+            "min": experience_min if experience_min is not None else experience_years,
+            "max": experience_max if experience_max is not None else experience_years,
+        },
+        "normalized_contract_types": _as_list(getattr(opportunity, "normalized_contract_types", [])),
+        "normalized_work_mode": getattr(opportunity, "normalized_work_mode", "") or "",
+        "normalized_schedule": getattr(opportunity, "normalized_schedule", "") or "",
+        "normalized_industries": _as_list(getattr(opportunity, "normalized_industries", [])),
+        "skills": _as_list(getattr(opportunity, "skills", [])),
+        "raw_skills": _as_list(getattr(opportunity, "raw_skills", [])),
+        "normalized_skills": _as_list(getattr(opportunity, "normalized_skills", [])),
+        "languages": _as_list(getattr(opportunity, "languages", [])),
+        "languages_fallback": _as_list(getattr(opportunity, "languages_fallback", [])),
+        "extra_data": getattr(opportunity, "extra_data", {}) if isinstance(getattr(opportunity, "extra_data", {}), dict) else {},
     }
 
 
@@ -397,6 +405,7 @@ def _serialize_recommendation(opportunity, *, features=None, profile_strength=No
     semantic_score = getattr(opportunity, "semantic_score", None)
     business_score = getattr(opportunity, "business_score", None)
     feedback_score = getattr(opportunity, "feedback_score", None)
+    opportunity_quality_score = getattr(opportunity, "opportunity_quality_score", None)
     base_reasons = getattr(opportunity, "reason", []) or []
     contract_alternative_reason = getattr(opportunity, "contract_alternative_reason", "")
     explanation = build_recommendation_explanation(features or {}, opportunity)
@@ -425,6 +434,7 @@ def _serialize_recommendation(opportunity, *, features=None, profile_strength=No
         "semantic_score": round(float(semantic_score or 0.0), 4),
         "business_score": round(float(business_score or 0.0), 4),
         "feedback_score": round(float(feedback_score or 0.0), 4),
+        "opportunity_quality_score": round(float(opportunity_quality_score or 0.0), 4),
         "score_label": getattr(opportunity, "score_label", None) or get_score_label(score or 0.0),
         "score_level": getattr(opportunity, "score_level", None) or "LOW",
         "reason": reasons,
@@ -462,6 +472,7 @@ def _serialize_fallback(opportunity, *, profile_strength=None, recommendation_mo
         "semantic_score": 0.0,
         "business_score": 0.0,
         "feedback_score": 0.0,
+        "opportunity_quality_score": 0.0,
         "score_label": get_score_label(0.0, is_fallback=True),
         "score_level": "TRENDING",
         "reason": [reason],
@@ -783,11 +794,11 @@ def _rank_jobbert_recommendation_queryset(
     if not jobbert_scores:
         return []
 
-    selected = sorted(
+    selected = select_source_balanced_candidates(
         candidates,
-        key=lambda item: jobbert_scores.get(int(getattr(item, "id", 0) or 0), 0.0),
-        reverse=True,
-    )[: max(limit, JOBBERT_RETRIEVAL_RERANK_CANDIDATES)]
+        jobbert_scores,
+        max(limit, JOBBERT_RETRIEVAL_RERANK_CANDIDATES),
+    )
 
     ranking_features = dict(features or {})
     ranking_features["_jobbert_profile_vector"] = profile_vector
@@ -796,7 +807,10 @@ def _rank_jobbert_recommendation_queryset(
         selected,
         features=ranking_features,
         feedback=feedback,
-        mode="partial" if profile_state != "complete" else "partial",
+        # This path already injects precomputed JobBERT scores through
+        # ranking_features. rank_opportunities receives no classic profile
+        # embedding here, so keep the tolerant mode for this retrieval branch.
+        mode="partial",
         top_k=max(limit, BUSINESS_RERANK_CANDIDATES),
         min_score=MIN_MATCH_SCORE,
     )
@@ -1195,12 +1209,20 @@ def _recommendation_context_from_payload(recommendation):
 
     def as_percent(value):
         try:
-            return int(round(max(0.0, min(1.0, float(value))) * 100))
+            number = float(value)
         except (TypeError, ValueError):
             return None
+        if 1.0 < number <= 100.0:
+            return int(round(number))
+        return int(round(max(0.0, min(1.0, number)) * 100))
 
     return {
-        "score_percent": as_percent(recommendation.get("match_score", recommendation.get("score"))),
+        "score_percent": as_percent(
+            recommendation.get(
+                "score_percent",
+                recommendation.get("match_score", recommendation.get("score")),
+            )
+        ),
         "score_label": str(recommendation.get("score_label") or ""),
         "confidence": str(recommendation.get("recommendation_confidence") or ""),
         "bucket": str(recommendation.get("recommendation_bucket") or ""),
@@ -1234,6 +1256,11 @@ def _cached_recommendation_context(request, opportunity_id):
             None,
         ) if isinstance(recommendations, list) else None
 
+    return _recommendation_context_from_payload(recommendation)
+
+
+def _request_recommendation_context(request):
+    recommendation = request.data.get("recommendation") if hasattr(request, "data") else None
     return _recommendation_context_from_payload(recommendation)
 
 
@@ -1401,7 +1428,10 @@ def opportunity_assistant_question_view(request, opportunity_id):
     history = _assistant_conversation_history(request.data.get("history"))
     evidence = build_resume_match_evidence(user=request.user, opportunity=opportunity)
     evidence["conversation_history"] = history
-    evidence["recommendation"] = _cached_recommendation_context(request, opportunity.id)
+    evidence["recommendation"] = (
+        _request_recommendation_context(request)
+        or _cached_recommendation_context(request, opportunity.id)
+    )
     cache_key = _opportunity_assistant_cache_key(request, opportunity, evidence, question)
     cached = cache.get(cache_key)
     if cached is not None:

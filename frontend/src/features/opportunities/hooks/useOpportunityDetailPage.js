@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   FETCHING_SKELETON_MIN_VISIBLE_MS,
@@ -41,7 +42,26 @@ const INTERNAL_APPLIED_STATUSES = new Set([
 ]);
 const EXTERNAL_RETURN_PROMPT_DELAY_MS = 2 * 1000;
 
-export const useOpportunityDetailPage = ({ opportunityId, isUserAuthenticated }) => {
+const findRecommendationById = (recommendations, opportunityId) => {
+  if (!Array.isArray(recommendations) || !opportunityId) return null;
+  return recommendations.find((item) => String(item?.id) === String(opportunityId)) || null;
+};
+
+const findCachedRecommendation = (queryClient, opportunityId) => {
+  const cachedQueries = queryClient.getQueriesData({ queryKey: ['opportunity-recommendations'] });
+  for (const [, recommendations] of cachedQueries) {
+    const matched = findRecommendationById(recommendations, opportunityId);
+    if (matched) return matched;
+  }
+  return null;
+};
+
+export const useOpportunityDetailPage = ({
+  opportunityId,
+  isUserAuthenticated,
+  initialRecommendation = null,
+}) => {
+  const queryClient = useQueryClient();
   const [opportunity, setOpportunity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -282,8 +302,21 @@ export const useOpportunityDetailPage = ({ opportunityId, isUserAuthenticated })
       return undefined;
     }
 
+    const stateRecommendation = String(initialRecommendation?.id) === String(opportunity.id)
+      ? initialRecommendation
+      : null;
+    const cachedRecommendation = stateRecommendation || findCachedRecommendation(queryClient, opportunity.id);
+
+    if (cachedRecommendation) {
+      setRecommendation(cachedRecommendation);
+      setRecommendationLoading(false);
+      setRecommendationError(null);
+      return undefined;
+    }
+
     const fetchRecommendation = async () => {
       try {
+        setRecommendation(null);
         setRecommendationLoading(true);
         setRecommendationError(null);
 
@@ -311,18 +344,23 @@ export const useOpportunityDetailPage = ({ opportunityId, isUserAuthenticated })
     return () => {
       isCancelled = true;
     };
-  }, [isUserAuthenticated, opportunity?.id]);
+  }, [initialRecommendation, isUserAuthenticated, opportunity?.id, queryClient]);
 
   const viewModel = useMemo(
-    () =>
-      buildOpportunityDetailPageViewModel({
-        opportunity: recommendation
-          ? mergeRecommendationIntoOpportunity(opportunity, recommendation)
+    () => {
+      const matchedRecommendation = String(recommendation?.id) === String(opportunity?.id)
+        ? recommendation
+        : null;
+
+      return buildOpportunityDetailPageViewModel({
+        opportunity: matchedRecommendation
+          ? mergeRecommendationIntoOpportunity(opportunity, matchedRecommendation)
           : opportunity,
         isUserAuthenticated,
         similarOpportunities,
         showAllSkills,
-      }),
+      });
+    },
     [isUserAuthenticated, opportunity, recommendation, showAllSkills, similarOpportunities],
   );
 

@@ -24,7 +24,10 @@ from .recommendation_service import (
     _clean_list,
     _get_value,
     _is_contextual_skill_match_allowed,
+    _profile_skill_matches,
+    _role_matches,
     _safe_int,
+    _source_reliability_rank,
 )
 
 
@@ -41,6 +44,7 @@ BUCKET_RELATED_REVIEW = "RELATED_REVIEW"
 
 MAX_QUALITY_REASONS = 5
 MAX_QUALITY_GAPS = 3
+SOURCE_PRESENTATION_SCORE_TOLERANCE = 0.06
 GENERIC_REASON_LABELS = {
     "experience match",
     "remote match",
@@ -96,6 +100,28 @@ SENIORITY_CONFLICT_KEYWORDS = (
     "architect",
     "architecte",
     "head of",
+)
+ACCOUNTING_INTENT_KEYWORDS = (
+    "comptable",
+    "comptabilite",
+    "accountant",
+    "accounting",
+)
+ACCOUNTING_CORE_SKILL_KEYWORDS = (
+    "comptabilite generale",
+    "saisie comptable",
+    "declaration fiscale",
+    "declarations fiscales",
+    "declaration sociale",
+    "declarations sociales",
+    "rapprochement bancaire",
+    "tenue comptable",
+    "revision comptable",
+    "bilan",
+    "etats financiers",
+    "logiciel comptable",
+    "sage",
+    "ciel compta",
 )
 RESPONSIBILITY_REVIEW_KEYWORDS = (
     "responsable",
@@ -197,10 +223,20 @@ def _recommendation_debug(opportunity: Any) -> dict[str, Any]:
     return debug if isinstance(debug, dict) else {}
 
 
+def _opportunity_quality_score_from_debug(opportunity: Any) -> float:
+    value = _get_value(opportunity, "opportunity_quality_score", None)
+    if value is None:
+        value = _recommendation_debug(opportunity).get("opportunity_quality_score")
+    try:
+        return max(0.0, min(1.0, float(value or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _role_semantic_evidence(opportunity: Any) -> bool:
     debug = _recommendation_debug(opportunity)
     role_score = _role_semantic_score_from_debug(opportunity)
-    return bool(debug.get("ai_metier_evidence") and role_score >= ROLE_SEMANTIC_BUCKET_THRESHOLD)
+    return bool(debug.get("ai_metier_evidence") and role_score >= min(ROLE_SEMANTIC_BUCKET_THRESHOLD, 0.68))
 
 
 def _role_semantic_score_from_debug(opportunity: Any) -> float:
@@ -237,7 +273,7 @@ def _hierarchy_review_reason(features: dict[str, Any], opportunity: Any) -> str:
         has_blocking_title = any(keyword in title for keyword in SENIORITY_CONFLICT_KEYWORDS) or any(
             keyword in title for keyword in RESPONSIBILITY_REVIEW_KEYWORDS
         )
-        if role_evidence and skill_count >= 2 and _match_score(opportunity) >= 0.75 and not has_blocking_title:
+        if role_evidence and skill_count >= 2 and _match_score(opportunity) >= 0.70 and not has_blocking_title:
             return ""
         if (
             role_evidence
@@ -289,6 +325,38 @@ def _has_contract_mismatch(features: dict[str, Any], opportunity: Any) -> bool:
     return bool(opportunity_contracts and not selected.intersection(opportunity_contracts))
 
 
+def _has_accounting_profile_intent(features: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(item or "")
+        for item in [
+            *_clean_list(features.get("target_roles")),
+            *_clean_list(features.get("roles")),
+            *_clean_list(features.get("profile_skills")),
+            *_clean_list(features.get("skills")),
+            *_clean_list(features.get("interests")),
+        ]
+    )
+    normalized = normalize_lookup_key(text)
+    return any(keyword in normalized for keyword in ACCOUNTING_INTENT_KEYWORDS)
+
+
+def _has_accounting_role_or_core_skill(features: dict[str, Any], opportunity: Any) -> bool:
+    if _role_matches(features or {}, opportunity):
+        return True
+
+    title = normalize_lookup_key(_get_value(opportunity, "titre", ""))
+    if any(keyword in title for keyword in ACCOUNTING_INTENT_KEYWORDS):
+        return True
+
+    matched_profile_skills = _profile_skill_matches(features or {}, opportunity)
+    normalized_matches = [normalize_lookup_key(skill) for skill in matched_profile_skills]
+    return any(
+        core_keyword in matched_skill
+        for matched_skill in normalized_matches
+        for core_keyword in ACCOUNTING_CORE_SKILL_KEYWORDS
+    )
+
+
 def _has_experience_level_mismatch(features: dict[str, Any], opportunity: Any) -> bool:
     level = str(features.get("experience_level") or "").strip().upper()
     profile_range = EXPERIENCE_LEVEL_RANGES.get(level)
@@ -331,7 +399,22 @@ def _skill_overlap_for_values(values: Any, opportunity: Any) -> tuple[list[str],
     for key, label in user_skills.items():
         if not _is_contextual_skill_match_allowed(key, opportunity):
             continue
-        if key in opportunity_skills or (key and key in title):
+        user_tokens = _token_set(key)
+        related_opportunity_skill = False
+        for opportunity_key in opportunity_skills:
+            opportunity_tokens = _token_set(opportunity_key)
+            if key and (key in opportunity_key or opportunity_key in key):
+                related_opportunity_skill = True
+                break
+            if len(user_tokens) >= 2 and user_tokens.issubset(opportunity_tokens):
+                related_opportunity_skill = True
+                break
+            if len(user_tokens) == 1:
+                token = next(iter(user_tokens), "")
+                if len(token) >= 5 and token in opportunity_tokens:
+                    related_opportunity_skill = True
+                    break
+        if key in opportunity_skills or related_opportunity_skill or (key and key in title):
             if key not in seen:
                 seen.add(key)
                 matched.append(label)
@@ -375,6 +458,17 @@ def _title_token_overlap(features: dict[str, Any], opportunity: Any) -> bool:
     for term in profile_terms:
         profile_tokens.update(_token_set(term))
     return len(profile_tokens.intersection(title_tokens)) >= 2
+
+
+def _title_has_role_domain_token(features: dict[str, Any], opportunity: Any) -> bool:
+    title_tokens = _token_set(_get_value(opportunity, "titre", ""))
+    if not title_tokens:
+        return False
+    role_tokens = set()
+    for role in _clean_list(features.get("target_roles")) or _clean_list(features.get("roles")):
+        role_tokens.update(_token_set(role))
+    noisy_tokens = {"junior", "senior", "confirm", "confirme", "specialist", "assistant", "charge"}
+    return bool(title_tokens.intersection(role_tokens.difference(noisy_tokens)))
 
 
 def _industry_match(features: dict[str, Any], opportunity: Any) -> bool:
@@ -606,6 +700,40 @@ def classify_recommendation_bucket(
     metier_signals = int(evidence.get("metier_signal_count") or 0)
     hierarchy_review_reason = _hierarchy_review_reason(features, opportunity)
     sparse_data = _has_sparse_opportunity_data(opportunity)
+    opportunity_quality_score = _opportunity_quality_score_from_debug(opportunity)
+    quality_supported = opportunity_quality_score >= 0.50 or (
+        opportunity_quality_score >= 0.42 and semantic_score >= 0.68
+    )
+    strong_title_quality_match = bool(
+        evidence.get("role_match")
+        and opportunity_quality_score >= 0.55
+        and semantic_score >= 0.60
+    )
+    strong_jobbert_role_match = bool(
+        role_or_title
+        and opportunity_quality_score >= 0.35
+        and semantic_score >= 0.62
+    )
+    exact_role_semantic_match = bool(
+        evidence.get("role_match")
+        and score >= 0.63
+        and semantic_score >= 0.58
+        and not evidence.get("llm_family_mismatch")
+    )
+    role_skill_supported_match = bool(
+        role_or_title
+        and skill_overlap >= 1
+        and score >= 0.62
+        and semantic_score >= 0.50
+    )
+    dense_skill_domain_match = bool(
+        not role_or_title
+        and skill_overlap >= 3
+        and score >= 0.62
+        and semantic_score >= 0.40
+        and _title_has_role_domain_token(features, opportunity)
+        and not evidence.get("llm_family_mismatch")
+    )
     preference_mismatch = _has_contract_mismatch(features, opportunity) or _has_experience_level_mismatch(
         features,
         opportunity,
@@ -616,6 +744,15 @@ def classify_recommendation_bucket(
 
     if preference_mismatch and not skill_overlap:
         return BUCKET_RELATED_REVIEW, "Relevant role, but profile preferences need review"
+
+    if evidence.get("llm_family_mismatch") and not skill_overlap:
+        return BUCKET_RELATED_REVIEW, "Relevant role, but business family needs review"
+
+    if _has_accounting_profile_intent(features) and not _has_accounting_role_or_core_skill(features, opportunity):
+        return BUCKET_RELATED_REVIEW, "Relevant finance role, but accounting evidence needs review"
+
+    if dense_skill_domain_match:
+        return BUCKET_STRONG_MATCH, "Strong skill and domain evidence"
 
     if (
         not evidence.get("role_match")
@@ -628,15 +765,45 @@ def classify_recommendation_bucket(
     if role_semantic_only and not skill_overlap and semantic_score < 0.65:
         return BUCKET_RELATED_REVIEW, "Role semantic match needs skill or stronger semantic confirmation"
 
-    if score >= 0.62 and role_or_title and (skill_overlap or semantic_score >= 0.60):
+    if (
+        role_or_title
+        and not quality_supported
+        and not strong_title_quality_match
+        and not strong_jobbert_role_match
+        and not exact_role_semantic_match
+        and not role_skill_supported_match
+    ):
+        return BUCKET_RELATED_REVIEW, "Relevant role, but source details need enrichment"
+
+    if (
+        role_or_title
+        and skill_overlap < 2
+        and not strong_title_quality_match
+        and not strong_jobbert_role_match
+        and not role_skill_supported_match
+        and not exact_role_semantic_match
+        and semantic_score < 0.68
+    ):
+        return BUCKET_RELATED_REVIEW, "Role aligned, but skill evidence is limited"
+
+    if score >= 0.60 and role_or_title and (
+        skill_overlap >= 2
+        or strong_title_quality_match
+        or strong_jobbert_role_match
+        or exact_role_semantic_match
+        or role_skill_supported_match
+        or semantic_score >= 0.68
+    ):
         if not skill_overlap:
+            if exact_role_semantic_match and semantic_score < 0.62:
+                return BUCKET_STRONG_MATCH, "Strong semantic title match"
             if sparse_data:
                 return BUCKET_STRONG_MATCH, "Strong role and location match, but source has limited details"
             return BUCKET_STRONG_MATCH, "Strong role and semantic evidence"
         return BUCKET_STRONG_MATCH, "Strong role, skill, and semantic evidence"
 
     if (
-        score >= 0.62
+        score >= 0.60
         and semantic_score >= 0.58
         and role_or_title
         and not evidence.get("llm_family_mismatch")
@@ -708,7 +875,58 @@ def filter_ranked_recommendations(
         accepted.append(opportunity)
         if len(accepted) >= limit:
             break
-    return accepted
+    return _source_aware_presentation_order(accepted)
+
+
+def _source_aware_presentation_order(recommendations: list[Any]) -> list[Any]:
+    strong = [
+        item
+        for item in recommendations
+        if str(_get_value(item, "recommendation_bucket", "") or "").upper() == BUCKET_STRONG_MATCH
+    ]
+    related = [
+        item
+        for item in recommendations
+        if str(_get_value(item, "recommendation_bucket", "") or "").upper() != BUCKET_STRONG_MATCH
+    ]
+    return [*_order_close_score_strong_matches(strong), *related]
+
+
+def _order_close_score_strong_matches(items: list[Any]) -> list[Any]:
+    remaining = sorted(items, key=_presentation_score, reverse=True)
+    ordered: list[Any] = []
+    while remaining:
+        anchor_score = _presentation_score(remaining[0])
+        close_band = [
+            item
+            for item in remaining
+            if anchor_score - _presentation_score(item) <= SOURCE_PRESENTATION_SCORE_TOLERANCE
+        ]
+        close_ids = {id(item) for item in close_band}
+        close_band.sort(key=_source_aware_band_key, reverse=True)
+        ordered.extend(close_band)
+        remaining = [item for item in remaining if id(item) not in close_ids]
+    return ordered
+
+
+def _presentation_score(item: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(_get_value(item, "match_score", 0.0) or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _source_aware_band_key(item: Any) -> tuple[float, float, float, int]:
+    try:
+        item_id = int(_get_value(item, "id", 0) or 0)
+    except (TypeError, ValueError):
+        item_id = 0
+    return (
+        float(_source_reliability_rank(item) or 0),
+        _presentation_score(item),
+        float(_get_value(item, "opportunity_quality_score", 0.0) or 0.0),
+        item_id,
+    )
 
 
 def fallback_limit_for_profile(limit: int, profile_strength: dict[str, Any] | None) -> int:

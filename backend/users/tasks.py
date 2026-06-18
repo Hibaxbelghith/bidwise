@@ -16,6 +16,11 @@ from ai.embeddings import (
 )
 from ai.user_features import build_user_features
 from users.models import Profil, ProfileResume
+from users.otp_service import (
+    CLIENT_TYPE_MOBILE,
+    deliver_otp,
+    normalize_client_type,
+)
 from users.resume_parsing import parse_resume_file
 from users.resume_parsing.exceptions import (
     EmptyResumeTextError,
@@ -30,6 +35,48 @@ from users.resume_semantic.service import clear_resume_semantics, process_profil
 logger = logging.getLogger(__name__)
 
 MAX_PARSING_ERROR_CHARS = 500
+
+
+def _should_enqueue_otp_delivery(client_type):
+    normalized_client_type = normalize_client_type(client_type)
+    if (
+        normalized_client_type == CLIENT_TYPE_MOBILE
+        and getattr(settings, "MOBILE_OTP_DELIVERY", "simulated") != "email"
+    ):
+        return False
+    return bool(getattr(settings, "AUTH_OTP_EMAIL_ASYNC", True))
+
+
+def enqueue_otp_delivery(email, otp_code, expiry_minutes, client_type):
+    if not _should_enqueue_otp_delivery(client_type):
+        deliver_otp(email, otp_code, expiry_minutes, client_type)
+        return True
+
+    try:
+        send_otp_email_task.delay(email, otp_code, expiry_minutes, client_type)
+    except Exception:
+        logger.exception(
+            "OTP email enqueue failed; falling back to synchronous delivery email=%s",
+            email,
+        )
+        deliver_otp(email, otp_code, expiry_minutes, client_type)
+    return True
+
+
+@shared_task(
+    bind=True,
+    name="users.send_otp_email",
+    max_retries=2,
+    default_retry_delay=10,
+)
+def send_otp_email_task(self, email, otp_code, expiry_minutes, client_type):
+    close_old_connections()
+    try:
+        deliver_otp(email, otp_code, expiry_minutes, client_type)
+    except Exception as exc:
+        logger.exception("OTP email task failed email=%s", email)
+        raise self.retry(exc=exc)
+    return {"status": "sent", "email": email}
 
 
 def _safe_error_message(exc):

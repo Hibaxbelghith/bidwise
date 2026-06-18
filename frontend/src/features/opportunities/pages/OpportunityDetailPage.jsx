@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useAuth } from '../../auth/AuthContext.jsx';
@@ -18,7 +18,6 @@ import OpportunityAssistantCard from '../components/recommendations/OpportunityA
 import OpportunityApplicationDialog from '../components/application/OpportunityApplicationDialog.jsx';
 import ExternalApplicationFollowUpDialog from '../components/application/ExternalApplicationFollowUpDialog.jsx';
 import { useOpportunityDetailPage } from '../hooks/useOpportunityDetailPage.js';
-import { hasActiveResume } from '../utils/recommendationUtils.js';
 
 const VISIBLE_ADDITIONAL_INFO_LABELS = new Set(['Sector', 'Company size', 'Reference']);
 
@@ -30,7 +29,6 @@ const OpportunityDetailPage = () => {
   const [applicationOpen, setApplicationOpen] = useState(false);
   const continueApplicationHandledRef = useRef(false);
   const isUserAuthenticated = !authLoading && isAuthenticated;
-  const userHasResume = hasActiveResume(user);
   const shouldContinueExternalApplication = new URLSearchParams(location.search).get('continueApplication') === '1';
   const handleBackToOpportunities = () => {
     if (location.state?.returnTab) {
@@ -49,10 +47,16 @@ const OpportunityDetailPage = () => {
   const detailPage = useOpportunityDetailPage({
     opportunityId: id,
     isUserAuthenticated,
+    initialRecommendation: location.state?.recommendation || null,
   });
   const viewModel = detailPage.viewModel;
   const isCandidate = user?.account_type === 'candidate';
   const isDirectApplication = Boolean(viewModel?.acceptsDirectApplications && isCandidate);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [id]);
 
   useEffect(() => {
     if (
@@ -207,7 +211,7 @@ const OpportunityDetailPage = () => {
             />
           </div>
 
-          <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
+          <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start">
             <OpportunityActionPanel
               snapshotProps={viewModel.snapshotProps}
               isUserAuthenticated={isUserAuthenticated}

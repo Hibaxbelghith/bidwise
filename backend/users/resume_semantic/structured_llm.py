@@ -13,7 +13,7 @@ from .models import ResumeSemanticSignals, SkillCandidate
 from .normalization import clean_resume_semantic_text
 
 
-MAX_STRUCTURED_RESUME_INPUT_CHARS = 1200
+MAX_STRUCTURED_RESUME_INPUT_CHARS = 2500
 STRUCTURED_RESUME_VERSION = "qwen-structured-resume-v1"
 
 RESUME_OFFICIAL_EXTRACTION_SCHEMA: dict[str, Any] = {
@@ -21,8 +21,25 @@ RESUME_OFFICIAL_EXTRACTION_SCHEMA: dict[str, Any] = {
     "properties": {
         "target_roles": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
         "canonical_role": {"type": "string"},
-        "skills": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
-        "tools": {"type": "array", "items": {"type": "string"}, "maxItems": 10},
+        "skills": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Cross-cutting verifiable abilities such as leadership, budgeting, "
+                "project management, negotiation or technical writing. Never duplicate tools."
+            ),
+            "maxItems": 12,
+        },
+        "tools": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Verbatim named resources from the CV: software, programming languages, "
+                "frameworks, databases, instruments, certifications, platforms, "
+                "methodologies and standards. No paraphrase, no grouping."
+            ),
+            "maxItems": 10,
+        },
         "domains": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
         "business_families": {
             "type": "array",
@@ -76,8 +93,16 @@ Rules:
 - business_families: exact ids only, never display labels. Use one primary family by default; use two only when the CV clearly contains two distinct professional tracks.
 - family_confidence: confidence in the selected business_families, from 0 to 1.
 - domains: free-text professional domains from the CV, not family ids.
-- skills/tools: human-readable, short reusable labels, no snake_case/raw ids.
-- tools: copy product names as written when possible.
+- tools: copy VERBATIM every named resource from the CV, regardless of domain:
+  software, programming languages, frameworks, databases, machines, instruments,
+  certifications, standards, ERP/CRM/BI platforms, methodologies, protocols,
+  regulations. Never paraphrase ("bases de données SQL" is wrong; "PostgreSQL"
+  is right). Never group ("outils Microsoft" is wrong; "Excel", "Word",
+  "Teams" is right).
+- skills: verifiable cross-cutting abilities only (leadership, negotiation,
+  project management, technical writing, budgeting...). Never repeat something
+  already in tools.
+- skills/tools labels: short, human-readable, no snake_case/raw ids.
 - contract_types: split combined values, e.g. "CDI / CDD" -> ["CDI", "CDD"].
 - years_experience: for ranges such as "3-5 years", use the lower bound.
 - experience_level: DEBUTANT 0-1, JUNIOR 1-2, CONFIRME 3-5, SENIOR 6+.
@@ -111,21 +136,29 @@ def _clean_list(values: Any, *, limit: int = 20) -> list[str]:
 
 def _clean_human_label(value: Any) -> str:
     text = str(value or "").strip()
-    text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
-    text = text.replace("_", " ").replace("-", " ")
     text = " ".join(text.split())
-    if not text:
-        return ""
-    raw_words = text.split(" ")
-    words = []
-    for word in raw_words:
-        if any(ch.isupper() for ch in word[1:]) or "/" in word or "." in word:
-            words.append(word)
-        elif len(raw_words) == 1 and len(word) <= 4 and word.isalpha() and word.islower():
-            words.append(word.upper())
-        else:
-            words.append(word[:1].upper() + word[1:])
-    return " ".join(words)
+    return text
+
+
+def _compact_label(value: str) -> str:
+    return re.sub(r"[\W_]+", "", str(value or ""), flags=re.UNICODE).casefold()
+
+
+def _source_surface_forms(text: str) -> dict[str, str]:
+    forms: dict[str, str] = {}
+    for match in re.finditer(r"[\w.+#/-]+", text or "", flags=re.UNICODE):
+        label = match.group(0).strip(".,;:()[]{}")
+        compact = _compact_label(label)
+        if len(compact) < 3 or compact in forms:
+            continue
+        forms[compact] = label
+    return forms
+
+
+def _restore_source_surface(label: str, surface_forms: dict[str, str] | None = None) -> str:
+    if not surface_forms:
+        return label
+    return surface_forms.get(_compact_label(label), label)
 
 
 def _expand_resume_label(value: Any) -> list[str]:
@@ -145,13 +178,19 @@ def _label_words(value: str) -> set[str]:
     }
 
 
-def _clean_resume_labels(values: Any, *, limit: int = 20) -> list[str]:
+def _clean_resume_labels(
+    values: Any,
+    *,
+    limit: int = 20,
+    surface_forms: dict[str, str] | None = None,
+) -> list[str]:
     if not isinstance(values, (list, tuple, set)):
         return []
     output: list[str] = []
     seen = set()
     for value in values:
         for label in _expand_resume_label(value):
+            label = _restore_source_surface(label, surface_forms)
             key = label.casefold()
             if not label or key in seen:
                 continue
@@ -198,9 +237,13 @@ def _clean_split_labels(values: Any, *, limit: int = 8) -> list[str]:
     return output
 
 
-def _candidate_records(result: LLMExtractionResult) -> list[SkillCandidate]:
+def _candidate_records(
+    result: LLMExtractionResult,
+    *,
+    surface_forms: dict[str, str] | None = None,
+) -> list[SkillCandidate]:
     candidates: list[SkillCandidate] = []
-    for label in _clean_resume_labels([*result.skills, *result.tools], limit=40):
+    for label in _clean_resume_labels([*result.skills, *result.tools], limit=40, surface_forms=surface_forms):
         candidates.append(
             SkillCandidate(
                 text=label,
@@ -217,10 +260,11 @@ def _profile_suggestions(
     business_families: list[str],
     experience_level: str,
     domains: list[str],
+    surface_forms: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     return {
         "target_roles": _clean_target_roles(result),
-        "competences": _clean_resume_labels([*result.skills, *result.tools], limit=30),
+        "competences": _clean_resume_labels([*result.skills, *result.tools], limit=30, surface_forms=surface_forms),
         "domaines_interet": business_families,
         "preferred_locations": _clean_locations(result.locations),
         "employment_types": _clean_split_labels(result.contract_types, limit=6),
@@ -331,6 +375,7 @@ def extract_structured_resume_signals(
     experience_level = _infer_experience_level(result)
     business_families = _rank_business_families(result)
     domains = _clean_domains(result)
+    surface_forms = _source_surface_forms(cleaned)
     result_payload = result.as_dict()
     result_payload["experience_level"] = experience_level
     result_payload["business_families"] = business_families
@@ -342,9 +387,9 @@ def extract_structured_resume_signals(
     warnings.append("structured_resume_extraction:qwen")
 
     return ResumeSemanticSignals(
-        skills=_clean_resume_labels(result.skills, limit=20),
+        skills=_clean_resume_labels(result.skills, limit=20, surface_forms=surface_forms),
         domains=domains,
-        tools=_clean_resume_labels(result.tools, limit=16),
+        tools=_clean_resume_labels(result.tools, limit=16, surface_forms=surface_forms),
         business_families=business_families,
         family_confidence=result.family_confidence,
         canonical_role=_clean_canonical_role(result),
@@ -361,8 +406,9 @@ def extract_structured_resume_signals(
                 business_families=business_families,
                 experience_level=experience_level,
                 domains=domains,
+                surface_forms=surface_forms,
             ),
         },
-        raw_candidates=_candidate_records(result),
+        raw_candidates=_candidate_records(result, surface_forms=surface_forms),
         warnings=warnings,
     )

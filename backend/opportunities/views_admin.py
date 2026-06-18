@@ -977,6 +977,12 @@ class AdminLoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        if user.is_suspended:
+            return Response(
+                {"detail": "Admin account is suspended."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         LoginEvent.record(user, request)
         refresh = RefreshToken.for_user(user)
 

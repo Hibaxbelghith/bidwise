@@ -15,7 +15,7 @@ const createMessage = (role, content, metadata = {}) => ({
   ...metadata,
 });
 
-export const useOpportunityAssistantChat = (opportunityId) => {
+export const useOpportunityAssistantChat = (opportunityId, recommendation = null) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -55,7 +55,7 @@ export const useOpportunityAssistantChat = (opportunityId) => {
 
       try {
         const history = messagesRef.current.slice(-4).map(({ role, content }) => ({ role, content }));
-        const data = await askOpportunityAssistant(opportunityId, normalizedQuestion, history);
+        const data = await askOpportunityAssistant(opportunityId, normalizedQuestion, history, recommendation);
         if (requestId !== requestIdRef.current) return false;
         const answer = String(data?.answer || '').trim();
         if (!answer) {
@@ -81,7 +81,7 @@ export const useOpportunityAssistantChat = (opportunityId) => {
         }
       }
     },
-    [opportunityId],
+    [opportunityId, recommendation],
   );
 
   return {

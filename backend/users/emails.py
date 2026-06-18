@@ -27,16 +27,9 @@ def otp_email_html(otp_code: str, expiry_minutes: int) -> str:
           <!-- Header -->
           <tr>
             <td style="background-color:#2563eb;padding:32px 40px;text-align:center;">
-              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
-                <tr>
-                  <td style="background-color:rgba(255,255,255,0.15);border-radius:8px;padding:8px 10px;vertical-align:middle;">
-                    <span style="color:#ffffff;font-size:20px;font-weight:700;">B</span>
-                  </td>
-                  <td style="padding-left:10px;vertical-align:middle;">
-                    <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">BidWise</span>
-                  </td>
-                </tr>
-              </table>
+              <span style="color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.3px;">
+                BidWise
+              </span>
             </td>
           </tr>
 

@@ -15,6 +15,7 @@ from .recommendation_service import (
     _combined_opportunity_text,
     _get_value,
     _normalize_text,
+    _profile_experience_years,
     _ranges_overlap,
     _safe_int,
     _text_has_any,
@@ -26,6 +27,19 @@ MAX_GAPS = 3
 MAX_SKILL_GAPS = 2
 HIGH_SEMANTIC_THRESHOLD = 0.78
 MEDIUM_SEMANTIC_THRESHOLD = 0.62
+SENIORITY_REVIEW_TITLE_KEYWORDS = (
+    "confirme",
+    "confirmee",
+    "experimente",
+    "experimentee",
+    "senior",
+    "sr",
+    "lead",
+    "expert",
+    "principal",
+    "responsable",
+    "manager",
+)
 
 
 def _append_unique(items, text, *, limit):
@@ -203,7 +217,8 @@ def _location_reason_or_gap(features, opportunity):
 def _experience_reason_or_gap(features, opportunity):
     level = str(features.get("experience_level") or "").strip().upper()
     profile_range = EXPERIENCE_LEVEL_RANGES.get(level)
-    if not profile_range:
+    profile_years, _profile_years_source = _profile_experience_years(features)
+    if not profile_range and profile_years is None:
         return "", ""
 
     opp_min = _safe_int(_get_value(opportunity, "experience_min"))
@@ -219,15 +234,42 @@ def _experience_reason_or_gap(features, opportunity):
     if opp_min is None:
         opp_min = 0
 
+    if profile_years is not None:
+        if opp_min is not None and float(opp_min) > float(profile_years):
+            return "", "Experience level above current profile"
+        if opp_max is not None and float(opp_max) < float(profile_years):
+            return "", "Experience level below current profile"
+        return "Experience level aligned", ""
+
+    if not profile_range:
+        return "", ""
+
     if _ranges_overlap(profile_range[0], profile_range[1], opp_min, opp_max):
         return "Experience level aligned", ""
 
     profile_max = profile_range[1]
     if profile_max is not None and opp_min > profile_max:
-        return "", "Experience level below preferred range"
+        return "", "Experience level above current profile"
     if opp_max is not None and profile_range[0] > opp_max:
         return "", "Experience level above listed range"
     return "", "Experience range may differ"
+
+
+def _seniority_title_gap(features, opportunity):
+    level = str(features.get("experience_level") or "").strip().upper()
+    if level not in {"DEBUTANT", "JUNIOR"}:
+        return ""
+
+    title = _normalize_text(_get_value(opportunity, "titre", ""))
+    if not title:
+        return ""
+
+    padded_title = f" {title} "
+    for keyword in SENIORITY_REVIEW_TITLE_KEYWORDS:
+        normalized_keyword = _normalize_text(keyword)
+        if normalized_keyword and f" {normalized_keyword} " in padded_title:
+            return "Role seniority may be above your current level"
+    return ""
 
 
 def build_recommendation_explanation(features, opportunity):
@@ -256,6 +298,8 @@ def build_recommendation_explanation(features, opportunity):
         reason, gap = resolver(features, opportunity)
         _append_unique(reasons, reason, limit=MAX_REASONS)
         _append_unique(gaps, gap, limit=MAX_GAPS)
+
+    _append_unique(gaps, _seniority_title_gap(features, opportunity), limit=MAX_GAPS)
 
     semantic_score = float(_get_value(opportunity, "semantic_score", 0.0) or 0.0)
     if semantic_score >= HIGH_SEMANTIC_THRESHOLD:

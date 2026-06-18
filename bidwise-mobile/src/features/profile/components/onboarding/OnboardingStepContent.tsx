@@ -4,7 +4,7 @@ import ProfileAutocompleteInput from '@/src/features/profile/components/ProfileA
 import PreferenceChipGroup from '@/src/features/profile/components/PreferenceChipGroup';
 import {
   BUSINESS_FAMILY_OPTIONS,
-  EMPLOYMENT_TYPE_OPTIONS,
+  getEmploymentTypeOptionsForOpportunityTypes,
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
   TUNISIAN_LOCATION_OPTIONS,
   WORK_MODE_OPTIONS,
@@ -297,16 +297,21 @@ export default function OnboardingStepContent({
       );
     case 'salary':
       return <SalaryStep data={data} onUpdateField={onUpdateField} colors={colors} />;
-    case 'employment_type':
+    case 'employment_type': {
+      const employmentTypeOptions = getEmploymentTypeOptionsForOpportunityTypes(data.opportunity_types);
+      const visibleEmploymentTypeValues = new Set(
+        employmentTypeOptions.map((option) => option.value),
+      );
       return (
         <PreferenceChipGroup
-          options={EMPLOYMENT_TYPE_OPTIONS}
-          value={data.employment_types}
+          options={employmentTypeOptions}
+          value={data.employment_types.filter((value) => visibleEmploymentTypeValues.has(value))}
           onChange={(value) => onUpdateField('employment_types', value)}
           colors={colors}
           compact
         />
       );
+    }
     case 'target_roles':
       return (
         <ProfileAutocompleteInput

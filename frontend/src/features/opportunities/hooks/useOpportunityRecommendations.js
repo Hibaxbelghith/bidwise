@@ -51,7 +51,7 @@ export const useOpportunityRecommendations = ({
     enabled,
     staleTime: RECOMMENDATION_STALE_TIME_MS,
     gcTime: RECOMMENDATION_GC_TIME_MS,
-    refetchOnMount: false,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
@@ -63,7 +63,7 @@ export const useOpportunityRecommendations = ({
     enabled: enabled && includeDetails && recommendations.length > 0,
     staleTime: RECOMMENDATION_STALE_TIME_MS,
     gcTime: RECOMMENDATION_GC_TIME_MS,
-    refetchOnMount: false,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });

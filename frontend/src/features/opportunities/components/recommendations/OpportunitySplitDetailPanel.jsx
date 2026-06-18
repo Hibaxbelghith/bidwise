@@ -81,7 +81,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const resumeMatchRequestIdRef = useRef(0);
   const opportunityIdRef = useRef(opportunity?.id);
   opportunityIdRef.current = opportunity?.id;
-  const opportunityAssistant = useOpportunityAssistantChat(opportunity?.id);
+  const opportunityAssistant = useOpportunityAssistantChat(opportunity?.id, opportunity?.recommendation || null);
 
   useEffect(() => {
     resumeMatchRequestIdRef.current += 1;

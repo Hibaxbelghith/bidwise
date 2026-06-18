@@ -61,10 +61,10 @@ export const AuthProvider = ({ children }) => {
    * @param {string} email
    * @returns {Promise<{ success: boolean, error?: string }>}
    */
-  const requestOTP = async (email) => {
+  const requestOTP = async (email, turnstileToken = '') => {
     try {
       setError(null);
-      await authService.requestOTP(email);
+      await authService.requestOTP(email, turnstileToken);
       return { success: true };
     } catch (err) {
       setError(err.message);

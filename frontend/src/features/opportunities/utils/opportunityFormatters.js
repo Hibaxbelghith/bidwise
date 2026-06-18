@@ -5,6 +5,23 @@ const NLP_METADATA_KEY_PATTERN = /\b(?:type|organization|organisation|title|loca
 const LEADING_TYPE_VALUE_PATTERN =
   /^\s*(?:job|stage|internship|research|project|funding)\b[\s,;:|.-]*/i;
 const API_BASE_URL = String(import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+const SOURCE_LOGOS_BASE_PATH = '/logos_sites_sources';
+const OPPORTUNITY_SOURCE_LOGOS_BASE_PATH = `${SOURCE_LOGOS_BASE_PATH}/logos_opportunities`;
+const SOURCE_LOGO_ASSET_RULES = [
+  {
+    matchers: ['linkedin', 'www.linkedin.com', 'linkedin.com'],
+    assetPath: `${OPPORTUNITY_SOURCE_LOGOS_BASE_PATH}/LinkedIn_icon.svg.webp`,
+  },
+  {
+    matchers: ['keejob', 'www.keejob.com', 'keejob.com'],
+    assetPath: `${OPPORTUNITY_SOURCE_LOGOS_BASE_PATH}/keejob_logo.jpg`,
+  },
+  {
+    matchers: ['haicop', 'www.haicop.tn', 'haicop.tn'],
+    assetPath: `${SOURCE_LOGOS_BASE_PATH}/HAICOP.png`,
+  },
+];
+const PLACEHOLDER_LOGO_TOKENS = ['placehold.co', 'placehold.it', 'placeholder', 'text=bidwise'];
 
 const cleanDescription = (value) => {
   const raw = String(value || '').trim();
@@ -68,6 +85,34 @@ const sanitizeCompanyLogoUrl = (rawLogo) => {
   }
 
   return value;
+};
+
+const getSourceLogoAsset = (opportunity) => {
+  const source = opportunity?.source && typeof opportunity.source === 'object' ? opportunity.source : {};
+  const sourceName = String(
+    source.nom ||
+      source.name ||
+      opportunity?.source_name ||
+      opportunity?.source_label ||
+      opportunity?.sourceLabel ||
+      '',
+  ).trim().toLowerCase();
+  const sourceUrl = String(source.url || opportunity?.source_url || '').trim().toLowerCase();
+  const sourceItemUrl = String(opportunity?.source_item_url || '').trim().toLowerCase();
+
+  const matchedRule = SOURCE_LOGO_ASSET_RULES.find(({ matchers }) =>
+    matchers.some(
+      (matcher) =>
+        sourceName.includes(matcher) || sourceUrl.includes(matcher) || sourceItemUrl.includes(matcher),
+    ),
+  );
+
+  return matchedRule?.assetPath || '';
+};
+
+const isPlaceholderCompanyLogo = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return !normalized || PLACEHOLDER_LOGO_TOKENS.some((token) => normalized.includes(token));
 };
 
 const getBackendOrigin = () => {
@@ -150,15 +195,16 @@ export const getCompanyLogoAsset = (opportunity) => {
   const rawLogo =
     opportunity?.logo_url || opportunity?.organisation_logo || opportunity?.company_logo || '';
   const sanitizedUrl = sanitizeCompanyLogoUrl(rawLogo);
+  const sourceLogoAsset = getSourceLogoAsset(opportunity);
 
-  if (!sanitizedUrl) {
-    return { src: '', fallbackSrc: '' };
+  if (isPlaceholderCompanyLogo(sanitizedUrl)) {
+    return { src: sourceLogoAsset, fallbackSrc: '' };
   }
 
   if (sanitizedUrl.startsWith('/media/')) {
     return {
       src: `${getBackendOrigin()}${sanitizedUrl}`,
-      fallbackSrc: '',
+      fallbackSrc: sourceLogoAsset,
     };
   }
 
@@ -167,19 +213,23 @@ export const getCompanyLogoAsset = (opportunity) => {
     if (url.hostname.includes('media.licdn.com')) {
       return {
         src: sanitizedUrl,
-        fallbackSrc: '',
+        fallbackSrc: sourceLogoAsset,
       };
     }
   } catch {
-    return { src: sanitizedUrl, fallbackSrc: '' };
+    return { src: sanitizedUrl, fallbackSrc: sourceLogoAsset };
   }
 
-  return { src: sanitizedUrl, fallbackSrc: '' };
+  return { src: sanitizedUrl, fallbackSrc: sourceLogoAsset };
 };
 
 export const formatExperienceLabel = (opportunity) => {
-  const experience = opportunity?.experience;
-  if (!experience || typeof experience !== 'object') return '';
+  const experience = opportunity?.experience && typeof opportunity.experience === 'object'
+    ? opportunity.experience
+    : {
+      min: opportunity?.experience_min ?? opportunity?.experience_years,
+      max: opportunity?.experience_max ?? opportunity?.experience_years,
+    };
 
   const min = toSafeNonNegativeInt(experience.min);
   const max = toSafeNonNegativeInt(experience.max);

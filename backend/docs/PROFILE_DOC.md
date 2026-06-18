@@ -177,7 +177,7 @@ Le parsing est asynchrone via Celery.
 
 Formats texte supportes:
 
-- PDF via `pypdf`;
+- PDF via `PyMuPDF`;
 - DOCX via `python-docx`.
 
 Fichiers:
@@ -403,7 +403,7 @@ Recommandation soutenance:
 
 - utiliser d'abord `cv_data_engineer.pdf` pour montrer le meilleur cas technique;
 - utiliser ensuite `cv_commercial.pdf` pour prouver que le systeme n'est pas limite aux profils IT;
-- eviter de tester un CV image/scanne pendant la soutenance, car `pypdf` extrait le texte mais ne fait pas d'OCR.
+- eviter de tester un CV image/scanne pendant la soutenance, car `PyMuPDF` extrait le texte mais ne fait pas d'OCR.
 
 Benchmark Qwen:
 

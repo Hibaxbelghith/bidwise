@@ -59,6 +59,7 @@ def rerank_ranked_opportunities(
     for item, cross_score in zip(shortlist, cross_scores):
         existing_score = _safe_score(_get_value(item, "match_score", _get_value(item, "score", 0.0)))
         blended = blend_scores(existing_score, cross_score.score, config.weight)
+        blended = max(blended, _structured_evidence_floor(item))
         _set_crossencoder_metadata(
             item,
             cross_score=cross_score.score,
@@ -96,6 +97,13 @@ def _has_profile_signal(features: dict[str, Any]) -> bool:
         if isinstance(value, str) and value.strip():
             return True
     return False
+
+
+def _structured_evidence_floor(item: Any) -> float:
+    debug = _get_value(item, "recommendation_debug", {})
+    if not isinstance(debug, dict):
+        return 0.0
+    return _safe_score(debug.get("structured_evidence_score_floor"))
 
 
 def _set_crossencoder_metadata(

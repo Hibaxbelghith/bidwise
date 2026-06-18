@@ -213,6 +213,10 @@ def _resolve_experience(
     structured_experience: str,
     description: str,
 ) -> tuple[int | None, int | None]:
+    description_min, description_max = _find_experience_from_description(description)
+    if description_min is not None or description_max is not None:
+        return _sanitize_experience_bounds(description_min, description_max)
+
     existing_min = _to_optional_int(_get_value(opportunity, "experience_min"))
     existing_max = _to_optional_int(_get_value(opportunity, "experience_max"))
     if existing_min is not None or existing_max is not None:
@@ -221,8 +225,7 @@ def _resolve_experience(
     if structured_experience:
         return None, None
 
-    minimum, maximum = _find_experience_from_description(description)
-    return _sanitize_experience_bounds(minimum, maximum)
+    return None, None
 
 
 def enrich_opportunity_text(opportunity: Any) -> dict[str, Any]:

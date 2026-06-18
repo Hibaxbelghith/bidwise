@@ -1,0 +1,112 @@
+[
+  {
+    "file": "cv_assistante_admin.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "assistante administrative",
+      "gestion administrative",
+      "microsoft office"
+    ]
+  },
+  {
+    "file": "cv_commercial.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "commerciale senior",
+      "negociation commerciale",
+      "portefeuille clients"
+    ]
+  },
+  {
+    "file": "cv_comptable_junior.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "comptable junior",
+      "rapprochements bancaires",
+      "microsoft excel"
+    ]
+  },
+  {
+    "file": "cv_data_ai.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "machine learning",
+      "pandas",
+      "numpy"
+    ]
+  },
+  {
+    "file": "cv_data_engineer.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "data engineer",
+      "apache spark",
+      "apache airflow"
+    ]
+  },
+  {
+    "file": "cv_developpeur_backend.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "developpeuse backend",
+      "apis rest",
+      "django"
+    ]
+  },
+  {
+    "file": "cv_devops_engineer.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "devops engineer",
+      "docker",
+      "kubernetes"
+    ]
+  },
+  {
+    "file": "cv_infirmier.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "infirmiere",
+      "soins aux patients",
+      "protocoles medicaux"
+    ]
+  },
+  {
+    "file": "cv_marketing_junior.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "marketing junior",
+      "reseaux sociaux",
+      "canva"
+    ]
+  },
+  {
+    "file": "cv_support_it_junior.pdf",
+    "expected_parser": "pymupdf",
+    "min_chars": 500,
+    "min_keyword_recall": 1.0,
+    "required_keywords": [
+      "support it junior",
+      "help desk",
+      "windows"
+    ]
+  }
+]
