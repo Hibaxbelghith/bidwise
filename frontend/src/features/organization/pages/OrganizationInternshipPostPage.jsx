@@ -7,10 +7,12 @@ import { Input } from '../../../components/ui/input.jsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select.jsx';
 import { Textarea } from '../../../components/ui/textarea.jsx';
 import { TUNISIAN_LOCATION_OPTIONS } from '../../profile/profilePreferences.js';
+import AiDescriptionDraftButton from '../components/AiDescriptionDraftButton.jsx';
 import OpportunityPostLayout from '../components/OpportunityPostLayout.jsx';
 import { ErrorSummary, FieldBlock, FieldError, SubmitNotice, fieldClassName } from '../components/OpportunityPostFields.jsx';
 import TurnstileChallenge, { isTurnstileEnabled } from '../components/TurnstileChallenge.jsx';
 import useOrganizationOpportunityEdit, {
+  normalizeDateInputValue,
   normalizeInternshipType,
   normalizeOptionValue,
 } from '../hooks/useOrganizationOpportunityEdit.js';
@@ -92,11 +94,11 @@ const OrganizationInternshipPostPage = () => {
       availability: item.availability || 'On site',
       internship_type: normalizeInternshipType(details.internship_type),
       duration: normalizeOptionValue(details.duration, INTERNSHIP_DURATION_OPTIONS, '4_6_MONTHS'),
-      start_date: details.start_date || '',
+      start_date: normalizeDateInputValue(details.start_date),
       education_level: item.education_level || 'Bac+5',
       description: item.description || '',
       skills: Array.isArray(item.skills) ? item.skills.join(', ') : '',
-      deadline: item.deadline || '',
+      deadline: normalizeDateInputValue(item.deadline),
     });
   }, [edit.opportunity]);
 
@@ -161,7 +163,7 @@ const OrganizationInternshipPostPage = () => {
       description={edit.isEditing ? 'Update the internship details. Changes are reviewed again before publication.' : 'Publish a trainee or student internship with the right duration and skills.'}
       headingId="publish-internship-heading"
     >
-      <form onSubmit={handleSubmit} className="mt-10 flex flex-1 flex-col">
+      <form onSubmit={handleSubmit} noValidate className="mt-10 flex flex-1 flex-col">
         <div className="flex-1 space-y-8">
           <FieldBlock className="border-t-0 pt-0">
             <label htmlFor="title" className="text-sm font-semibold text-neutral-900">Internship title *</label>
@@ -276,7 +278,7 @@ const OrganizationInternshipPostPage = () => {
                 <label htmlFor="education_level" className="text-sm font-semibold text-neutral-900">Education level</label>
                 <Select value={values.education_level} onValueChange={(value) => updateValue('education_level', value)}>
                   <SelectTrigger id="education_level" className={`mt-2 ${fieldClassName(false)}`}>
-                    <SelectValue />
+                    <SelectValue placeholder="Example: Bac+3" />
                   </SelectTrigger>
                   <SelectContent>
                     {INTERNSHIP_EDUCATION_OPTIONS.map((item) => (
@@ -286,19 +288,6 @@ const OrganizationInternshipPostPage = () => {
                 </Select>
               </div>
             </div>
-          </FieldBlock>
-
-          <FieldBlock>
-            <label htmlFor="description" className="text-sm font-semibold text-neutral-900">Internship description *</label>
-            <Textarea
-              id="description"
-              value={values.description}
-              onChange={(event) => updateValue('description', event.target.value)}
-              className={`mt-2 min-h-40 rounded-xl ${errors.description ? 'border-red-300' : ''}`}
-              aria-invalid={errors.description ? 'true' : 'false'}
-              placeholder="Describe the mission, expected learning outcomes, supervision, and application requirements."
-            />
-            <FieldError message={errors.description} />
           </FieldBlock>
 
           <FieldBlock>
@@ -322,6 +311,33 @@ const OrganizationInternshipPostPage = () => {
                 ))}
               </div>
             ) : null}
+          </FieldBlock>
+
+          <FieldBlock>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <label htmlFor="description" className="text-sm font-semibold text-neutral-900">Internship description *</label>
+              <AiDescriptionDraftButton
+                type="STAGE"
+                title={values.title}
+                contract="Internship"
+                workMode={values.availability}
+                location={values.location}
+                skills={skillsPreview}
+                educationLevel={values.education_level}
+                deadline={values.deadline}
+                currentDescription={values.description}
+                onApply={(description) => updateValue('description', description)}
+              />
+            </div>
+            <Textarea
+              id="description"
+              value={values.description}
+              onChange={(event) => updateValue('description', event.target.value)}
+              className={`mt-2 min-h-40 rounded-xl ${errors.description ? 'border-red-300' : ''}`}
+              aria-invalid={errors.description ? 'true' : 'false'}
+              placeholder="Describe the mission, expected learning outcomes, supervision, and application requirements."
+            />
+            <FieldError message={errors.description} />
           </FieldBlock>
 
           <SubmitNotice

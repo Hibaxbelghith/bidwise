@@ -10,6 +10,11 @@ import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
 export default function SettingsScreen() {
   const { user, loadUserProfile, loading } = useAuth();
+  const opportunityTypes = Array.isArray(user?.profil?.opportunity_types)
+    ? user.profil.opportunity_types
+    : [];
+  const isTenderOnlyProfile =
+    opportunityTypes.length === 1 && opportunityTypes[0] === 'CALLS_FOR_TENDER';
 
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
@@ -69,6 +74,7 @@ export default function SettingsScreen() {
       }
       showsVerticalScrollIndicator={false}
     >
+      {!isTenderOnlyProfile ? (
       <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
         <Text style={[styles.cardTitle, { color: textColor }]}>Profile visibility</Text>
         <Text style={[styles.cardText, { color: mutedColor }]}>
@@ -96,6 +102,7 @@ export default function SettingsScreen() {
               : 'Your profile stays private for recruiters, but your account and recommendations remain active.'}
         </Text>
       </View>
+      ) : null}
 
       <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
         <Text style={[styles.cardTitle, { color: textColor }]}>Account</Text>

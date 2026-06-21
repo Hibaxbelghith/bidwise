@@ -157,6 +157,33 @@ export function computeSemanticMatchScore(items: SimilarOpportunity[]): number |
   return Math.round(Math.max(...scores) * 100);
 }
 
+export function hasOpportunityRecommendationSignal(item: Opportunity): boolean {
+  return Boolean(
+    item.recommendation ||
+      item.score_label ||
+      item.recommendation_confidence ||
+      item.recommendation_mode ||
+      item.recommendation_bucket ||
+      item.recommendation_bucket_reason ||
+      item.tender_recommendation,
+  );
+}
+
+export function getOpportunityMatchScorePercent(item: Opportunity): number | null {
+  if (!hasOpportunityRecommendationSignal(item)) return null;
+
+  const candidates = [item.score, item.match_score, item.semantic_score, item.similarity_score];
+
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (!Number.isFinite(parsed)) continue;
+    const normalized = parsed > 1 ? parsed / 100 : parsed;
+    return Math.round(Math.max(0, Math.min(normalized, 1)) * 100);
+  }
+
+  return null;
+}
+
 export function buildMatchBullets(item: Opportunity, score: number | null): string[] {
   const bullets: string[] = [];
   const coreSkills = dedupeStrings(item.skills).slice(0, 3);

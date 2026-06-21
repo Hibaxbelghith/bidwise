@@ -15,6 +15,7 @@ import type { ProfileUser } from '@/src/features/profile/types';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
 import { useForYouFeed } from '../hooks/useForYouFeed';
+import { getRecommendationScorePercent } from '../utils/recommendationUtils';
 import ForYouOpportunityCard from './ForYouOpportunityCard';
 
 
@@ -78,6 +79,18 @@ function StateCard({
       </View>
     </View>
   );
+}
+
+function getForYouDetailParams(item: any) {
+  const recommendation = item?.recommendation || item;
+  const scorePercent = getRecommendationScorePercent(
+    recommendation?.score ?? recommendation?.match_score,
+  );
+
+  return {
+    id: String(item.id),
+    recommendationScore: scorePercent !== null ? String(scorePercent) : undefined,
+  };
 }
 
 function RecommendationSkeleton({
@@ -368,7 +381,7 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
                       onPress={() =>
                         router.push({
                           pathname: '/opportunities/[id]',
-                          params: { id: String(item.id) },
+                          params: getForYouDetailParams(item),
                         })
                       }
                     />
@@ -402,7 +415,7 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
                       onPress={() =>
                         router.push({
                           pathname: '/opportunities/[id]',
-                          params: { id: String(item.id) },
+                          params: getForYouDetailParams(item),
                         })
                       }
                     />

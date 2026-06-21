@@ -338,6 +338,17 @@ h3:focus-visible,
 .bidwise-browse-page .text-neutral-600 {
   color: #404040;
 }
+
+@keyframes bidwise-force-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bidwise-force-spin {
+  animation: bidwise-force-spin 0.8s linear infinite !important;
+}
+
 /* Animations pour skeletons modernes */
 @keyframes shimmer {
   0% {

@@ -18,6 +18,7 @@ import {
   normalizeTextList,
 } from '@/src/features/profile/utils/profileValidation';
 import { EXPERIENCE_LEVEL_OPTIONS } from '@/src/features/profile/utils/profileEditorState';
+import { getProfileResumeDisplayName } from '@/src/features/profile/utils/resumeDisplay';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
 type ProfileScreenProps = {
@@ -147,8 +148,9 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
     return `${roles} • ${skills} • ${interests}`;
   }, [profile?.competences, profile?.domaines_interet, profile?.target_roles]);
 
-  const resumeSummary = profile?.active_resume?.metadata?.original_filename
-    || (profile?.active_resume ? 'Resume uploaded' : 'No resume uploaded yet');
+  const resumeSummary = profile?.active_resume
+    ? getProfileResumeDisplayName(profile, 'Resume uploaded')
+    : 'No resume uploaded yet';
 
   const settingsSummary = profile?.profile_visibility === false
     ? 'Private to recruiters'

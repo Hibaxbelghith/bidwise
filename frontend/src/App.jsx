@@ -27,7 +27,6 @@ import OrganizationOpportunityPostPage from './features/organization/pages/Organ
 import OrganizationOpportunityDetailPage from './features/organization/pages/OrganizationOpportunityDetailPage.jsx';
 import OrganizationOpportunitySubmittedPage from './features/organization/pages/OrganizationOpportunitySubmittedPage.jsx';
 import OrganizationSeasonalPostPage from './features/organization/pages/OrganizationSeasonalPostPage.jsx';
-import OrganizationTenderPostPage from './features/organization/pages/OrganizationTenderPostPage.jsx';
 import OpportunitiesStatisticsPage from './features/organization/pages/OpportunitiesStatisticsPage.jsx';
 import OrganizationOpportunityApplicationsPage from './features/organization/pages/OrganizationOpportunityApplicationsPage.jsx';
 import OrganizationAllApplicationsPage from './features/organization/pages/OrganizationAllApplicationsPage.jsx';
@@ -65,8 +64,8 @@ const App = () => (
           <Route path="/organization/post/internship/:opportunityId/edit" element={<OrganizationInternshipPostPage />} />
           <Route path="/organization/post/seasonal" element={<OrganizationSeasonalPostPage />} />
           <Route path="/organization/post/seasonal/:opportunityId/edit" element={<OrganizationSeasonalPostPage />} />
-          <Route path="/organization/post/call-for-tender" element={<OrganizationTenderPostPage />} />
-          <Route path="/organization/post/call-for-tender/:opportunityId/edit" element={<OrganizationTenderPostPage />} />
+          <Route path="/organization/post/call-for-tender" element={<Navigate to="/organization/post" replace />} />
+          <Route path="/organization/post/call-for-tender/:opportunityId/edit" element={<Navigate to="/organization/post" replace />} />
           <Route path="/organization/post/submitted" element={<OrganizationOpportunitySubmittedPage />} />
           <Route path="/organization/opportunity-submitted" element={<OrganizationOpportunitySubmittedPage />} />
           <Route path="/organization/submitted" element={<OrganizationOpportunitySubmittedPage />} />

@@ -52,6 +52,9 @@ const escapeHtml = (value) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
+const renderBasicMarkdown = (value) =>
+  String(value || '').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
 const stripHtmlTags = (value) =>
   String(value || '')
     .replace(/<[^>]+>/g, ' ')
@@ -266,9 +269,9 @@ export const formatProjectDocumentType = (type, fallbackLabel) => {
 
 export const buildDescriptionMarkup = (opportunity) => {
   const html = String(opportunity?.description_html || '').trim();
-  if (html) return html;
+  if (html) return renderBasicMarkdown(html);
 
-  return escapeHtml(cleanDescription(opportunity?.description)).replace(/\n+/g, '<br />');
+  return renderBasicMarkdown(escapeHtml(cleanDescription(opportunity?.description))).replace(/\n+/g, '<br />');
 };
 
 export const buildDescriptionText = (opportunity) => {

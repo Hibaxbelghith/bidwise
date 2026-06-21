@@ -133,6 +133,9 @@ export default function ProfileEditScreen() {
   const visibleEmploymentTypes = editorState.employmentTypes.filter((value) =>
     visibleEmploymentTypeValues.has(value),
   );
+  const isTenderOnlyProfile =
+    editorState.opportunityTypes.length === 1
+    && editorState.opportunityTypes[0] === 'CALLS_FOR_TENDER';
   const setOpportunityTypes = (values: string[]) => {
     const normalizedValues = normalizeExclusiveOpportunityTypes(
       values,
@@ -420,6 +423,7 @@ export default function ProfileEditScreen() {
           </View>
         </ProfileSection>
 
+        {!isTenderOnlyProfile ? (
         <ProfileSection
           title="Visibility"
           description="Control recruiter visibility without disabling recommendations."
@@ -451,6 +455,7 @@ export default function ProfileEditScreen() {
             />
           </View>
         </ProfileSection>
+        ) : null}
       </ScrollView>
 
       <View

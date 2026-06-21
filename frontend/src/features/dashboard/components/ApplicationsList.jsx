@@ -9,7 +9,7 @@ import {
   getApplicationStatusMeta,
 } from '../../applications/applicationStatusUi.js';
 
-const WITHDRAWABLE = new Set(['SUBMITTED', 'VIEWED_BY_ORGANIZATION', 'SHORTLISTED']);
+const WITHDRAWABLE = new Set(['SUBMITTED', 'VIEWED_BY_ORGANIZATION']);
 const CONTINUABLE_EXTERNAL_STATUSES = new Set(['EXTERNAL_REMIND_LATER']);
 
 const formatDate = (value) => {

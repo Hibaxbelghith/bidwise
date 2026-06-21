@@ -4,11 +4,8 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import {
   ArrowRight,
   BriefcaseBusiness,
-  Building2,
-  FileText,
+  CalendarClock,
   Megaphone,
-  Sparkles,
-  TrendingUp,
   Users,
 } from 'lucide-react';
 import {
@@ -24,9 +21,7 @@ const HERO_BG_IMAGE =
 const opportunityTypes = [
   { label: 'Jobs', icon: BriefcaseBusiness },
   { label: 'Internships', icon: Users },
-  { label: 'Projects', icon: FileText },
-  { label: 'Funding', icon: TrendingUp },
-  { label: 'Tenders', icon: Building2 },
+  { label: 'Seasonal jobs', icon: CalendarClock },
 ];
 
 const OrganizationLandingPage = () => {
@@ -149,7 +144,7 @@ const OrganizationLandingPage = () => {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold text-neutral-900">
-              Post all types of opportunities
+              Post hiring opportunities
             </h2>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-4">

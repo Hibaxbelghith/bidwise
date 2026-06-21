@@ -1,5 +1,5 @@
 import { Link, Navigate } from 'react-router-dom';
-import { BriefcaseBusiness, CalendarClock, ClipboardList, Sprout } from 'lucide-react';
+import { BriefcaseBusiness, CalendarClock, Sprout } from 'lucide-react';
 
 import { Button } from '../../../components/ui/button.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
@@ -12,7 +12,7 @@ import {
 const opportunityTypes = [
   {
     label: 'Job',
-    description: 'Publish a full-time, part-time, contract, SIVP, or freelance job.',
+    description: 'Publish a full-time, part-time, contract, CIVP, or freelance job.',
     icon: BriefcaseBusiness,
     href: '/organization/post/job',
     enabled: true,
@@ -29,13 +29,6 @@ const opportunityTypes = [
     description: 'Post temporary seasonal roles with simple availability and location details.',
     icon: CalendarClock,
     href: '/organization/post/seasonal',
-    enabled: true,
-  },
-  {
-    label: 'Call for tender',
-    description: 'Publish project opportunities with tender-specific documents and deadlines.',
-    icon: ClipboardList,
-    href: '/organization/post/call-for-tender',
     enabled: true,
   },
 ];
@@ -73,7 +66,7 @@ const OrganizationOpportunityPostPage = () => {
 
             </div>
 
-            <div className="mt-12 grid gap-5 md:grid-cols-2">
+            <div className="mt-12 grid gap-5 md:grid-cols-3">
               {opportunityTypes.map((type) => {
                 const Icon = type.icon;
                 const card = (
@@ -107,11 +100,11 @@ const OrganizationOpportunityPostPage = () => {
                 );
 
                 return type.enabled ? (
-                  <Link key={type.value} to={type.href} className="block">
+                  <Link key={type.href} to={type.href} className="block">
                     {card}
                   </Link>
                 ) : (
-                  <div key={type.value}>{card}</div>
+                  <div key={type.href || type.label}>{card}</div>
                 );
               })}
             </div>

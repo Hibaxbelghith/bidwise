@@ -2,13 +2,15 @@ import { useState, useCallback, useMemo } from 'react';
 import { STATUS_OPTIONS, TYPE_OPTIONS } from '../../opportunities/constants/opportunityOptions.js';
 import { TUNISIAN_LOCATION_OPTIONS } from '../../profile/profilePreferences.js';
 
+export const ORGANIZATION_FILTER_TYPE_OPTIONS = TYPE_OPTIONS.filter((type) => type.value !== 'PROJET');
+
 export const useOpportunitiesFiltering = () => {
   const [selectedStatuses, setSelectedStatuses] = useState(STATUS_OPTIONS.map(s => s.value));
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState(TUNISIAN_LOCATION_OPTIONS);
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
   const [locationSearchTerm, setLocationSearchTerm] = useState('');
-  const [selectedTypes, setSelectedTypes] = useState(TYPE_OPTIONS.map(t => t.value));
+  const [selectedTypes, setSelectedTypes] = useState(ORGANIZATION_FILTER_TYPE_OPTIONS.map(t => t.value));
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
 
   const toggleStatusFilter = useCallback((statusValue) => {
@@ -56,7 +58,7 @@ export const useOpportunitiesFiltering = () => {
 
   const toggleAllTypes = useCallback((checked) => {
     if (checked) {
-      setSelectedTypes(TYPE_OPTIONS.map(t => t.value));
+      setSelectedTypes(ORGANIZATION_FILTER_TYPE_OPTIONS.map(t => t.value));
     } else {
       setSelectedTypes([]);
     }
@@ -76,7 +78,7 @@ export const useOpportunitiesFiltering = () => {
   const resetAllFilters = useCallback(() => {
     setSelectedStatuses(STATUS_OPTIONS.map(s => s.value));
     setSelectedLocations(TUNISIAN_LOCATION_OPTIONS);
-    setSelectedTypes(TYPE_OPTIONS.map(t => t.value));
+    setSelectedTypes(ORGANIZATION_FILTER_TYPE_OPTIONS.map(t => t.value));
     setLocationSearchTerm('');
   }, []);
 

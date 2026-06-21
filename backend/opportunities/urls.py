@@ -12,6 +12,7 @@ from applications.views import (
 from .views import (
     OpportuniteViewSet,
     SourceOpportuniteViewSet,
+    organization_description_draft_view,
     organization_opportunities_view,
     organization_opportunity_detail_view,
     organization_opportunity_status_action_view,
@@ -54,6 +55,7 @@ urlpatterns = [
 
     # Organization
     path('organization/opportunities/', organization_opportunities_view, name='organization_opportunities'),
+    path('organization/opportunities/description-draft/', organization_description_draft_view, name='organization_description_draft'),
     path('organization/opportunities/tender-documents/', organization_tender_document_upload_view, name='organization_tender_document_upload'),
     path('organization/applications/', list_organization_applications, name='list_organization_applications'),
     path(

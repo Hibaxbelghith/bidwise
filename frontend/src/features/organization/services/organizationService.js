@@ -171,3 +171,37 @@ export const deleteApplication = async (opportunityId, applicationId) => {
   );
   return response.data;
 };
+
+export const generateOrganizationDescriptionDraft = async ({
+  type,
+  title,
+  contract = '',
+  work_mode = '',
+  location = '',
+  skills = [],
+  min_experience = null,
+  max_experience = null,
+  education_level = '',
+  salary = '',
+  deadline = '',
+}) => {
+  const response = await api.post(
+    '/organization/opportunities/description-draft/',
+    {
+      type,
+      title,
+      contract,
+      work_mode,
+      location,
+      skills: Array.isArray(skills)
+        ? skills
+        : String(skills || '').split(',').map((skill) => skill.trim()).filter(Boolean),
+      min_experience: min_experience ?? null,
+      max_experience: max_experience ?? null,
+      education_level,
+      salary,
+      deadline,
+    }
+  );
+  return response.data;
+};

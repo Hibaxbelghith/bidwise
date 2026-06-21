@@ -24,15 +24,18 @@ import {
 import { buildOpportunityBrowseCardViewModel } from '../../viewModels/opportunityList.vm.js';
 
 const getRecommendationPayload = (opportunity) => {
-  const payload = opportunity?.recommendation || opportunity;
+  if (opportunity?.recommendation) return opportunity.recommendation;
+
+  const payload = opportunity;
   if (!payload) return null;
-  const rawScore = payload.score ?? payload.match_score;
 
   const hasRecommendationSignal = Boolean(
     payload.score_label ||
       payload.recommendation_confidence ||
       payload.recommendation_mode ||
-      (rawScore !== null && rawScore !== undefined && rawScore !== '' && Number.isFinite(Number(rawScore))),
+      payload.recommendation_bucket ||
+      payload.recommendation_bucket_reason ||
+      payload.tender_recommendation,
   );
 
   return hasRecommendationSignal ? payload : null;

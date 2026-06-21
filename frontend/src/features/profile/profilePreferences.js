@@ -13,7 +13,7 @@ export const WORK_MODE_OPTIONS = [
 export const EMPLOYMENT_TYPE_OPTIONS = [
 	{ value: 'CDI', label: 'CDI' },
 	{ value: 'CDD', label: 'CDD' },
-	{ value: 'SIVP', label: 'SIVP' },
+	{ value: 'SIVP', label: 'CIVP' },
 	{ value: 'FREELANCE', label: 'Freelance' },
 ];
 
@@ -256,7 +256,7 @@ export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
 	{
 		value: 'JOB',
 		label: 'Jobs',
-		description: 'CDI, CDD, SIVP and freelance',
+		description: 'CDI, CDD, CIVP and freelance',
 		values: ['JOB'],
 	},
 	{

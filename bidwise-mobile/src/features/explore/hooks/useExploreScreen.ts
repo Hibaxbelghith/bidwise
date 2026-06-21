@@ -26,14 +26,15 @@ export function useExploreScreen() {
 
   const completionScore = Number(profile?.profile_completion?.score ?? 0);
   const hasResume = Boolean(profile?.active_resume);
+  const hasRecommendationReadyProfile = completionScore >= 60;
 
   const bannerMode: ExploreBannerMode = useMemo(() => {
     if (tenderOnly) return 'tender';
     if (!isAuthenticated) return 'guest';
-    if (!profile?.onboarding_completed || completionScore < 60) return 'incomplete_profile';
+    if (!hasRecommendationReadyProfile) return 'incomplete_profile';
     if (!hasResume) return 'missing_cv';
     return 'ready';
-  }, [completionScore, hasResume, isAuthenticated, profile?.onboarding_completed, tenderOnly]);
+  }, [hasRecommendationReadyProfile, hasResume, isAuthenticated, tenderOnly]);
 
   const bannerPrimaryLabel = useMemo(() => {
     switch (bannerMode) {
@@ -73,7 +74,7 @@ export function useExploreScreen() {
     tenderOnly,
     bannerMode,
     bannerPrimaryLabel,
-    handleBannerAction,
+    onBannerAction: handleBannerAction,
     ...opportunities,
   };
 }

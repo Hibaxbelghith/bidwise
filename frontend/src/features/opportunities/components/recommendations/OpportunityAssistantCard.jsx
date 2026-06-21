@@ -34,13 +34,24 @@ const OpportunityAssistantCard = ({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-24 right-4 z-40 flex h-16 w-16 -translate-x-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl ring-1 ring-blue-500/30 transition-all hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-blue-200 lg:bottom-6 lg:right-6 lg:-translate-x-10"
+        className="fixed bottom-24 right-4 z-40 flex w-[min(340px,calc(100vw-2rem))] -translate-x-10 items-center gap-3 rounded-md border border-gray-200 bg-white px-4 py-3 text-left shadow-lg transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-blue-100 lg:bottom-6 lg:right-6 lg:-translate-x-10"
+        aria-label={locked ? 'Sign in to ask BidWise AI' : 'Open BidWise AI assistant'}
       >
-        {locked ? (
-          <Lock className="h-7 w-7" aria-hidden="true" />
-        ) : (
-          <MessageCircle className="h-7 w-7" aria-hidden="true" />
-        )}
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+          {locked ? (
+            <Lock className="h-5 w-5" aria-hidden="true" />
+          ) : (
+            <MessageCircle className="h-5 w-5" aria-hidden="true" />
+          )}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-gray-950">
+            {locked ? 'Sign in to ask BidWise AI' : 'Ask BidWise AI'}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-gray-500">
+            Skills, fit, ATS score, or application help.
+          </span>
+        </span>
       </button>
     );
   }

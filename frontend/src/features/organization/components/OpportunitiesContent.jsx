@@ -74,7 +74,7 @@ const OpportunitiesContent = ({
         Publish your first opportunity and start receiving qualified applications.
       </h2>
       <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-600">
-        Create a job, internship, seasonal role, or call for tender directly on BidWise. Your organization
+        Create a job, internship, or seasonal role directly on BidWise. Your organization
         will be able to manage opportunities and track applications from this workspace.
       </p>
       <Button asChild className="mt-8 h-12 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800">

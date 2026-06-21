@@ -1,8 +1,9 @@
 import { useRef, useEffect } from 'react';
 import { ChevronDown, SlidersHorizontal, X, Search } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
-import { STATUS_OPTIONS, TYPE_OPTIONS } from '../../opportunities/constants/opportunityOptions.js';
+import { STATUS_OPTIONS } from '../../opportunities/constants/opportunityOptions.js';
 import { TUNISIAN_LOCATION_OPTIONS } from '../../profile/profilePreferences.js';
+import { ORGANIZATION_FILTER_TYPE_OPTIONS } from '../hooks/useOpportunitiesFiltering.js';
 
 const OpportunitiesFilterBar = ({
   selectedStatuses,
@@ -72,7 +73,7 @@ const OpportunitiesFilterBar = ({
               <label className="flex items-center gap-3 cursor-pointer hover:bg-neutral-50 px-1 py-1 rounded">
                 <input
                   type="checkbox"
-                  checked={selectedTypes.length === TYPE_OPTIONS.length}
+                  checked={selectedTypes.length === ORGANIZATION_FILTER_TYPE_OPTIONS.length}
                   onChange={(e) => toggleAllTypes(e.target.checked)}
                   className="w-4 h-4 rounded border-neutral-300"
                 />
@@ -80,7 +81,7 @@ const OpportunitiesFilterBar = ({
               </label>
             </div>
             <div className="max-h-64 overflow-y-auto">
-              {TYPE_OPTIONS.map((type) => (
+              {ORGANIZATION_FILTER_TYPE_OPTIONS.map((type) => (
                 <label
                   key={type.value}
                   className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-neutral-50 border-b border-neutral-50 last:border-b-0 transition-colors"

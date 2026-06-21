@@ -4,6 +4,22 @@ const OPPORTUNITIES_ENDPOINT = '/opportunities/';
 const RECOMMENDATIONS_ENDPOINT = '/recommendations/';
 const TENDER_RECOMMENDATIONS_ENDPOINT = '/opportunities/tenders/recommendations/';
 
+export interface OrganizationApplicationPayload {
+  cv_id: number;
+  cover_letter_url?: string;
+  contact_email: string;
+  contact_phone?: string;
+}
+
+export interface OpportunityAssistantResponse {
+  answer?: string;
+  answered?: boolean;
+  source?: string;
+  action?: string;
+  provider?: string;
+  model?: string;
+}
+
 export interface OpportunitySource {
   id: number;
   nom: string;
@@ -447,4 +463,82 @@ export async function getSimilarOpportunities(
   });
 
   return normalizeSimilarPayload(response.data);
+}
+
+export async function submitOrganizationApplication(
+  opportunityId: number | string,
+  payload: OrganizationApplicationPayload,
+): Promise<Record<string, unknown>> {
+  const parsedId = Number(String(opportunityId || '').trim());
+  if (!Number.isInteger(parsedId) || parsedId <= 0) {
+    throw new Error('Opportunity id must be a positive integer');
+  }
+
+  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${parsedId}/apply/`, payload);
+  return response.data && typeof response.data === 'object'
+    ? (response.data as Record<string, unknown>)
+    : {};
+}
+
+export async function registerExternalApplicationClick(
+  opportunityId: number | string,
+): Promise<Record<string, unknown>> {
+  const parsedId = Number(String(opportunityId || '').trim());
+  if (!Number.isInteger(parsedId) || parsedId <= 0) {
+    throw new Error('Opportunity id must be a positive integer');
+  }
+
+  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${parsedId}/external-apply-click/`, {});
+  return response.data && typeof response.data === 'object'
+    ? (response.data as Record<string, unknown>)
+    : {};
+}
+
+export async function updateExternalApplicationStatus(
+  applicationId: number | string,
+  status: string,
+): Promise<Record<string, unknown>> {
+  const parsedId = Number(String(applicationId || '').trim());
+  if (!Number.isInteger(parsedId) || parsedId <= 0) {
+    throw new Error('Application id must be a positive integer');
+  }
+
+  const normalizedStatus = String(status || '').trim();
+  if (!normalizedStatus) {
+    throw new Error('External application status is required');
+  }
+
+  const response = await api.patch(`/me/applications/${parsedId}/external-status/`, {
+    status: normalizedStatus,
+  });
+  return response.data && typeof response.data === 'object'
+    ? (response.data as Record<string, unknown>)
+    : {};
+}
+
+export async function askOpportunityAssistant(
+  opportunityId: number | string,
+  question: string,
+): Promise<OpportunityAssistantResponse> {
+  const parsedId = Number(String(opportunityId || '').trim());
+  if (!Number.isInteger(parsedId) || parsedId <= 0) {
+    throw new Error('Opportunity id must be a positive integer');
+  }
+
+  const normalizedQuestion = String(question || '').trim();
+  if (!normalizedQuestion) {
+    throw new Error('A question is required');
+  }
+  if (normalizedQuestion.length > 500) {
+    throw new Error('Question must be at most 500 characters');
+  }
+
+  const response = await api.post(`${OPPORTUNITIES_ENDPOINT}${parsedId}/assistant/questions/`, {
+    question: normalizedQuestion,
+    history: [],
+  });
+
+  return response.data && typeof response.data === 'object'
+    ? (response.data as OpportunityAssistantResponse)
+    : {};
 }

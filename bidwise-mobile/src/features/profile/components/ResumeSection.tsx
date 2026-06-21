@@ -21,6 +21,7 @@ import {
   normalizeSkillList,
   normalizeTextList,
 } from '@/src/features/profile/utils/profileValidation';
+import { getProfileResumeDisplayName } from '@/src/features/profile/utils/resumeDisplay';
 
 type ResumeSectionProps = {
   profile?: BidWiseProfile;
@@ -47,7 +48,7 @@ const RESUME_STATUS_LABELS: Record<string, string> = {
 };
 
 function getResumeFileName(profile?: BidWiseProfile) {
-  return String(profile?.active_resume?.metadata?.original_filename || '').trim();
+  return getProfileResumeDisplayName(profile, '');
 }
 
 function isResumePreviewable(profile?: BidWiseProfile) {
@@ -437,7 +438,7 @@ function ResumeSection({ profile, onChanged, colors }: ResumeSectionProps) {
               {activeResume ? 'Active resume attached' : 'No resume uploaded yet'}
             </Text>
             <Text style={[styles.summaryDesc, { color: activeResume ? '#166534' : colors.muted }]}>
-              {activeResume?.metadata?.original_filename || resumeStatusSummary}
+              {getProfileResumeDisplayName(profile, resumeStatusSummary)}
             </Text>
           </View>
         </View>

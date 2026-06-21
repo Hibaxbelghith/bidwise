@@ -1,6 +1,6 @@
 const APPLICATION_STATUS_META = {
   SUBMITTED: {
-    candidateLabel: 'Under review',
+    candidateLabel: 'Application submitted',
     organizationLabel: 'New',
     candidateDatePrefix: 'Applied',
     className: 'text-blue-600 border-blue-600',
@@ -9,7 +9,7 @@ const APPLICATION_STATUS_META = {
     borderColor: 'border-blue-200',
   },
   VIEWED_BY_ORGANIZATION: {
-    candidateLabel: 'Viewed by employer',
+    candidateLabel: 'Under review',
     organizationLabel: 'Under review',
     candidateDatePrefix: 'Applied',
     className: 'text-blue-600 border-blue-600',
@@ -18,7 +18,7 @@ const APPLICATION_STATUS_META = {
     borderColor: 'border-gray-200',
   },
   SHORTLISTED: {
-    candidateLabel: 'Preselected',
+    candidateLabel: 'Under review',
     organizationLabel: 'Preselected',
     candidateDatePrefix: 'Applied',
     className: 'text-green-700 border-green-300',
@@ -27,7 +27,7 @@ const APPLICATION_STATUS_META = {
     borderColor: 'border-green-200',
   },
   REJECTED: {
-    candidateLabel: 'Not selected',
+    candidateLabel: 'Under review',
     organizationLabel: 'Rejected',
     candidateDatePrefix: 'Applied',
     className: 'text-red-600 border-red-600',
@@ -36,7 +36,7 @@ const APPLICATION_STATUS_META = {
     borderColor: 'border-red-200',
   },
   WITHDRAWN: {
-    candidateLabel: 'Application withdrawn',
+    candidateLabel: 'Withdrawn by you',
     organizationLabel: 'Withdrawn',
     candidateDatePrefix: 'Withdrawn',
     className: 'text-neutral-500 border-neutral-300',

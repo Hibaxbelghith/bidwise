@@ -18,8 +18,19 @@ import { changeOrganizationOpportunityStatus } from '../services/organizationSer
 import { useOpportunitiesFiltering } from '../hooks/useOpportunitiesFiltering.js';
 import OpportunitiesFilterBar from '../components/OpportunitiesFilterBar.jsx';
 import OpportunitiesContent from '../components/OpportunitiesContent.jsx';
-import { STATUS_OPTIONS, TYPE_OPTIONS } from '../../opportunities/constants/opportunityOptions.js';
-import { TUNISIAN_LOCATION_OPTIONS } from '../../profile/profilePreferences.js';
+
+const normalizeFilterKey = (value) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+const includesNormalized = (values, value) => {
+  const target = normalizeFilterKey(value);
+  if (!target) return false;
+  return values.some((item) => normalizeFilterKey(item) === target);
+};
 
 const OrganizationDashboardPage = () => {
   const { loading, user } = useAuth();
@@ -51,7 +62,7 @@ const OrganizationDashboardPage = () => {
         setOpportunitiesError('');
         const data = await listOrganizationOpportunities();
         if (!isCancelled) {
-          setOpportunities(data);
+          setOpportunities((Array.isArray(data) ? data : []).filter((item) => item?.type !== 'PROJET'));
         }
       } catch (error) {
         if (!isCancelled) {
@@ -77,7 +88,7 @@ const OrganizationDashboardPage = () => {
   const filteredOpportunities = useMemo(() => {
     return opportunities.filter(opp => 
       filters.selectedStatuses.includes(opp.status) &&
-      filters.selectedLocations.includes(opp.location) &&
+      includesNormalized(filters.selectedLocations, opp.location) &&
       filters.selectedTypes.includes(opp.type)
     );
   }, [opportunities, filters.selectedStatuses, filters.selectedLocations, filters.selectedTypes]);
@@ -98,7 +109,11 @@ const OrganizationDashboardPage = () => {
   const locationCountMap = useMemo(() => {
     const map = {};
     opportunities.forEach(opp => {
-      if (filters.selectedStatuses.includes(opp.status) && filters.selectedTypes.includes(opp.type) && filters.selectedLocations.includes(opp.location)) {
+      if (
+        filters.selectedStatuses.includes(opp.status)
+        && filters.selectedTypes.includes(opp.type)
+        && includesNormalized(filters.selectedLocations, opp.location)
+      ) {
         map[opp.location] = (map[opp.location] || 0) + 1;
       }
     });

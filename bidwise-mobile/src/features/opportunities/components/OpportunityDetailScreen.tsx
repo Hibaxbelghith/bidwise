@@ -1,17 +1,21 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/src/features/auth/context/AuthContext';
+import { getResumeDisplayName } from '@/src/features/profile/utils/resumeDisplay';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
 import { useOpportunityDetail } from '../hooks/useOpportunityDetail';
@@ -22,11 +26,32 @@ import {
   formatStatusLabel,
   formatTypeLabel,
 } from '../utils/opportunityFormatters';
-import { formatDisplayValue, hasDisplayValue } from '../utils/opportunityHelpers';
+import {
+  formatDisplayValue,
+  getOpportunityMatchScorePercent,
+  hasDisplayValue,
+} from '../utils/opportunityHelpers';
 import { toggleSavedOpportunity } from '../utils/savedOpportunitiesStorage';
+import OpportunityAssistantSheet from './OpportunityAssistantSheet';
 import OpportunityLogo from './OpportunityLogo';
+import {
+  registerExternalApplicationClick,
+  submitOrganizationApplication,
+  updateExternalApplicationStatus,
+} from '../services/opportunitiesService';
 
 const DESCRIPTION_LINES_COLLAPSED = 7;
+const DIRECT_APPLICATION_STATUSES = new Set([
+  'SUBMITTED',
+  'VIEWED_BY_ORGANIZATION',
+  'SHORTLISTED',
+  'REJECTED',
+  'WITHDRAWN',
+  'EXTERNAL_APPLIED_CONFIRMED',
+]);
+const EXTERNAL_CONFIRMED_STATUS = 'EXTERNAL_APPLIED_CONFIRMED';
+const EXTERNAL_REMIND_LATER_STATUS = 'EXTERNAL_REMIND_LATER';
+const APPLIED_GREEN = '#16a34a';
 
 interface FactRowProps {
   borderColor: string;
@@ -122,8 +147,16 @@ function DetailSkeleton({
 export default function OpportunityDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { id, recommendationScore } = useLocalSearchParams<{
+    id?: string | string[];
+    recommendationScore?: string | string[];
+  }>();
+  const { isAuthenticated, loading: authLoading, user, loadUserProfile } = useAuth();
+  const [applicationOpen, setApplicationOpen] = useState(false);
+  const [contactPhone, setContactPhone] = useState('');
+  const [submittingApplication, setSubmittingApplication] = useState(false);
+  const [applicationError, setApplicationError] = useState('');
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -184,8 +217,110 @@ export default function OpportunityDetailScreen() {
   });
 
   const showSkeleton = loading || authLoading;
-  const applyDisabled = isUserAuthenticated && !String(item?.source_item_url || '').trim();
+  const activeResume = user?.profil?.active_resume || null;
+  const contactEmail = String(user?.email || user?.username || '').trim();
+  const sourceName = String(sourceLabel || item?.source?.nom || '').trim();
+  const sourceNameLower = sourceName.toLowerCase();
+  const isMarchesPublicsSource = sourceNameLower.includes('marchespublics')
+    || sourceNameLower.includes('marches publics')
+    || sourceNameLower.includes('haicop');
+  const acceptsDirectApplications = Boolean(item?.accepts_direct_applications) && !isProject;
+  const applicationStatus = String(item?.my_application?.status || '').trim().toUpperCase();
+  const hasApplication = DIRECT_APPLICATION_STATUSES.has(applicationStatus);
+  const hasSourceUrl = Boolean(String(item?.source_item_url || '').trim());
+  const applyDisabled = Boolean(
+    isUserAuthenticated
+      && (
+        submittingApplication
+        || hasApplication
+        || (!acceptsDirectApplications && !hasSourceUrl)
+        || (isProject && !hasSourceUrl)
+      ),
+  );
   const visibleSkills = showAllSkills ? skills : quickScanSkills;
+  const showAssistantCta = isUserAuthenticated
+    && !isProject
+    && ['EMPLOI', 'STAGE'].includes(String(item?.type_opportunite || '').trim().toUpperCase());
+  const passedRecommendationScore = useMemo(() => {
+    const rawValue = Array.isArray(recommendationScore) ? recommendationScore[0] : recommendationScore;
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(Math.round(parsed), 100)) : null;
+  }, [recommendationScore]);
+  const detailMatchScore = useMemo(() => {
+    if (passedRecommendationScore !== null) return passedRecommendationScore;
+    return item ? getOpportunityMatchScorePercent(item) : semanticScore;
+  }, [item, passedRecommendationScore, semanticScore]);
+  const showRecommendationInsight = Boolean(
+    !isProject &&
+      isUserAuthenticated &&
+      detailMatchScore !== null &&
+      passedRecommendationScore !== null,
+  );
+  const resumeLabel = useMemo(() => {
+    return getResumeDisplayName(activeResume, 'Active profile resume');
+  }, [activeResume]);
+
+  const primaryActionLabel = useMemo(() => {
+    if (hasApplication) return 'Applied';
+    if (isProject) {
+      if (isMarchesPublicsSource) return 'See on MarchesPublics.gov.tn';
+      return hasSourceUrl ? 'Open source' : 'No online submission';
+    }
+    if (acceptsDirectApplications) return 'Apply';
+    return 'Open source';
+  }, [acceptsDirectApplications, hasApplication, hasSourceUrl, isMarchesPublicsSource, isProject]);
+
+  const getApplicationErrorMessage = useCallback((errorValue: any) => {
+    const data = errorValue?.response?.data;
+    if (errorValue?.response?.status === 409) return 'You have already applied for this opportunity.';
+    if (data?.cv_id?.[0]) return 'Select a resume from your profile before applying.';
+    if (data?.contact_email?.[0]) return data.contact_email[0];
+    if (data?.contact_phone?.[0]) return data.contact_phone[0];
+    if (data?.cover_letter_url?.[0]) return data.cover_letter_url[0];
+    return data?.detail || 'Unable to submit your application.';
+  }, []);
+
+  const updateExternalStatus = useCallback(
+    async (applicationId: unknown, status: string) => {
+      const parsedApplicationId = Number(applicationId);
+      if (!Number.isInteger(parsedApplicationId) || parsedApplicationId <= 0) return;
+
+      try {
+        await updateExternalApplicationStatus(parsedApplicationId, status);
+        await Promise.allSettled([fetchDetail(), loadUserProfile()]);
+      } catch {
+        Alert.alert(
+          'Unable to update application',
+          'BidWise could not update your external application status right now.',
+        );
+      }
+    },
+    [fetchDetail, loadUserProfile],
+  );
+
+  const showExternalApplicationPrompt = useCallback(
+    (applicationId: unknown) => {
+      Alert.alert(
+        'Did you apply?',
+        'BidWise opened the employer page. Tell us whether you completed the application so your dashboard stays up to date.',
+        [
+          {
+            text: 'No, not yet',
+            style: 'cancel',
+          },
+          {
+            text: 'Remind me later',
+            onPress: () => void updateExternalStatus(applicationId, EXTERNAL_REMIND_LATER_STATUS),
+          },
+          {
+            text: 'Yes, I applied',
+            onPress: () => void updateExternalStatus(applicationId, EXTERNAL_CONFIRMED_STATUS),
+          },
+        ],
+      );
+    },
+    [updateExternalStatus],
+  );
 
   const handleOpenLogin = useCallback(() => {
     router.push('/login');
@@ -209,12 +344,7 @@ export default function OpportunityDetailScreen() {
     }
   }, []);
 
-  const handleApplyPress = useCallback(async () => {
-    if (!isUserAuthenticated) {
-      handleOpenLogin();
-      return;
-    }
-
+  const handleOpenSource = useCallback(async () => {
     const sourceUrl = String(item?.source_item_url || '').trim();
     if (!sourceUrl) {
       Alert.alert('Source unavailable', 'No source URL is available for this opportunity.');
@@ -229,10 +359,105 @@ export default function OpportunityDetailScreen() {
       }
 
       await Linking.openURL(sourceUrl);
+      if (!isProject && item?.id && !acceptsDirectApplications) {
+        try {
+          const result = await registerExternalApplicationClick(item.id);
+          await fetchDetail();
+          showExternalApplicationPrompt(result.application_id);
+        } catch {
+          Alert.alert(
+            'Tracking unavailable',
+            'The source was opened, but BidWise could not start external application tracking.',
+          );
+        }
+      }
     } catch {
       Alert.alert('Source unavailable', 'Failed to open this source link.');
     }
-  }, [handleOpenLogin, isUserAuthenticated, item?.source_item_url]);
+  }, [
+    acceptsDirectApplications,
+    fetchDetail,
+    isProject,
+    item?.id,
+    item?.source_item_url,
+    showExternalApplicationPrompt,
+  ]);
+
+  const handleApplyPress = useCallback(async () => {
+    if (!isUserAuthenticated) {
+      handleOpenLogin();
+      return;
+    }
+
+    if (hasApplication) {
+      Alert.alert('Already submitted', 'Your application is already recorded for this opportunity.');
+      return;
+    }
+
+    if (!acceptsDirectApplications) {
+      await handleOpenSource();
+      return;
+    }
+
+    if (!activeResume?.id) {
+      Alert.alert(
+        'Resume required',
+        'Upload or activate a resume in your profile before applying.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open profile', onPress: () => router.push('/profile-resume') },
+        ],
+      );
+      return;
+    }
+
+    setApplicationError('');
+    setContactPhone('');
+    setApplicationOpen(true);
+  }, [
+    acceptsDirectApplications,
+    activeResume?.id,
+    handleOpenLogin,
+    handleOpenSource,
+    hasApplication,
+    isUserAuthenticated,
+    router,
+  ]);
+
+  const handleSubmitApplication = useCallback(async () => {
+    if (!item?.id || !activeResume?.id) return;
+    if (!contactEmail) {
+      setApplicationError('Your account email is required before applying.');
+      return;
+    }
+
+    try {
+      setApplicationError('');
+      setSubmittingApplication(true);
+      await submitOrganizationApplication(item.id, {
+        cv_id: activeResume.id,
+        cover_letter_url: '',
+        contact_email: contactEmail,
+        contact_phone: contactPhone.trim(),
+      });
+      setApplicationOpen(false);
+      setContactPhone('');
+      await Promise.allSettled([fetchDetail(), loadUserProfile()]);
+      Alert.alert('Application submitted', 'Your application was sent successfully.');
+    } catch (submitError: any) {
+      setApplicationError(getApplicationErrorMessage(submitError));
+    } finally {
+      setSubmittingApplication(false);
+    }
+  }, [
+    activeResume?.id,
+    contactEmail,
+    contactPhone,
+    fetchDetail,
+    getApplicationErrorMessage,
+    item?.id,
+    loadUserProfile,
+  ]);
 
   const handleSavePress = useCallback(async () => {
     if (!isUserAuthenticated) {
@@ -246,14 +471,15 @@ export default function OpportunityDetailScreen() {
   }, [handleOpenLogin, isUserAuthenticated, item?.id, setIsSaved]);
 
   return (
-    <View style={[styles.root, { backgroundColor }]}>
+    <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.screen,
           {
             backgroundColor,
-            paddingBottom: 132 + Math.max(insets.bottom, 10),
+            paddingTop: 18,
+            paddingBottom: 188 + Math.max(insets.bottom, 28),
           },
         ]}
       >
@@ -333,18 +559,41 @@ export default function OpportunityDetailScreen() {
                     {formatStatusLabel(item.statut)}
                   </Text>
                 </View>
-                {!isProject ? (
+                {showRecommendationInsight && detailMatchScore !== null ? (
                   <View style={[styles.chip, { borderColor, backgroundColor: `${tintColor}14` }]}>
                     <Text style={[styles.chipText, { color: tintColor }]}>
-                      {isUserAuthenticated
-                        ? semanticScore !== null
-                          ? `Match ${semanticScore}%`
-                          : 'Match --'
-                        : 'Match locked'}
+                      Match {detailMatchScore}%
                     </Text>
                   </View>
                 ) : null}
               </View>
+
+              {showAssistantCta ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setAssistantOpen(true)}
+                  style={({ pressed }) => [
+                    styles.assistantCta,
+                    {
+                      borderColor: tintColor,
+                      backgroundColor: tintColor,
+                      opacity: pressed ? 0.88 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.assistantCtaRow}>
+                    <View style={styles.assistantCtaBadge}>
+                      <Text style={[styles.assistantCtaBadgeText, { color: tintColor }]}>AI</Text>
+                    </View>
+                    <View style={styles.assistantCtaCopy}>
+                      <Text style={styles.assistantCtaEyebrow}>BidWise AI assistant</Text>
+                      <Text style={styles.assistantCtaText}>
+                        Is your resume a good match?
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              ) : null}
 
               <Text style={[styles.metaText, { color: mutedColor }]}>Location: {locationLabel}</Text>
               <Text style={[styles.metaText, { color: mutedColor }]}>
@@ -689,7 +938,7 @@ export default function OpportunityDetailScreen() {
               </View>
             ) : null}
 
-            {!isProject ? (
+            {showRecommendationInsight ? (
               <View style={[styles.sectionCard, { backgroundColor: cardColor, borderColor }]}>
               <Text style={[styles.sectionTitle, { color: textColor }]}>AI & recommendations</Text>
 
@@ -698,7 +947,7 @@ export default function OpportunityDetailScreen() {
                   <View style={[styles.premiumCard, { borderColor }]}>
                     <Text style={[styles.premiumLabel, { color: mutedColor }]}>Match score</Text>
                     <Text style={[styles.premiumScore, { color: textColor }]}>
-                      {semanticScore !== null ? `${semanticScore}%` : 'N/A'}
+                      {detailMatchScore !== null ? `${detailMatchScore}%` : 'N/A'}
                     </Text>
                   </View>
 
@@ -709,76 +958,6 @@ export default function OpportunityDetailScreen() {
                         - {bullet}
                       </Text>
                     ))}
-                  </View>
-
-                  <View style={[styles.premiumCard, { borderColor }]}>
-                    <Text style={[styles.premiumLabel, { color: mutedColor }]}>Similar opportunities</Text>
-
-                    {similarLoading ? (
-                      <View style={styles.similarSkeletonWrap}>
-                        <View
-                          style={[
-                            styles.similarSkeletonRow,
-                            { borderColor, backgroundColor: `${tintColor}10` },
-                          ]}
-                        />
-                        <View
-                          style={[
-                            styles.similarSkeletonRow,
-                            { borderColor, backgroundColor: `${tintColor}10` },
-                          ]}
-                        />
-                      </View>
-                    ) : null}
-
-                    {!similarLoading && similarError ? (
-                      <Text style={[styles.sectionBody, { color: mutedColor }]}>{similarError}</Text>
-                    ) : null}
-
-                    {!similarLoading && !similarError && dedupedSimilar.length === 0 ? (
-                      <Text style={[styles.sectionBody, { color: mutedColor }]}>
-                        No similar opportunities.
-                      </Text>
-                    ) : null}
-
-                    {!similarLoading && !similarError && dedupedSimilar.length > 0 ? (
-                      <View style={styles.similarListWrap}>
-                        {dedupedSimilar.map((similarItem) => {
-                          const title =
-                            String(similarItem.titre || '').trim() ||
-                            `Opportunity #${similarItem.id}`;
-                          const company =
-                            String(similarItem.organisation_nom || '').trim() ||
-                            'BidWise recommendation';
-                          const score = Number(similarItem.similarity_score);
-                          const scoreLabel = Number.isFinite(score)
-                            ? `${Math.round(score * 100)}%`
-                            : '--';
-
-                          return (
-                            <Pressable
-                              key={similarItem.id}
-                              accessibilityRole="button"
-                              onPress={() => handleOpenSimilarOpportunity(similarItem.id)}
-                              style={[styles.similarItemRow, { borderColor }]}
-                            >
-                              <Text
-                                style={[styles.similarItemTitle, { color: textColor }]}
-                                numberOfLines={2}
-                              >
-                                {title}
-                              </Text>
-                              <Text style={[styles.similarItemCompany, { color: mutedColor }]}>
-                                {company}
-                              </Text>
-                              <Text style={[styles.similarItemScore, { color: tintColor }]}>
-                                Match {scoreLabel}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    ) : null}
                   </View>
                 </View>
               ) : (
@@ -815,6 +994,86 @@ export default function OpportunityDetailScreen() {
               )}
               </View>
             ) : null}
+
+            {!isProject ? (
+              <View style={[styles.sectionCard, { backgroundColor: cardColor, borderColor }]}>
+                <Text style={[styles.sectionTitle, { color: textColor }]}>Similar opportunities</Text>
+
+                {!isUserAuthenticated ? (
+                  <Text style={[styles.sectionBody, { color: mutedColor }]}>
+                    Login to view similar opportunities.
+                  </Text>
+                ) : null}
+
+                {isUserAuthenticated && similarLoading ? (
+                  <View style={styles.similarSkeletonWrap}>
+                    <View
+                      style={[
+                        styles.similarSkeletonRow,
+                        { borderColor, backgroundColor: `${tintColor}10` },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.similarSkeletonRow,
+                        { borderColor, backgroundColor: `${tintColor}10` },
+                      ]}
+                    />
+                  </View>
+                ) : null}
+
+                {isUserAuthenticated && !similarLoading && similarError ? (
+                  <Text style={[styles.sectionBody, { color: mutedColor }]}>
+                    Similar opportunities are currently unavailable.
+                  </Text>
+                ) : null}
+
+                {isUserAuthenticated && !similarLoading && !similarError && dedupedSimilar.length === 0 ? (
+                  <Text style={[styles.sectionBody, { color: mutedColor }]}>
+                    No similar opportunities found.
+                  </Text>
+                ) : null}
+
+                {isUserAuthenticated && !similarLoading && !similarError && dedupedSimilar.length > 0 ? (
+                  <View style={styles.similarListWrap}>
+                    {dedupedSimilar.map((similarItem) => {
+                      const title =
+                        String(similarItem.titre || '').trim() ||
+                        `Opportunity #${similarItem.id}`;
+                      const company =
+                        String(similarItem.organisation_nom || '').trim() ||
+                        'BidWise recommendation';
+                      const score = Number(similarItem.similarity_score);
+                      const scoreLabel = Number.isFinite(score)
+                        ? `${Math.round(score * 100)}%`
+                        : '--';
+
+                      return (
+                        <Pressable
+                          key={similarItem.id}
+                          accessibilityRole="button"
+                          onPress={() => handleOpenSimilarOpportunity(similarItem.id)}
+                          style={[styles.similarItemRow, { borderColor }]}
+                        >
+                          <Text
+                            style={[styles.similarItemTitle, { color: textColor }]}
+                            numberOfLines={2}
+                          >
+                            {title}
+                          </Text>
+                          <Text style={[styles.similarItemCompany, { color: mutedColor }]}>
+                            {company}
+                          </Text>
+                          <Text style={[styles.similarItemScore, { color: tintColor }]}>
+                            Match {scoreLabel}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </>
         ) : null}
       </ScrollView>
@@ -849,7 +1108,11 @@ export default function OpportunityDetailScreen() {
               style={({ pressed }) => [
                 styles.stickyPrimaryButton,
                 {
-                  backgroundColor: applyDisabled ? `${tintColor}55` : tintColor,
+                  backgroundColor: hasApplication
+                    ? APPLIED_GREEN
+                    : applyDisabled
+                      ? `${tintColor}55`
+                      : tintColor,
                   opacity: pressed ? 0.9 : 1,
                 },
               ]}
@@ -857,7 +1120,7 @@ export default function OpportunityDetailScreen() {
               disabled={applyDisabled}
             >
               <Text style={styles.stickyPrimaryButtonText}>
-                {isProject ? 'See on MarchesPublics.gov.tn' : 'Apply'}
+                {primaryActionLabel}
               </Text>
             </Pressable>
           </>
@@ -888,7 +1151,137 @@ export default function OpportunityDetailScreen() {
           </>
         )}
       </View>
-    </View>
+
+      <Modal
+        visible={applicationOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (!submittingApplication) setApplicationOpen(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.applicationSheet,
+              {
+                backgroundColor: cardColor,
+                borderColor,
+                paddingBottom: Math.max(insets.bottom + 24, 34),
+              },
+            ]}
+          >
+            <View style={styles.applicationHeader}>
+              <View style={styles.applicationHeaderText}>
+                <Text style={[styles.applicationTitle, { color: textColor }]}>Apply to this opportunity</Text>
+                <Text style={[styles.applicationSubtitle, { color: mutedColor }]} numberOfLines={2}>
+                  {companyLabel || 'Organization'} reviews applications from BidWise.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                disabled={submittingApplication}
+                onPress={() => setApplicationOpen(false)}
+                style={({ pressed }) => [
+                  styles.applicationCloseButton,
+                  { borderColor, opacity: pressed ? 0.8 : 1 },
+                ]}
+              >
+                <Text style={[styles.applicationCloseText, { color: mutedColor }]}>Close</Text>
+              </Pressable>
+            </View>
+
+            <View style={[styles.applicationInfoBox, { borderColor }]}>
+              <Text style={[styles.applicationInfoLabel, { color: mutedColor }]}>Resume</Text>
+              <Text style={[styles.applicationInfoValue, { color: textColor }]} numberOfLines={1}>
+                {resumeLabel}
+              </Text>
+            </View>
+
+            <View style={[styles.applicationInfoBox, { borderColor }]}>
+              <Text style={[styles.applicationInfoLabel, { color: mutedColor }]}>Contact email</Text>
+              <Text style={[styles.applicationInfoValue, { color: textColor }]} numberOfLines={1}>
+                {contactEmail || 'Missing account email'}
+              </Text>
+            </View>
+
+            <View style={styles.applicationField}>
+              <Text style={[styles.applicationInfoLabel, { color: mutedColor }]}>
+                Phone number <Text style={styles.optionalText}>(optional)</Text>
+              </Text>
+              <TextInput
+                value={contactPhone}
+                onChangeText={setContactPhone}
+                placeholder="+21612345678"
+                placeholderTextColor={mutedColor}
+                keyboardType="phone-pad"
+                editable={!submittingApplication}
+                style={[
+                  styles.applicationInput,
+                  {
+                    borderColor,
+                    color: textColor,
+                    backgroundColor,
+                  },
+                ]}
+              />
+            </View>
+
+            {applicationError ? (
+              <View style={styles.applicationErrorBox}>
+                <Text style={styles.applicationErrorText}>{applicationError}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.applicationActions}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={submittingApplication}
+                onPress={() => setApplicationOpen(false)}
+                style={({ pressed }) => [
+                  styles.applicationSecondaryButton,
+                  { borderColor, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={[styles.applicationSecondaryText, { color: textColor }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={submittingApplication}
+                onPress={() => void handleSubmitApplication()}
+                style={({ pressed }) => [
+                  styles.applicationPrimaryButton,
+                  {
+                    backgroundColor: tintColor,
+                    opacity: pressed || submittingApplication ? 0.85 : 1,
+                  },
+                ]}
+              >
+                {submittingApplication ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.applicationPrimaryText}>Submit application</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <OpportunityAssistantSheet
+        opportunityId={item?.id || null}
+        visible={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        colors={{
+          background: backgroundColor,
+          card: cardColor,
+          border: borderColor,
+          text: textColor,
+          muted: mutedColor,
+          tint: tintColor,
+        }}
+      />
+    </SafeAreaView>
   );
 }
 
@@ -898,7 +1291,6 @@ const styles = StyleSheet.create({
   },
   screen: {
     flexGrow: 1,
-    paddingTop: 54,
     paddingHorizontal: 16,
   },
   topBar: {
@@ -1002,6 +1394,45 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 12,
     fontWeight: '800',
+  },
+  assistantCta: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginBottom: 10,
+  },
+  assistantCtaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  assistantCtaBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  assistantCtaBadgeText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  assistantCtaCopy: {
+    flex: 1,
+  },
+  assistantCtaEyebrow: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    marginBottom: 3,
+  },
+  assistantCtaText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '900',
   },
   metaText: {
     fontSize: 13,
@@ -1184,6 +1615,122 @@ const styles = StyleSheet.create({
   stickySecondaryButtonText: {
     fontSize: 14,
     fontWeight: '800',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  applicationSheet: {
+    borderTopWidth: 1,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 24,
+    gap: 12,
+  },
+  applicationHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  applicationHeaderText: {
+    flex: 1,
+  },
+  applicationTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  applicationSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  applicationCloseButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 34,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applicationCloseText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  applicationInfoBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  applicationInfoLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  applicationInfoValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  applicationField: {
+    gap: 4,
+  },
+  optionalText: {
+    color: '#71717a',
+    fontWeight: '700',
+    textTransform: 'none',
+  },
+  applicationInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  applicationErrorBox: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#fef2f2',
+  },
+  applicationErrorText: {
+    color: '#b91c1c',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  applicationActions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingTop: 4,
+  },
+  applicationSecondaryButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applicationSecondaryText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  applicationPrimaryButton: {
+    flex: 1.3,
+    borderRadius: 12,
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applicationPrimaryText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
   },
   errorCard: {
     borderWidth: 1,

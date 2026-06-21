@@ -6,27 +6,27 @@ export type MobileApplicationStatusMeta = {
 
 const META: Record<string, MobileApplicationStatusMeta> = {
   SUBMITTED: {
-    label: 'Under review',
+    label: 'Application submitted',
     datePrefix: 'Applied',
     tone: 'blue',
   },
   VIEWED_BY_ORGANIZATION: {
-    label: 'Viewed by employer',
+    label: 'Under review',
     datePrefix: 'Applied',
     tone: 'blue',
   },
   SHORTLISTED: {
-    label: 'Preselected',
+    label: 'Under review',
     datePrefix: 'Applied',
-    tone: 'green',
+    tone: 'blue',
   },
   REJECTED: {
-    label: 'Not selected',
+    label: 'Under review',
     datePrefix: 'Applied',
-    tone: 'red',
+    tone: 'blue',
   },
   WITHDRAWN: {
-    label: 'Application withdrawn',
+    label: 'Withdrawn by you',
     datePrefix: 'Withdrawn',
     tone: 'neutral',
   },
@@ -60,5 +60,5 @@ export function getMobileApplicationStatusMeta(status?: string | null): MobileAp
 
 export function canWithdrawApplication(status?: string | null): boolean {
   const key = String(status || '').trim().toUpperCase();
-  return ['SUBMITTED', 'VIEWED_BY_ORGANIZATION', 'SHORTLISTED'].includes(key);
+  return ['SUBMITTED', 'VIEWED_BY_ORGANIZATION'].includes(key);
 }

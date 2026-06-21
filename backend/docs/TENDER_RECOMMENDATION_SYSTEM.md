@@ -170,3 +170,10 @@ Ce cas est solide pour la demonstration car le lien entre le profil et les resul
 - La qualite depend des champs extraits depuis la source MarchesPublics.
 - La similarite semantique aide au ranking, mais la categorie officielle reste le signal le plus defendable.
 - Les appels d'offres avec categorie manquante restent en revue, mais ne doivent pas etre surclasses sans preuve.
+
+### Garde-fou anti faux-positif
+
+Quand la categorie est absente cote offre ET que la similarite
+semantique est faible (< 0.30), le signal region seul ne doit pas
+suffire a faire remonter une offre hors sujet. Dans ce cas precis,
+le poids de la region est reduit a 30% de sa valeur normale.

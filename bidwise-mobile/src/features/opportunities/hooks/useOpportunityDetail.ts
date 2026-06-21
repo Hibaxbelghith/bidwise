@@ -14,6 +14,7 @@ import {
   dedupeStrings,
   formatDisplayValue,
   getExtraData,
+  getOpportunityMatchScorePercent,
   getLanguagesLabel,
   getProjectDocuments,
   hasDisplayValue,
@@ -228,9 +229,10 @@ export function useOpportunityDetail({
     [item?.id, similarItems],
   );
   const semanticScore = isUserAuthenticated ? computeSemanticMatchScore(dedupedSimilar) : null;
+  const opportunityScore = item ? getOpportunityMatchScorePercent(item) : null;
   const matchBullets = useMemo(
-    () => (item ? buildMatchBullets(item, semanticScore) : []),
-    [item, semanticScore],
+    () => (item ? buildMatchBullets(item, opportunityScore ?? semanticScore) : []),
+    [item, opportunityScore, semanticScore],
   );
 
   return {
@@ -276,6 +278,7 @@ export function useOpportunityDetail({
     tenderFactRows,
     dedupedSimilar,
     semanticScore,
+    opportunityScore,
     matchBullets,
   };
 }

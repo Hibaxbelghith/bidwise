@@ -272,6 +272,7 @@ REST_FRAMEWORK = {
         'resume_match_ai': '5/min',
         'opportunity_assistant': os.getenv('OPPORTUNITY_ASSISTANT_RATE', '10/min'),
         'organization_opportunity_post': os.getenv('ORGANIZATION_OPPORTUNITY_POST_RATE', '5/hour'),
+        'organization_description_draft': os.getenv('ORGANIZATION_DESCRIPTION_DRAFT_RATE', '30/hour'),
     },
 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -412,6 +413,10 @@ OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "45.0"))
 OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.0"))
 OLLAMA_MAX_OUTPUT_TOKENS = int(os.getenv("OLLAMA_MAX_OUTPUT_TOKENS", "1200"))
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "").strip()
+ORGANIZATION_DESCRIPTION_DRAFT_OLLAMA_FALLBACK_ENABLED = _env_flag(
+    "ORGANIZATION_DESCRIPTION_DRAFT_OLLAMA_FALLBACK_ENABLED",
+    True,
+)
 
 # Celery / scheduled opportunity pipeline
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")

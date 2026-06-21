@@ -26,6 +26,11 @@ from .filters import OpportuniteFilterSet
 from .models import DateConfidence, Opportunite, SourceOpportunite, StatutOpportunite
 from .moderation_llm import DECISION_APPROVED, classify_opportunity_with_gemini, failed_llm_result
 from .normalization.employment import normalize_contract_types, normalize_schedule, normalize_work_mode
+from .organization_description_draft import (
+    DescriptionDraftError,
+    DescriptionDraftValidationError,
+    generate_organization_description_draft,
+)
 from .pagination import OpportunityPagination, SimilarityPagination
 from .permissions import IsAdminOrReadOnly, IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly
 from .serializers import (
@@ -38,7 +43,7 @@ from .serializers import (
 )
 from .similarity import find_similar_opportunities_with_fallback
 from .source_cleanup import removed_source_q
-from .throttles import OrganizationOpportunityPostThrottle
+from .throttles import OrganizationDescriptionDraftThrottle, OrganizationOpportunityPostThrottle
 from .turnstile import verify_turnstile_token
 from .tasks import send_organization_automatic_approval_email_task
 from ai.tender_recommendation_service import get_tender_opportunities
@@ -89,6 +94,27 @@ def tender_recommendations_view(request):
             "results": results,
         }
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([OrganizationDescriptionDraftThrottle])
+def organization_description_draft_view(request):
+    _organization_profile, error_response = _require_organization_profile(request)
+    if error_response:
+        return error_response
+
+    try:
+        draft = generate_organization_description_draft(request.data)
+    except DescriptionDraftValidationError as exc:
+        return Response(exc.fields, status=status.HTTP_400_BAD_REQUEST)
+    except DescriptionDraftError:
+        return Response(
+            {"detail": "AI description generation is temporarily unavailable. You can continue writing manually."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    return Response(draft)
 
 
 ORGANIZATION_SOURCE_NAME = "BidWise Organizations"

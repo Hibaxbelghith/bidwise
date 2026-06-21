@@ -7,10 +7,14 @@ import { Input } from '../../../components/ui/input.jsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select.jsx';
 import { Textarea } from '../../../components/ui/textarea.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import AiDescriptionDraftButton from '../components/AiDescriptionDraftButton.jsx';
 import OrganizationSidebar from '../components/OrganizationSidebar.jsx';
 import { ErrorSummary, SubmitNotice } from '../components/OpportunityPostFields.jsx';
 import TurnstileChallenge, { isTurnstileEnabled } from '../components/TurnstileChallenge.jsx';
-import useOrganizationOpportunityEdit, { normalizeOptionValue } from '../hooks/useOrganizationOpportunityEdit.js';
+import useOrganizationOpportunityEdit, {
+  normalizeDateInputValue,
+  normalizeOptionValue,
+} from '../hooks/useOrganizationOpportunityEdit.js';
 import {
   ORGANIZATION_CREATE_ACCOUNT_PATH,
   ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH,
@@ -37,7 +41,13 @@ const INITIAL_VALUES = {
   deadline: '',
 };
 
-const CONTRACT_TYPES = ['CDI', 'CDD', 'SIVP', 'Freelance', 'Contract'];
+const CONTRACT_TYPES = [
+  { value: 'CDI', label: 'CDI' },
+  { value: 'CDD', label: 'CDD' },
+  { value: 'SIVP', label: 'CIVP' },
+  { value: 'Freelance', label: 'Freelance' },
+  { value: 'Contract', label: 'Contract' },
+];
 const AVAILABILITY_OPTIONS = ['On site', 'Hybrid', 'Remote', 'Full time', 'Part time'];
 const FIELD_CLASS = 'h-11 rounded-xl border-neutral-300 bg-white text-sm focus-visible:ring-blue-500';
 
@@ -100,7 +110,7 @@ const OrganizationJobPostPage = () => {
       education_level: item.education_level || '',
       salary: item.salary || '',
       skills: Array.isArray(item.skills) ? item.skills.join(', ') : '',
-      deadline: item.deadline || '',
+      deadline: normalizeDateInputValue(item.deadline),
     });
   }, [edit.opportunity]);
 
@@ -248,7 +258,7 @@ const OrganizationJobPostPage = () => {
         <OrganizationSidebar activePath="/organization/post" />
 
         <div className="min-w-0">
-          <form onSubmit={handleSubmit} className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl flex-col px-5 py-10">
+          <form onSubmit={handleSubmit} noValidate className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl flex-col px-5 py-10">
             <div className="flex-1">
               <div className="text-center">
                 <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-700">{edit.isEditing ? 'Edit job' : 'Create a job'}</p>
@@ -276,7 +286,9 @@ const OrganizationJobPostPage = () => {
                           <SelectValue placeholder="Select contract" />
                         </SelectTrigger>
                         <SelectContent>
-                          {CONTRACT_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                          {CONTRACT_TYPES.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FieldError message={errors.contract} />
@@ -309,13 +321,6 @@ const OrganizationJobPostPage = () => {
                     </SelectContent>
                   </Select>
                   <FieldError message={errors.location} />
-                </section>
-
-                <section className="border-t border-neutral-200 pt-8">
-                  <label htmlFor="description" className="text-sm font-semibold text-neutral-900">Description *</label>
-                  <p className="mt-1 text-sm text-neutral-500">Include mission, responsibilities, requirements, and benefits.</p>
-                  <Textarea id="description" value={values.description} onChange={(event) => updateValue('description', event.target.value)} className="mt-2 min-h-40 rounded-xl border-neutral-300 bg-white text-sm focus-visible:ring-blue-500" aria-invalid={errors.description ? 'true' : 'false'} />
-                  <FieldError message={errors.description} />
                 </section>
 
                 <section className="border-t border-neutral-200 pt-8">
@@ -369,7 +374,7 @@ const OrganizationJobPostPage = () => {
                   <div className="grid gap-5 md:grid-cols-3">
                     <div>
                       <label htmlFor="education_level" className="text-sm font-semibold text-neutral-900">Education level</label>
-                      <Input id="education_level" value={values.education_level} onChange={(event) => updateValue('education_level', event.target.value)} className={`mt-2 ${FIELD_CLASS}`} />
+                      <Input id="education_level" value={values.education_level} onChange={(event) => updateValue('education_level', event.target.value)} className={`mt-2 ${FIELD_CLASS}`} placeholder="Example: Bac+3" />
                     </div>
                     <div>
                       <label htmlFor="salary" className="text-sm font-semibold text-neutral-900">Salary</label>
@@ -382,6 +387,30 @@ const OrganizationJobPostPage = () => {
                       <FieldError message={errors.deadline} />
                     </div>
                   </div>
+                </section>
+
+                <section className="border-t border-neutral-200 pt-8">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <label htmlFor="description" className="text-sm font-semibold text-neutral-900">Description *</label>
+                    <AiDescriptionDraftButton
+                      type="EMPLOI"
+                      title={values.title}
+                      contract={values.contract}
+                      workMode={values.availability}
+                      location={values.location}
+                      skills={skillsPreview}
+                      minExperience={normalizeOptionalNumber(values.experience_min)}
+                      maxExperience={normalizeOptionalNumber(values.experience_max)}
+                      educationLevel={values.education_level}
+                      salary={values.salary}
+                      deadline={values.deadline}
+                      currentDescription={values.description}
+                      onApply={(description) => updateValue('description', description)}
+                    />
+                  </div>
+                  <p className="mt-1 text-sm text-neutral-500">Include mission, responsibilities, requirements, and benefits.</p>
+                  <Textarea id="description" value={values.description} onChange={(event) => updateValue('description', event.target.value)} className="mt-2 min-h-40 rounded-xl border-neutral-300 bg-white text-sm focus-visible:ring-blue-500" aria-invalid={errors.description ? 'true' : 'false'} />
+                  <FieldError message={errors.description} />
                 </section>
 
                 <SubmitNotice
