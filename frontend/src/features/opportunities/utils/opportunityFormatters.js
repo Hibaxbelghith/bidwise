@@ -17,7 +17,15 @@ const SOURCE_LOGO_ASSET_RULES = [
     assetPath: `${OPPORTUNITY_SOURCE_LOGOS_BASE_PATH}/keejob_logo.jpg`,
   },
   {
-    matchers: ['haicop', 'www.haicop.tn', 'haicop.tn'],
+    matchers: [
+      'haicop',
+      'www.haicop.tn',
+      'haicop.tn',
+      'marchespublics',
+      'marches publics',
+      'marchespublics.gov.tn',
+      'www.marchespublics.gov.tn',
+    ],
     assetPath: `${SOURCE_LOGOS_BASE_PATH}/HAICOP.png`,
   },
 ];

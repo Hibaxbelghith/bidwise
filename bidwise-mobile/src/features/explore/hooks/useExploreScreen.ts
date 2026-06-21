@@ -3,9 +3,14 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useOpportunitiesList } from '@/src/features/opportunities/hooks/useOpportunitiesList';
-import type { ProfileUser } from '@/src/features/profile/types';
+import type { BidWiseProfile, ProfileUser } from '@/src/features/profile/types';
 
 import type { ExploreBannerMode } from '../components/ExploreBanner';
+
+const isTenderOnlyProfile = (profile?: BidWiseProfile) => {
+  const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
+  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+};
 
 export function useExploreScreen() {
   const router = useRouter();
@@ -13,17 +18,22 @@ export function useExploreScreen() {
   const typedUser = user as ProfileUser | null;
   const profile = typedUser?.profil;
 
-  const opportunities = useOpportunitiesList({ ready: !authLoading });
+  const tenderOnly = isTenderOnlyProfile(profile);
+  const opportunities = useOpportunitiesList({
+    ready: !authLoading,
+    initialTypeFilter: tenderOnly ? 'PROJET' : 'ALL',
+  });
 
   const completionScore = Number(profile?.profile_completion?.score ?? 0);
   const hasResume = Boolean(profile?.active_resume);
 
   const bannerMode: ExploreBannerMode = useMemo(() => {
+    if (tenderOnly) return 'tender';
     if (!isAuthenticated) return 'guest';
     if (!profile?.onboarding_completed || completionScore < 60) return 'incomplete_profile';
     if (!hasResume) return 'missing_cv';
     return 'ready';
-  }, [completionScore, hasResume, isAuthenticated, profile?.onboarding_completed]);
+  }, [completionScore, hasResume, isAuthenticated, profile?.onboarding_completed, tenderOnly]);
 
   const bannerPrimaryLabel = useMemo(() => {
     switch (bannerMode) {
@@ -34,10 +44,11 @@ export function useExploreScreen() {
       case 'missing_cv':
         return 'Open profile';
       case 'ready':
+      case 'tender':
       default:
-        return 'See Matches';
+        return tenderOnly ? 'Browse tenders' : 'See Matches';
     }
-  }, [bannerMode]);
+  }, [bannerMode, tenderOnly]);
 
   const handleBannerAction = () => {
     switch (bannerMode) {
@@ -49,8 +60,9 @@ export function useExploreScreen() {
         router.push('/profile');
         return;
       case 'ready':
+      case 'tender':
       default:
-        router.push('/for-you');
+        router.push(tenderOnly ? '/explore' : '/for-you');
     }
   };
 
@@ -58,6 +70,7 @@ export function useExploreScreen() {
     isAuthenticated,
     authLoading,
     profile,
+    tenderOnly,
     bannerMode,
     bannerPrimaryLabel,
     handleBannerAction,

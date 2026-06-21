@@ -52,7 +52,10 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
           </TableRow>
         </TableHeader>
         <TableBody>
-          {visibleOpportunities.map((opportunity) => (
+          {visibleOpportunities.map((opportunity) => {
+            const hidesApplications = opportunity.type === 'PROJET';
+
+            return (
             <TableRow key={opportunity.id}>
               <TableCell className="px-4 py-3 align-top whitespace-normal">
                 <p className="line-clamp-2 break-words font-medium leading-5 text-neutral-950">
@@ -78,32 +81,36 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
                 {formatOrganizationOpportunityDate(opportunity.published_at)}
               </TableCell>
               <TableCell className="hidden sm:table-cell">
-                <div className="grid grid-cols-2 gap-3" aria-label="Application counts">
-                  <Link
-                    to={`/organization/applications?filter=all`}
-                    className="min-w-0 block hover:opacity-75 transition-opacity"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <Users className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
-                      <span className="font-semibold text-blue-700">
-                        {Number(opportunity.applications_count || 0)} total
-                      </span>
-                    </div>
-                  </Link>
-                  {Number(opportunity.new_applications_count || 0) > 0 && (
+                {hidesApplications ? (
+                  <div className="text-sm text-neutral-400">-</div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3" aria-label="Application counts">
                     <Link
-                      to={`/organization/applications?filter=new`}
+                      to="/organization/applications?filter=all"
                       className="min-w-0 block hover:opacity-75 transition-opacity"
                     >
                       <div className="flex items-center gap-1.5">
-                        <FileUser className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
+                        <Users className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
                         <span className="font-semibold text-blue-700">
-                          {Number(opportunity.new_applications_count || 0)} new
+                          {Number(opportunity.applications_count || 0)} total
                         </span>
                       </div>
                     </Link>
-                  )}
-                </div>
+                    {Number(opportunity.new_applications_count || 0) > 0 && (
+                      <Link
+                        to="/organization/applications?filter=new"
+                        className="min-w-0 block hover:opacity-75 transition-opacity"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <FileUser className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
+                          <span className="font-semibold text-blue-700">
+                            {Number(opportunity.new_applications_count || 0)} new
+                          </span>
+                        </div>
+                      </Link>
+                    )}
+                  </div>
+                )}
               </TableCell>
               <TableCell className="text-right">
                 <OrganizationOpportunityActionsMenu
@@ -112,7 +119,7 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
                 />
               </TableCell>
             </TableRow>
-          ))}
+          );})}
         </TableBody>
       </Table>
       <OrganizationOpportunitiesPagination

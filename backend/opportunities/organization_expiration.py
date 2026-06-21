@@ -86,3 +86,56 @@ def expire_due_organization_opportunities(*, today: date | None = None) -> dict:
         "expired_ids": [opportunity.id for opportunity in expired],
         "by_reason": by_reason,
     }
+
+
+def expire_due_opportunities(
+    *,
+    today: date | None = None,
+    type_opportunite: str | None = None,
+    source_name: str | None = None,
+    apply_changes: bool = True,
+) -> dict:
+    current_date = today or timezone.localdate()
+    queryset = Opportunite.objects.filter(
+        statut=StatutOpportunite.ACTIVE,
+        date_limite__lt=current_date,
+    )
+    if type_opportunite:
+        queryset = queryset.filter(type_opportunite=type_opportunite)
+    if source_name:
+        queryset = queryset.filter(source__nom=source_name)
+
+    candidates = list(queryset.only("id", "statut", "date_limite", "extra_data", "date_modification"))
+    expired_ids = [opportunity.id for opportunity in candidates]
+
+    if apply_changes and candidates:
+        now = timezone.now()
+        for opportunity in candidates:
+            extra_data = dict(opportunity.extra_data or {})
+            extra_data["expiration"] = {
+                "reason": "deadline",
+                "expired_on": current_date.isoformat(),
+                "automatic": True,
+            }
+            opportunity.extra_data = extra_data
+            opportunity.statut = StatutOpportunite.EXPIREE
+            opportunity.date_modification = now
+
+        with transaction.atomic():
+            Opportunite.objects.bulk_update(
+                candidates,
+                ["statut", "extra_data", "date_modification"],
+                batch_size=200,
+            )
+
+    return {
+        "date": current_date.isoformat(),
+        "inspected": len(candidates),
+        "expired": len(candidates) if apply_changes else 0,
+        "expired_ids": expired_ids,
+        "mode": "apply" if apply_changes else "dry-run",
+        "filters": {
+            "type_opportunite": type_opportunite or "",
+            "source_name": source_name or "",
+        },
+    }

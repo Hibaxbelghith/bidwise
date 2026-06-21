@@ -36,7 +36,7 @@ const OpportunitiesBrowseResults = ({
   });
 
   return (
-    <section ref={resultsSectionRef} className="min-w-0">
+    <section ref={resultsSectionRef} className="min-h-[60vh] min-w-0" aria-busy={loading || isFetching}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium text-neutral-700">{countLabel}</p>
         <p className="text-sm text-neutral-600">
@@ -78,7 +78,10 @@ const OpportunitiesBrowseResults = ({
       {!loading && opportunities.length > 0 ? (
         <div className="space-y-4">
           {opportunities.map((opportunity, index) => (
-            <div key={opportunity.id || index} className="space-y-4">
+            <div
+              key={opportunity.id || index}
+              className="space-y-4 [content-visibility:auto] [contain-intrinsic-size:1px_260px]"
+            >
               <OpportunityBrowseCard
                 opportunity={opportunity}
                 isUserAuthenticated={isUserAuthenticated}

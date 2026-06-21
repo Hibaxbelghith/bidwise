@@ -478,22 +478,24 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
             educationLabel={viewModel.educationLabel}
           />
 
-          <section className="rounded-md border border-emerald-100 bg-emerald-50 p-5">
-            <h3 className="text-xl font-semibold tracking-normal text-emerald-950">
-              Is your resume a good match?
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-emerald-900">
-              Use AI to find out how well the skills on your resume fit this job description.
-            </p>
-            <Button
-              type="button"
-              className="mt-4 justify-center bg-emerald-800 hover:bg-emerald-900"
-              onClick={handleResumeMatch}
-            >
-              <Sparkles className="h-4 w-4" />
-              Get insights
-            </Button>
-          </section>
+          {!viewModel.isProject ? (
+            <section className="rounded-md border border-emerald-100 bg-emerald-50 p-5">
+              <h3 className="text-xl font-semibold tracking-normal text-emerald-950">
+                Is your resume a good match?
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-emerald-900">
+                Use AI to find out how well the skills on your resume fit this job description.
+              </p>
+              <Button
+                type="button"
+                className="mt-4 justify-center bg-emerald-800 hover:bg-emerald-900"
+                onClick={handleResumeMatch}
+              >
+                <Sparkles className="h-4 w-4" />
+                Get insights
+              </Button>
+            </section>
+          ) : null}
 
           {viewModel.recommendation ? (
             <RecommendationInsightPanel recommendation={viewModel.recommendation} context="detail" />
@@ -558,12 +560,14 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
             />
           ) : null}
 
-          <OpportunitySimilarSection
-            isUserAuthenticated={isUserAuthenticated}
-            similarOpportunities={viewModel.dedupedSimilar}
-            loading={similarLoading}
-            error={similarError}
-          />
+          {!viewModel.isProject ? (
+            <OpportunitySimilarSection
+              isUserAuthenticated={isUserAuthenticated}
+              similarOpportunities={viewModel.dedupedSimilar}
+              loading={similarLoading}
+              error={similarError}
+            />
+          ) : null}
         </div>
       </div>
     </aside>

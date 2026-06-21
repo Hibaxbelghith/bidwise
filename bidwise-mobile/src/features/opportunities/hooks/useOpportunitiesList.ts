@@ -24,11 +24,18 @@ export type OpportunityTypeFilter =
 type FetchMode = 'initial' | 'refresh' | 'more';
 type OpportunityDatePostedFilter = '' | 'day' | '3days' | 'week' | '2weeks' | 'month';
 type OpportunityWorkModeFilter = '' | 'REMOTE' | 'HYBRID' | 'ON_SITE';
+type OpportunityDeadlineWindowFilter = '' | 'week' | 'month';
 
-export function useOpportunitiesList({ ready }: { ready: boolean }) {
+export function useOpportunitiesList({
+  ready,
+  initialTypeFilter = 'ALL',
+}: {
+  ready: boolean;
+  initialTypeFilter?: OpportunityTypeFilter;
+}) {
   const [searchInput, setSearchInput] = useState('');
   const [cityInput, setCityInput] = useState('');
-  const [typeFilter, setTypeFilter] = useState<OpportunityTypeFilter>('ALL');
+  const [typeFilter, setTypeFilter] = useState<OpportunityTypeFilter>(initialTypeFilter);
   const [sourceFilter, setSourceFilter] = useState('');
   const [workModeFilter, setWorkModeFilter] = useState<OpportunityWorkModeFilter>('');
   const [datePostedFilter, setDatePostedFilter] = useState<OpportunityDatePostedFilter>('');
@@ -50,6 +57,20 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
   const fetchLockRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const hasNextRef = useRef(false);
+  const tenderOnly = initialTypeFilter === 'PROJET';
+  const effectiveDatePosted = tenderOnly ? '' : datePostedFilter;
+  const effectiveDeadlineWindow = tenderOnly ? (datePostedFilter as OpportunityDeadlineWindowFilter) : '';
+
+  useEffect(() => {
+    setTypeFilter(initialTypeFilter);
+    if (initialTypeFilter === 'PROJET') {
+      setSearchInput('');
+      setCityInput('');
+      setSourceFilter('');
+      setWorkModeFilter('');
+      setDatePostedFilter('');
+    }
+  }, [initialTypeFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -63,6 +84,9 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
   }, [cityInput, searchInput]);
 
   const hasActiveFilters = useMemo(() => {
+    if (tenderOnly) {
+      return Boolean(searchInput.trim() || cityInput.trim() || datePostedFilter);
+    }
     return Boolean(
       searchInput.trim() ||
         cityInput.trim() ||
@@ -71,7 +95,7 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
         workModeFilter ||
         datePostedFilter,
     );
-  }, [cityInput, datePostedFilter, searchInput, sourceFilter, typeFilter, workModeFilter]);
+  }, [cityInput, datePostedFilter, searchInput, sourceFilter, tenderOnly, typeFilter, workModeFilter]);
 
   useEffect(() => {
     if (!ready) return undefined;
@@ -119,8 +143,10 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
           city: debouncedCity,
           type: typeFilter === 'ALL' ? '' : typeFilter,
           source: sourceFilter,
-          workMode: workModeFilter,
-          datePosted: datePostedFilter,
+          workMode: tenderOnly ? '' : workModeFilter,
+          datePosted: effectiveDatePosted,
+          deadlineWindow: effectiveDeadlineWindow,
+          ordering: typeFilter === 'PROJET' && !debouncedSearch ? 'date_limite' : '-quality_score',
         });
 
         setItems((previousItems) => {
@@ -158,7 +184,7 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
         fetchLockRef.current = false;
       }
     },
-    [datePostedFilter, debouncedCity, debouncedSearch, sourceFilter, typeFilter, workModeFilter],
+    [debouncedCity, debouncedSearch, effectiveDatePosted, effectiveDeadlineWindow, sourceFilter, tenderOnly, typeFilter, workModeFilter],
   );
 
   useEffect(() => {
@@ -180,11 +206,11 @@ export function useOpportunitiesList({ ready }: { ready: boolean }) {
   const clearFilters = useCallback(() => {
     setSearchInput('');
     setCityInput('');
-    setTypeFilter('ALL');
+    setTypeFilter(tenderOnly ? 'PROJET' : 'ALL');
     setSourceFilter('');
     setWorkModeFilter('');
     setDatePostedFilter('');
-  }, []);
+  }, [tenderOnly]);
 
   return {
     items,

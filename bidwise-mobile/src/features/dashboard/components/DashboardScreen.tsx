@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -15,6 +15,11 @@ type DashboardScreenProps = {
   embedded?: boolean;
 };
 
+function isCallsForTenderOnlyProfile(profile?: { opportunity_types?: string[] } | null) {
+  const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
+  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+}
+
 export default function DashboardScreen({ embedded = false }: DashboardScreenProps) {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
@@ -26,6 +31,7 @@ export default function DashboardScreen({ embedded = false }: DashboardScreenPro
   const tintColor = useThemeColor({}, 'tint');
   const cardColor = useThemeColor({}, 'card');
   const borderColor = useThemeColor({}, 'border');
+  const tenderOnly = isCallsForTenderOnlyProfile(user?.profil);
 
   const {
     savedItems,
@@ -38,15 +44,21 @@ export default function DashboardScreen({ embedded = false }: DashboardScreenPro
     stats,
     handleRefresh,
     handleWithdraw,
-  } = useDashboardData(isAuthenticated);
+  } = useDashboardData(isAuthenticated, { includeApplications: !tenderOnly });
 
   const displayName = useMemo(() => {
     const firstName = String(user?.profil?.prenom || user?.first_name || '').trim();
     return firstName || 'there';
   }, [user?.first_name, user?.profil?.prenom]);
 
+  useEffect(() => {
+    if (tenderOnly && activeTab !== 'saved') {
+      setActiveTab('saved');
+    }
+  }, [activeTab, tenderOnly]);
+
   const emptySaved = !loading && activeTab === 'saved' && savedItems.length === 0;
-  const emptyApplications = !loading && activeTab === 'applications' && applications.length === 0;
+  const emptyApplications = !tenderOnly && !loading && activeTab === 'applications' && applications.length === 0;
 
   return (
     <View style={[styles.container, { backgroundColor }]}>
@@ -70,7 +82,9 @@ export default function DashboardScreen({ embedded = false }: DashboardScreenPro
           </Text>
           <Text style={[styles.title, { color: textColor }]}>Your space</Text>
           <Text style={[styles.subtitle, { color: mutedColor }]}>
-            Track saved opportunities and follow your applications in one place.
+            {tenderOnly
+              ? 'Keep your saved calls for tender in one place.'
+              : 'Track saved opportunities and follow your applications in one place.'}
           </Text>
         </View>
 
@@ -83,35 +97,41 @@ export default function DashboardScreen({ embedded = false }: DashboardScreenPro
             textColor={textColor}
             mutedColor={mutedColor}
           />
-          <DashboardStatCard
-            value={stats.appliedCount}
-            label="Applications"
-            cardColor={cardColor}
-            borderColor={borderColor}
-            textColor={textColor}
-            mutedColor={mutedColor}
-          />
-          <DashboardStatCard
-            value={stats.inProgressCount}
-            label="In progress"
-            cardColor={cardColor}
-            borderColor={borderColor}
-            textColor={textColor}
-            mutedColor={mutedColor}
-          />
+          {!tenderOnly ? (
+            <>
+              <DashboardStatCard
+                value={stats.appliedCount}
+                label="Applications"
+                cardColor={cardColor}
+                borderColor={borderColor}
+                textColor={textColor}
+                mutedColor={mutedColor}
+              />
+              <DashboardStatCard
+                value={stats.inProgressCount}
+                label="In progress"
+                cardColor={cardColor}
+                borderColor={borderColor}
+                textColor={textColor}
+                mutedColor={mutedColor}
+              />
+            </>
+          ) : null}
         </View>
 
-        <DashboardTabs
-          value={activeTab}
-          onChange={setActiveTab}
-          savedCount={stats.savedCount}
-          applicationsCount={stats.appliedCount}
-          cardColor={cardColor}
-          borderColor={borderColor}
-          textColor={textColor}
-          mutedColor={mutedColor}
-          tintColor={tintColor}
-        />
+        {!tenderOnly ? (
+          <DashboardTabs
+            value={activeTab}
+            onChange={setActiveTab}
+            savedCount={stats.savedCount}
+            applicationsCount={stats.appliedCount}
+            cardColor={cardColor}
+            borderColor={borderColor}
+            textColor={textColor}
+            mutedColor={mutedColor}
+            tintColor={tintColor}
+          />
+        ) : null}
 
         {error ? (
           <View style={[styles.messageCard, { backgroundColor: cardColor, borderColor }]}>
@@ -130,7 +150,9 @@ export default function DashboardScreen({ embedded = false }: DashboardScreenPro
           <View style={[styles.messageCard, { backgroundColor: cardColor, borderColor }]}>
             <Text style={[styles.messageTitle, { color: textColor }]}>Loading your dashboard...</Text>
             <Text style={[styles.messageText, { color: mutedColor }]}>
-              We are preparing your saved items and applications.
+              {tenderOnly
+                ? 'We are preparing your saved calls for tender.'
+                : 'We are preparing your saved items and applications.'}
             </Text>
           </View>
         ) : null}
@@ -183,9 +205,13 @@ export default function DashboardScreen({ embedded = false }: DashboardScreenPro
 
         {emptySaved ? (
           <View style={[styles.messageCard, { backgroundColor: cardColor, borderColor }]}>
-            <Text style={[styles.messageTitle, { color: textColor }]}>No saved opportunities yet</Text>
+            <Text style={[styles.messageTitle, { color: textColor }]}>
+              {tenderOnly ? 'No saved calls for tender yet' : 'No saved opportunities yet'}
+            </Text>
             <Text style={[styles.messageText, { color: mutedColor }]}>
-              Save interesting roles from Explore to find them quickly here later.
+              {tenderOnly
+                ? 'Save relevant public tenders from Explore to find them quickly here later.'
+                : 'Save interesting roles from Explore to find them quickly here later.'}
             </Text>
           </View>
         ) : null}

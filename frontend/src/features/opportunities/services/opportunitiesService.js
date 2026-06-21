@@ -3,6 +3,7 @@ import api from '../../../lib/api';
 const OPPORTUNITIES_ENDPOINT = '/opportunities/';
 const LEGACY_OPPORTUNITIES_ENDPOINT = '/opportunites/';
 const RECOMMENDATIONS_ENDPOINT = '/recommendations/';
+const TENDER_RECOMMENDATIONS_ENDPOINT = '/opportunities/tenders/recommendations/';
 
 const normalizeString = (value) => String(value || '').trim();
 const normalizeArray = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
@@ -13,6 +14,26 @@ const normalizeNumberOrNull = (value) => {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeTenderPriorityLabel = (priority) => {
+  const normalized = normalizeString(priority).toLowerCase();
+  if (!normalized) return '';
+
+  if (normalized.includes('forte') || normalized.includes('strong')) {
+    return 'Strong priority';
+  }
+  if (normalized.includes('surveiller') || normalized.includes('watch')) {
+    return 'Watch closely';
+  }
+  if (normalized.includes('faible') || normalized.includes('low')) {
+    return 'Low priority';
+  }
+  if (normalized.includes('veille') || normalized.includes('general')) {
+    return 'General watch';
+  }
+
+  return normalizeString(priority);
 };
 
 export const normalizeRecommendation = (recommendation) => {
@@ -110,6 +131,62 @@ export const normalizeOpportunity = (opportunity) => {
   };
 };
 
+const normalizeTenderRecommendationResult = (item) => {
+  const raw = normalizeObject(item);
+  const opportunity = normalizeOpportunity(raw.opportunity);
+  const score = normalizeNumberOrNull(raw.score);
+  const rawPriority = normalizeString(raw.priority);
+  const priority = normalizeTenderPriorityLabel(rawPriority);
+  const reasons = normalizeArray(raw.reasons);
+  const components = normalizeObject(raw.components);
+
+  return {
+    ...opportunity,
+    tender_recommendation: {
+      score,
+      priority,
+      raw_priority: rawPriority,
+      reasons,
+      components,
+    },
+    recommendation:
+      score === null
+        ? null
+        : normalizeRecommendation({
+            id: opportunity.id,
+            title: opportunity.titre,
+            company: opportunity.organisation_nom,
+            location: opportunity.ville,
+            type: opportunity.type_opportunite,
+            score,
+            match_score: score,
+            score_label: priority,
+            score_level: priority.toLowerCase().includes('strong')
+              ? 'HIGH'
+              : priority.toLowerCase().includes('watch')
+                ? 'MEDIUM'
+                : 'LOW',
+            recommendation_mode: 'TENDER_WATCH',
+            recommendation_confidence: priority,
+            recommendation_bucket: priority.toLowerCase().includes('strong')
+              ? 'STRONG_MATCH'
+              : 'RELATED_REVIEW',
+            recommendation_bucket_reason: priority,
+            reasons,
+            evidence_summary: {
+              semantic_strength: components?.semantic >= 0.65 ? 'STRONG' : 'MEDIUM',
+              skill_overlap: 0,
+              profile_skill_overlap: 0,
+              role_match: false,
+              title_overlap: false,
+              industry_match: Number(components?.category) >= 0.7,
+              llm_family_match: Number(components?.category) > 0,
+              resume_signal: false,
+            },
+          }),
+  };
+};
+
 const normalizePaginatedResponse = (payload) => {
   const raw = normalizeObject(payload);
 
@@ -146,6 +223,7 @@ export const listOpportunities = async ({
   workMode = '',
   experienceLevel = '',
   datePosted = '',
+  deadlineWindow = '',
   sort = 'quality',
   ordering = '',
   sourceCap = 0,
@@ -166,6 +244,7 @@ export const listOpportunities = async ({
   if (workMode) params.work_mode = workMode;
   if (experienceLevel) params.experience_level = experienceLevel;
   if (datePosted) params.date_posted = datePosted;
+  if (deadlineWindow) params.deadline_window = deadlineWindow;
   if (ordering) {
     params.ordering = ordering;
   } else if (sort) {
@@ -195,9 +274,25 @@ export const listOpportunitySources = async () => {
 export const listOpportunityRecommendations = async ({ limit = 20 } = {}) => {
   const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 50));
   const response = await api.get(RECOMMENDATIONS_ENDPOINT, {
-    params: { limit: safeLimit, _ts: Date.now() },
+    params: { limit: safeLimit },
   });
   return normalizeArray(response.data).map(normalizeRecommendation);
+};
+
+export const listTenderRecommendations = async ({ limit = 50 } = {}) => {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 50));
+  const response = await api.get(TENDER_RECOMMENDATIONS_ENDPOINT, {
+    params: { limit: safeLimit },
+  });
+  const raw = normalizeObject(response.data);
+
+  return {
+    count: Number(raw.count) || 0,
+    next: null,
+    previous: null,
+    facets: {},
+    results: normalizeArray(raw.results).map(normalizeTenderRecommendationResult),
+  };
 };
 
 export const listTrendingOpportunities = async ({ limit = 8 } = {}) =>

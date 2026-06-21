@@ -41,6 +41,7 @@ from .source_cleanup import removed_source_q
 from .throttles import OrganizationOpportunityPostThrottle
 from .turnstile import verify_turnstile_token
 from .tasks import send_organization_automatic_approval_email_task
+from ai.tender_recommendation_service import get_tender_opportunities
 from users.models import AuditLog, OrganizationProfile, Utilisateur
 from users.storage import ProfileResumeStorage
 
@@ -52,6 +53,42 @@ logger = logging.getLogger(__name__)
 @permission_classes([IsAuthenticated])
 def pipeline_metrics_view(request):
     return Response(compute_pipeline_metrics())
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def tender_recommendations_view(request):
+    try:
+        limit = int(request.query_params.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, min(limit, 50))
+
+    items = get_tender_opportunities(user=request.user, limit=limit)
+    serializer = OpportuniteSerializer(
+        [item["opportunity"] for item in items],
+        many=True,
+        context={"request": request},
+    )
+
+    results = []
+    for item, opportunity_data in zip(items, serializer.data):
+        results.append(
+            {
+                "opportunity": opportunity_data,
+                "score": item["score"],
+                "priority": item["priority"],
+                "reasons": item["reasons"],
+                "components": item["components"],
+            }
+        )
+
+    return Response(
+        {
+            "count": len(results),
+            "results": results,
+        }
+    )
 
 
 ORGANIZATION_SOURCE_NAME = "BidWise Organizations"

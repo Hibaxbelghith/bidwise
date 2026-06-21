@@ -151,6 +151,7 @@ export interface OpportunitiesQueryParams {
   city?: string;
   workMode?: string;
   datePosted?: string;
+  deadlineWindow?: string;
   minSalary?: number;
   source?: string;
   ordering?: string;
@@ -258,6 +259,7 @@ function buildListParams(params: OpportunitiesQueryParams = {}) {
     city = '',
     workMode = '',
     datePosted = '',
+    deadlineWindow = '',
     minSalary,
     source = '',
     ordering = '-quality_score',
@@ -281,6 +283,7 @@ function buildListParams(params: OpportunitiesQueryParams = {}) {
   }
   if (workMode.trim()) queryParams.work_mode = workMode.trim();
   if (datePosted.trim()) queryParams.date_posted = datePosted.trim();
+  if (deadlineWindow.trim()) queryParams.deadline_window = deadlineWindow.trim();
   if (Number.isFinite(minSalary) && Number(minSalary) > 0) {
     queryParams.min_salary = Math.floor(Number(minSalary));
   }

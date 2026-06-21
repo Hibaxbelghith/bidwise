@@ -21,6 +21,11 @@ import {
 const PROFILE_VISITED_KEY = 'bidwise:profile-visited:v1';
 const LOGOUT_REDIRECT_DELAY_MS = 160;
 
+const isCallsForTenderOnlyProfile = (profile) => {
+  const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
+  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+};
+
 const animationStyles = `
   @keyframes attention-pulse-keyframe {
     0% {
@@ -61,6 +66,7 @@ const AppLayout = () => {
     location.pathname.startsWith('/dashboard-admin') || location.pathname.startsWith('/admin');
   const isAdmin = Boolean(user?.is_admin || user?.is_staff || user?.is_superuser);
   const isOrganizationAccount = user?.account_type === 'organization';
+  const authPendingWithoutUser = authLoading && !user;
   const isOrganizationWorkspace = isOrganizationSurface && isOrganizationAccount;
   const dashboardPath = isOrganizationAccount ? '/organization/dashboard' : '/dashboard';
   const dashboardLabel = isOrganizationAccount ? 'Organization Dashboard' : 'My Dashboard';
@@ -68,9 +74,14 @@ const AppLayout = () => {
   const organizationName = user?.organization_profile?.organization_name || 'Organization';
   const profileCompletionScore = getProfileCompletionScore(user);
   const isProfileComplete = profileCompletionScore >= 60;
+  const isTenderOnlyProfile = isCallsForTenderOnlyProfile(user?.profil);
   
   // Besoin de nudge = profil incomplet ET utilisateur non-organisation
-  const needsProfileNudge = isAuthenticated && !isOrganizationAccount && !isProfileComplete;
+  const needsProfileNudge =
+    isAuthenticated &&
+    !isOrganizationAccount &&
+    !isTenderOnlyProfile &&
+    !isProfileComplete;
 
   // Vérifier si l'utilisateur a déjà visité son profil (une fois dans sa vie)
   useEffect(() => {
@@ -215,7 +226,7 @@ const AppLayout = () => {
                       <Search className="h-4 w-4" />
                       Browse Opportunities
                     </Link>
-                    {!authLoading && isAuthenticated && (
+                    {!authPendingWithoutUser && isAuthenticated && (
                       <>
                         {!isAdminRoute ? (
                           <Link
@@ -270,7 +281,7 @@ const AppLayout = () => {
                     </Button>
                   ) : (
                     <>
-                      {authLoading ? (
+                      {authPendingWithoutUser ? (
                         <div
                           className="h-9 w-24 rounded-md border border-neutral-200 bg-neutral-50"
                           aria-hidden="true"

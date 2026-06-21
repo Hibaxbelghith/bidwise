@@ -31,7 +31,7 @@ const StepOpportunityIntent = ({ data, onChange, error = '' }) => {
 
 	return (
 		<div className="space-y-4">
-			<div className="grid grid-cols-2 gap-3">
+			<div className="grid grid-cols-2 gap-3 [&>button:last-child]:col-span-2 [&>button:last-child]:mx-auto [&>button:last-child]:w-1/2">
 				{OPTIONS.map((opt) => {
 					const isSelected = isOptionSelected(opt);
 					const Icon = opt.icon || Briefcase;

@@ -1,0 +1,54 @@
+{
+  "applications": [
+    {
+      "candidate_email": "bidwise9@gmail.com",
+      "resume_id": 493,
+      "opportunity_id": 6214,
+      "status": "SUBMITTED",
+      "submitted_at": "2026-06-19T09:00:00+01:00",
+      "contact_email": "bidwise9@gmail.com",
+      "contact_phone": "+21620111222",
+      "cover_letter_file": "application_documents/cover_letter_backend_mariem.txt"
+    },
+    {
+      "candidate_email": "hibabelg7@gmail.com",
+      "resume_id": 482,
+      "opportunity_id": 6214,
+      "status": "VIEWED_BY_ORGANIZATION",
+      "submitted_at": "2026-06-19T09:20:00+01:00",
+      "contact_email": "hibabelg7@gmail.com",
+      "contact_phone": "+21622123456",
+      "cover_letter_file": "application_documents/cover_letter_backend_mariem.txt"
+    },
+    {
+      "candidate_email": "amalsadkaoui40@gmail.com",
+      "resume_id": 491,
+      "opportunity_id": 6217,
+      "status": "SHORTLISTED",
+      "submitted_at": "2026-06-19T10:00:00+01:00",
+      "contact_email": "amalsadkaoui40@gmail.com",
+      "contact_phone": "+21653111222",
+      "cover_letter_file": "application_documents/cover_letter_data_amal.txt"
+    },
+    {
+      "candidate_email": "hibabelg7@gmail.com",
+      "resume_id": 482,
+      "opportunity_id": 6218,
+      "status": "REJECTED",
+      "submitted_at": "2026-06-19T10:30:00+01:00",
+      "contact_email": "hibabelg7@gmail.com",
+      "contact_phone": "+21622123456",
+      "cover_letter_file": "application_documents/cover_letter_support_hiba.txt"
+    },
+    {
+      "candidate_email": "amalsadkaoui40@gmail.com",
+      "resume_id": 491,
+      "opportunity_id": 6218,
+      "status": "WITHDRAWN",
+      "submitted_at": "2026-06-19T11:00:00+01:00",
+      "contact_email": "amalsadkaoui40@gmail.com",
+      "contact_phone": "+21653111222",
+      "cover_letter_file": "application_documents/cover_letter_support_hiba.txt"
+    }
+  ]
+}

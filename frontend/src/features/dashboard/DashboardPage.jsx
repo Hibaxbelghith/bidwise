@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/ta
 import { Briefcase, Clock, Bookmark, Building2, MapPin, DollarSign, Calendar, TrendingUp } from 'lucide-react';
 import ApplicationsList from './components/ApplicationsList.jsx';
 import useMyApplications from './hooks/useMyApplications.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { getOpportunityById } from '../opportunities/services/opportunitiesService.js';
 import { buildOpportunityBrowseCardViewModel } from '../opportunities/viewModels/opportunityList.vm.js';
 import {
@@ -20,8 +21,15 @@ const normalizeSavedOpportunity = (opportunity) => ({
 	viewModel: buildOpportunityBrowseCardViewModel(opportunity, true),
 });
 
+const isCallsForTenderOnlyProfile = (profile) => {
+	const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
+	return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+};
+
 const Dashboard = () => {
-	const { applications, isLoading, error, withdraw } = useMyApplications();
+	const { user } = useAuth();
+	const tenderOnly = isCallsForTenderOnlyProfile(user?.profil);
+	const { applications, isLoading, error, withdraw } = useMyApplications({ enabled: !tenderOnly });
 	const [savedOpportunities, setSavedOpportunities] = useState([]);
 	const [savedLoading, setSavedLoading] = useState(true);
 	const [savedError, setSavedError] = useState('');
@@ -78,14 +86,20 @@ const Dashboard = () => {
 				{/* Header */}
 				<div className="mb-8">
 					<h1 id="dashboard-heading" className="text-3xl font-bold text-neutral-900 mb-2">My Dashboard</h1>
-					<p className="text-neutral-600">Track and manage your opportunities</p>
+					<p className="text-neutral-600">
+						{tenderOnly
+							? 'Keep your saved calls for tender in one place.'
+							: 'Track and manage your opportunities'}
+					</p>
 				</div>
 
 				{/* Stats Cards */}
 				<div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" role="region" aria-label="Dashboard statistics">
 					<Card>
 						<CardHeader className="pb-3">
-							<CardTitle className="text-sm font-medium text-neutral-600">Saved</CardTitle>
+							<CardTitle className="text-sm font-medium text-neutral-600">
+								{tenderOnly ? 'Saved tenders' : 'Saved'}
+							</CardTitle>
 						</CardHeader>
 						<CardContent>
 							<div className="flex items-center justify-between">
@@ -95,30 +109,33 @@ const Dashboard = () => {
 						</CardContent>
 					</Card>
 
-					<Card>
-						<CardHeader className="pb-3">
-							<CardTitle className="text-sm font-medium text-neutral-600">Applied</CardTitle>
-						</CardHeader>
-						<CardContent>
-							<div className="flex items-center justify-between">
-								<p className="text-3xl font-bold text-neutral-900">{appliedCount}</p>
-								<Briefcase className="w-8 h-8 text-blue-600" aria-hidden="true" />
-							</div>
-						</CardContent>
-					</Card>
+					{!tenderOnly ? (
+						<>
+							<Card>
+								<CardHeader className="pb-3">
+									<CardTitle className="text-sm font-medium text-neutral-600">Applied</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<div className="flex items-center justify-between">
+										<p className="text-3xl font-bold text-neutral-900">{appliedCount}</p>
+										<Briefcase className="w-8 h-8 text-blue-600" aria-hidden="true" />
+									</div>
+								</CardContent>
+							</Card>
 
-
-					<Card>
-						<CardHeader className="pb-3">
-							<CardTitle className="text-sm font-medium text-neutral-600">Profile Views</CardTitle>
-						</CardHeader>
-						<CardContent>
-							<div className="flex items-center justify-between">
-								<p className="text-3xl font-bold text-neutral-900">24</p>
-								<TrendingUp className="w-8 h-8 text-blue-600" aria-hidden="true" />
-							</div>
-						</CardContent>
-					</Card>
+							<Card>
+								<CardHeader className="pb-3">
+									<CardTitle className="text-sm font-medium text-neutral-600">Profile Views</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<div className="flex items-center justify-between">
+										<p className="text-3xl font-bold text-neutral-900">24</p>
+										<TrendingUp className="w-8 h-8 text-blue-600" aria-hidden="true" />
+									</div>
+								</CardContent>
+							</Card>
+						</>
+					) : null}
 				</div>
 
 				{/* Main Content 
@@ -126,10 +143,12 @@ const Dashboard = () => {
 				*/}
 
 				<Tabs defaultValue="saved" className="space-y-6">
-					<TabsList aria-label="Opportunity categories">
-						<TabsTrigger value="saved">Saved Opportunities</TabsTrigger>
-						<TabsTrigger value="applied">Applications</TabsTrigger>
-					</TabsList>
+					{!tenderOnly ? (
+						<TabsList aria-label="Opportunity categories">
+							<TabsTrigger value="saved">Saved Opportunities</TabsTrigger>
+							<TabsTrigger value="applied">Applications</TabsTrigger>
+						</TabsList>
+					) : null}
 
 					{/* Saved Opportunities */}
 					<TabsContent value="saved" className="space-y-4">
@@ -152,9 +171,13 @@ const Dashboard = () => {
 							<Card>
 								<CardContent className="py-12 text-center">
 									<Bookmark className="w-12 h-12 text-neutral-300 mx-auto mb-4" aria-hidden="true" />
-									<p className="text-neutral-600 mb-4">No saved opportunities yet</p>
+									<p className="text-neutral-600 mb-4">
+										{tenderOnly ? 'No saved calls for tender yet' : 'No saved opportunities yet'}
+									</p>
 									<Button asChild>
-										<Link to="/opportunities">Browse Opportunities</Link>
+										<Link to={tenderOnly ? '/opportunities?type=PROJET' : '/opportunities'}>
+											{tenderOnly ? 'Browse Calls for Tender' : 'Browse Opportunities'}
+										</Link>
 									</Button>
 								</CardContent>
 							</Card>
@@ -229,14 +252,16 @@ const Dashboard = () => {
 					</TabsContent>
 
 					{/* Applied Opportunities */}
-					<TabsContent value="applied" className="space-y-4">
-						<ApplicationsList
-							applications={applications}
-							isLoading={isLoading}
-							error={error}
-							onWithdraw={withdraw}
-						/>
-					</TabsContent>
+					{!tenderOnly ? (
+						<TabsContent value="applied" className="space-y-4">
+							<ApplicationsList
+								applications={applications}
+								isLoading={isLoading}
+								error={error}
+								onWithdraw={withdraw}
+							/>
+						</TabsContent>
+					) : null}
 				</Tabs>
 			</div>
 		</section>

@@ -43,6 +43,9 @@ import {
   validateSalaryRange,
 } from '@/src/features/profile/utils/profileValidation';
 
+const isCallsForTenderOnly = (values: string[]) =>
+  values.length === 1 && values[0] === 'CALLS_FOR_TENDER';
+
 export default function OnboardingScreen() {
   const router = useRouter();
   const { loadUserProfile } = useAuth();
@@ -200,16 +203,23 @@ export default function OnboardingScreen() {
     onboardingCompleted: boolean;
     stepIndex: number;
   }) => {
-    const normalized = {
-      ...normalizeProfilePreferenceData(data),
-      compensation_expectation: salaryRangeValidation.min ?? salaryRangeValidation.max,
-      compensation_min_expectation: salaryRangeValidation.min,
-      compensation_max_expectation: salaryRangeValidation.max,
-      compensation_currency: data.compensation_currency,
-      compensation_period: data.compensation_period,
-      onboarding_completed: onboardingCompleted,
-      last_onboarding_step: stepIndex,
-    };
+    const tenderOnly = isCallsForTenderOnly(data.opportunity_types);
+    const normalized = tenderOnly
+      ? {
+          opportunity_types: ['CALLS_FOR_TENDER'],
+          onboarding_completed: onboardingCompleted,
+          last_onboarding_step: stepIndex,
+        }
+      : {
+          ...normalizeProfilePreferenceData(data),
+          compensation_expectation: salaryRangeValidation.min ?? salaryRangeValidation.max,
+          compensation_min_expectation: salaryRangeValidation.min,
+          compensation_max_expectation: salaryRangeValidation.max,
+          compensation_currency: data.compensation_currency,
+          compensation_period: data.compensation_period,
+          onboarding_completed: onboardingCompleted,
+          last_onboarding_step: stepIndex,
+        };
 
     return Object.fromEntries(
       Object.entries(normalized).filter(([, value]) => {
@@ -291,6 +301,11 @@ export default function OnboardingScreen() {
     }
 
     setError('');
+
+    if (currentStep === 0 && isCallsForTenderOnly(data.opportunity_types)) {
+      await finishOnboarding();
+      return;
+    }
 
     if (isLast) {
       await finishOnboarding();

@@ -10,7 +10,7 @@ import {
   getOpportunityTypeLabel,
   formatOrganizationLabel,
 } from '../utils/opportunityFormatters.js';
-import { getLanguagePreview } from '../utils/opportunityHelpers.js';
+import { getLanguagePreview, getProjectDocuments } from '../utils/opportunityHelpers.js';
 
 const WORK_MODE_LABELS = {
   REMOTE: 'Remote',
@@ -20,9 +20,16 @@ const WORK_MODE_LABELS = {
 
 export const buildOpportunityBrowseCardViewModel = (opportunity, isUserAuthenticated) => {
   const organizationLabel = formatOrganizationLabel(opportunity);
+  const extraData = opportunity?.extra_data && typeof opportunity.extra_data === 'object' ? opportunity.extra_data : {};
+  const structuredProjectData =
+    extraData?.structured && typeof extraData.structured === 'object' ? extraData.structured : {};
+  const projectLots = Array.isArray(extraData.lots) ? extraData.lots.filter(Boolean) : [];
+  const projectDocuments = getProjectDocuments(opportunity);
+  const isProject = opportunity?.type_opportunite === 'PROJET';
 
   return {
     title: opportunity?.titre || 'Untitled opportunity',
+    isProject,
     typeLabel: getOpportunityTypeLabel(opportunity?.type_opportunite),
     statusLabel: getOpportunityStatusLabel(opportunity?.statut),
     statusBadgeVariant: opportunity?.statut === 'ACTIVE' ? 'default' : 'outline',
@@ -43,6 +50,18 @@ export const buildOpportunityBrowseCardViewModel = (opportunity, isUserAuthentic
     companyLogo: getCompanyLogoAsset(opportunity),
     descriptionPreview: buildDescriptionPreview(opportunity),
     aiHint: getCardAiHint(opportunity, isUserAuthenticated),
+    projectRegionLabel: String(extraData.region_execution || extraData.region || opportunity?.ville || '').trim(),
+    projectProcedureLabel: String(structuredProjectData.procedure || extraData.procedure || '').trim(),
+    projectFinancementLabel: String(structuredProjectData.financement || extraData.financement || '').trim(),
+    projectTypeCommandeLabel: String(structuredProjectData.type_commande || extraData.type_commande || '').trim(),
+    projectCautionLabel: String(
+      extraData.caution ||
+        projectLots.find((lot) => String(lot?.caution || '').trim())?.caution ||
+        '',
+    ).trim(),
+    projectLotsCount: projectLots.length,
+    projectDocumentsCount: projectDocuments.length,
+    tenderRecommendation: opportunity?.tender_recommendation || null,
   };
 };
 

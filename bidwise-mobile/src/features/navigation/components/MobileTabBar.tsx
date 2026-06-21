@@ -14,6 +14,7 @@ type MobileTabBarProps = {
   textColor: string;
   mutedColor: string;
   tintColor: string;
+  hideForYou?: boolean;
 };
 
 const TAB_CONFIG: { key: AppTabKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -33,8 +34,10 @@ export default function MobileTabBar({
   textColor,
   mutedColor,
   tintColor,
+  hideForYou = false,
 }: MobileTabBarProps) {
   const insets = useSafeAreaInsets();
+  const visibleTabs = hideForYou ? TAB_CONFIG.filter((tab) => tab.key !== 'for-you') : TAB_CONFIG;
 
   return (
     <View
@@ -47,7 +50,7 @@ export default function MobileTabBar({
         },
       ]}
     >
-      {TAB_CONFIG.map((tab) => {
+      {visibleTabs.map((tab) => {
         const active = currentTab === tab.key;
         const locked = !isAuthenticated && tab !== 'explore';
         return (

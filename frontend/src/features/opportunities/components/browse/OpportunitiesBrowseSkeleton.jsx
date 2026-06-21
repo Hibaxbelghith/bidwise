@@ -1,6 +1,6 @@
 export const SkeletonOpportunityCard = () => (
   <article className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-    <div className="animate-pulse space-y-4">
+    <div className="space-y-4">
       <div className="flex items-start gap-4">
         <div className="h-12 w-12 shrink-0 rounded-xl bg-neutral-200" />
         <div className="min-w-0 flex-1 space-y-2">
@@ -26,7 +26,7 @@ export const SkeletonOpportunityCard = () => (
 
 export const FetchingSkeletonBanner = () => (
   <div className="mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
-    <div className="animate-pulse space-y-2">
+    <div className="space-y-2">
       <div className="h-2 w-36 rounded-full bg-neutral-200" />
       <div className="h-2 w-full rounded-full bg-neutral-100" />
     </div>

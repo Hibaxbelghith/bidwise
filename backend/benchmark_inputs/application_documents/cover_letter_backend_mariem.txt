@@ -1,0 +1,16 @@
+Objet: Candidature au poste Python Backend Django Developer
+
+Madame, Monsieur,
+
+Je souhaite proposer ma candidature pour le poste Python Backend Django Developer publie sur BidWise Organizations.
+Mon parcours m'a permis de travailler sur des APIs REST, la conception de bases de donnees relationnelles,
+la maintenance d'applications web et la qualite du code en environnement Python.
+
+Je suis particulierement interessee par votre offre car elle correspond a un poste backend structure,
+avec un besoin clair autour de Django, de l'architecture API et de la rigueur technique.
+Je peux contribuer rapidement sur les taches de developpement, de debug et d'amelioration continue.
+
+Je reste disponible pour un entretien et vous remercie pour l'attention portee a ma candidature.
+
+Cordialement,
+Mariem Ben Salem

@@ -24,7 +24,7 @@ export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
   {
     value: 'CALLS_FOR_TENDER',
     label: 'Calls for tender',
-    description: 'Public tenders and project opportunities',
+    description: 'Public and private tenders',
     values: ['CALLS_FOR_TENDER'],
   },
 ];

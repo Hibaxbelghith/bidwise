@@ -10,6 +10,7 @@ from django.db import transaction
 from rest_framework import serializers
 from ai.business_families import CONTROLLED_FAMILIES, normalize_family
 from ai.embeddings import enqueue_profile_embedding_refresh
+from ai.tender_categories import TENDER_CATEGORIES
 from .models import Utilisateur, Profil, ProfileResume, OrganizationProfile
 from opportunities.autocomplete.service import normalize_profile_terms
 from opportunities.utils.images import is_valid_image_url
@@ -328,6 +329,66 @@ def _normalize_profile_business_families(value):
     if not cleaned:
         raise serializers.ValidationError("Choose at least one sector.")
     return cleaned
+
+
+def _is_calls_for_tender_only(value):
+    cleaned = [str(item).strip().upper() for item in _coerce_text_list(value)]
+    return cleaned == ["CALLS_FOR_TENDER"]
+
+
+def _normalize_tender_preferences(value):
+    if value in (None, ""):
+        return {}
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Tender preferences must be an object.")
+
+    raw_categories = value.get("categories", [])
+    if raw_categories in (None, ""):
+        raw_categories = []
+    if not isinstance(raw_categories, list):
+        raise serializers.ValidationError({"categories": "Categories must be a list."})
+
+    cleaned_categories = []
+    seen = set()
+    for item in raw_categories:
+        if not isinstance(item, dict):
+            raise serializers.ValidationError({"categories": "Each category must be an object."})
+
+        category = str(item.get("category", "") or "").strip()
+        subcategory = str(item.get("subcategory", "") or "").strip()
+        if category not in TENDER_CATEGORIES:
+            raise serializers.ValidationError({"categories": "Select a valid tender category."})
+
+        if category == "Autre":
+            subcategory = ""
+        elif not subcategory:
+            raise serializers.ValidationError({"categories": "Select a tender subcategory."})
+        elif subcategory not in TENDER_CATEGORIES.get(category, []):
+            raise serializers.ValidationError({
+                "categories": "Selected subcategory does not belong to the selected category."
+            })
+
+        key = (category, subcategory)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned_categories.append({"category": category, "subcategory": subcategory})
+
+    max_budget = value.get("max_budget", None)
+    if max_budget in ("", None):
+        max_budget = None
+    else:
+        try:
+            max_budget = float(max_budget)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({"max_budget": "Enter a valid positive number."})
+        if max_budget < 0:
+            raise serializers.ValidationError({"max_budget": "Enter a valid positive number."})
+
+    return {
+        "categories": cleaned_categories,
+        "max_budget": max_budget,
+    }
 
 
 def _location_lookup_key(value):
@@ -756,7 +817,7 @@ class ProfilSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nom', 'prenom', 'competences', 'domaines_interet',
             'niveau_experience', 'annees_experience',
-            'opportunity_types', 'preferred_locations', 'preferred_location',
+            'opportunity_types', 'tender_preferences', 'preferred_locations', 'preferred_location',
             'remote_preference', 'work_mode_preferences',
             'compensation_expectation', 'compensation_min_expectation',
             'compensation_max_expectation', 'compensation_currency', 'compensation_period',
@@ -953,6 +1014,7 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
     competences = ProfileTextListField(required=False)
     domaines_interet = ProfileTextListField(required=False)
     opportunity_types = TextListField(required=False, allow_null=True)
+    tender_preferences = serializers.JSONField(required=False)
     preferred_locations = PreferredLocationsField(required=False)
     preferred_location = LegacyPreferredLocationField(required=False, write_only=True)
     remote_preference = LegacyRemotePreferenceField(required=False, allow_null=True)
@@ -977,6 +1039,7 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         'compensation_period',
         'employment_types',
         'target_roles',
+        'tender_preferences',
     }
 
     class Meta:
@@ -984,7 +1047,7 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'nom', 'prenom', 'competences', 'domaines_interet',
             'niveau_experience', 'annees_experience',
-            'opportunity_types', 'preferred_locations', 'preferred_location',
+            'opportunity_types', 'tender_preferences', 'preferred_locations', 'preferred_location',
             'remote_preference', 'work_mode_preferences',
             'compensation_expectation', 'compensation_min_expectation',
             'compensation_max_expectation', 'compensation_currency', 'compensation_period',
@@ -1016,6 +1079,8 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
         )
 
     def validate_domaines_interet(self, value):
+        if _is_calls_for_tender_only(self.initial_data.get("opportunity_types")) and not value:
+            return []
         return _normalize_profile_business_families(value)
 
     def validate_opportunity_types(self, value):
@@ -1030,6 +1095,9 @@ class ProfilUpdateSerializer(serializers.ModelSerializer):
             seen.add(canonical)
             cleaned.append(canonical)
         return cleaned
+
+    def validate_tender_preferences(self, value):
+        return _normalize_tender_preferences(value)
 
     def validate_employment_types(self, value):
         return value

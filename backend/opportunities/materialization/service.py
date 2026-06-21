@@ -2,6 +2,7 @@ import logging
 import hashlib
 import re
 import unicodedata
+from datetime import date
 from typing import Any
 
 from django.db import transaction
@@ -413,6 +414,18 @@ def _merge_duplicate_fields(
     if opportunity.date_limite is None and incoming_deadline is not None:
         opportunity.date_limite = incoming_deadline
         update_fields.append("date_limite")
+
+    effective_deadline = incoming_deadline or opportunity.date_limite
+    effective_type = defaults.get("type_opportunite") or opportunity.type_opportunite
+    if (
+        effective_type == TypeOpportunite.PROJET
+        and effective_deadline
+        and effective_deadline < date.today()
+        and opportunity.statut == StatutOpportunite.ACTIVE
+    ):
+        opportunity.statut = StatutOpportunite.EXPIREE
+        if "statut" not in update_fields:
+            update_fields.append("statut")
 
     incoming_publication_date = defaults.get("date_publication")
     if (

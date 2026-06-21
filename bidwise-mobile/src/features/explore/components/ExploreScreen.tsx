@@ -27,6 +27,7 @@ type ExploreScreenProps = {
   bannerMode: ExploreBannerMode;
   bannerPrimaryLabel: string;
   onBannerAction: () => void;
+  tenderOnly: boolean;
   items: Opportunity[];
   totalCount: number;
   initialLoading: boolean;
@@ -56,6 +57,7 @@ export default function ExploreScreen({
   bannerMode,
   bannerPrimaryLabel,
   onBannerAction,
+  tenderOnly,
   items,
   totalCount,
   initialLoading,
@@ -102,13 +104,16 @@ export default function ExploreScreen({
 
   const listHeader = (
     <View style={styles.headerContent}>
-      <ExploreBanner
-        mode={bannerMode}
-        primaryLabel={bannerPrimaryLabel}
-        onPrimaryAction={onBannerAction}
-      />
+      {!tenderOnly ? (
+        <ExploreBanner
+          mode={bannerMode}
+          primaryLabel={bannerPrimaryLabel}
+          onPrimaryAction={onBannerAction}
+        />
+      ) : null}
 
       <ExploreFiltersBar
+        tenderOnly={tenderOnly}
         cityInput={cityInput}
         onCityChange={setCityInput}
         typeFilter={typeFilter}

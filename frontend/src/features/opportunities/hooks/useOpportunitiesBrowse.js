@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import {
   DEFAULT_BROWSE_STATE,
@@ -7,17 +8,49 @@ import {
   FETCHING_SKELETON_DELAY_MS,
   FETCHING_SKELETON_MIN_VISIBLE_MS,
   FILTERS_STORAGE_KEY,
-  RESULTS_CACHE_STORAGE_KEY,
-  RESULTS_CACHE_TTL_MS,
   SEARCH_DEBOUNCE_MS,
 } from '../constants/opportunityBrowse.js';
-import { listOpportunities, listOpportunitySources } from '../services/opportunitiesService.js';
+import {
+  listOpportunities,
+  listOpportunitySources,
+} from '../services/opportunitiesService.js';
 
-const readPersistedBrowseState = () => {
+const URL_TYPE_FILTERS = new Set(['EMPLOI', 'STAGE', 'SAISONNIER', 'RECHERCHE', 'PROJET', 'FINANCEMENT']);
+const OPPORTUNITIES_STALE_TIME_MS = 5 * 60 * 1000;
+
+const readUrlTypeFilter = () => {
+  if (typeof window === 'undefined') return '';
+  const rawType = new URLSearchParams(window.location.search).get('type');
+  const normalized = String(rawType || '').trim().toUpperCase();
+  return URL_TYPE_FILTERS.has(normalized) ? normalized : '';
+};
+
+const getBrowseSort = ({ hasSearch, typeFilter }) => {
+  if (hasSearch) return 'relevance';
+  return typeFilter === 'PROJET' ? 'deadline' : DEFAULT_SORT;
+};
+
+const getDatePostedParam = ({ typeFilter, datePostedFilter }) =>
+  typeFilter === 'PROJET' ? '' : datePostedFilter;
+
+const getDeadlineWindowParam = ({ typeFilter, datePostedFilter }) =>
+  typeFilter === 'PROJET' ? datePostedFilter : '';
+
+const buildScopedStorageKey = (baseKey, storageScopeKey) =>
+  storageScopeKey ? `${baseKey}:${storageScopeKey}` : baseKey;
+
+const readPersistedBrowseState = (storageScopeKey = '') => {
   if (typeof window === 'undefined') return DEFAULT_BROWSE_STATE;
+  const urlTypeFilter = readUrlTypeFilter();
+  if (urlTypeFilter) {
+    return {
+      ...DEFAULT_BROWSE_STATE,
+      typeFilter: urlTypeFilter,
+    };
+  }
 
   try {
-    const raw = window.sessionStorage.getItem(FILTERS_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(buildScopedStorageKey(FILTERS_STORAGE_KEY, storageScopeKey));
     if (!raw) return DEFAULT_BROWSE_STATE;
 
     const parsed = JSON.parse(raw);
@@ -38,96 +71,18 @@ const readPersistedBrowseState = () => {
   }
 };
 
-const buildResultsCacheKey = ({
-  debouncedSearch,
-  typeFilter,
-  statusFilter,
-  cityFilter,
-  sourceFilter,
-  workModeFilter,
-  experienceFilter,
-  datePostedFilter,
-  page,
-}) => {
-  const hasSearch = String(debouncedSearch || '').trim().length > 0;
-  return JSON.stringify({
-    search: debouncedSearch,
-    type: typeFilter,
-    status: statusFilter,
-    city: cityFilter,
-    source: sourceFilter,
-    workMode: workModeFilter,
-    experienceLevel: experienceFilter,
-    datePosted: datePostedFilter,
-    sort: hasSearch ? 'relevance' : DEFAULT_SORT,
-    page,
-    pageSize: DEFAULT_PAGE_SIZE,
-  });
+const getQueryErrorMessage = (error) => {
+  if (!error) return '';
+  return error?.response?.data?.detail || 'Unable to load opportunities. Please try again.';
 };
 
-const readResultsCacheStore = () => {
-  if (typeof window === 'undefined') return {};
-
-  try {
-    const raw = window.sessionStorage.getItem(RESULTS_CACHE_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const readCachedResults = (cacheKey) => {
-  const cached = readResultsCacheStore()[cacheKey];
-  if (!cached || typeof cached !== 'object') return null;
-  if (Date.now() - Number(cached.cachedAt || 0) > RESULTS_CACHE_TTL_MS) return null;
-  if (!Array.isArray(cached.results)) return null;
-
-  return cached;
-};
-
-const writeCachedResults = (cacheKey, data) => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    const store = readResultsCacheStore();
-    const nextStore = {
-      ...store,
-      [cacheKey]: {
-        cachedAt: Date.now(),
-        count: data.count ?? 0,
-        next: data.next ?? null,
-        previous: data.previous ?? null,
-        facets: data.facets ?? {},
-        results: data.results ?? [],
-      },
-    };
-
-    const entries = Object.entries(nextStore)
-      .filter(([, value]) => Date.now() - Number(value?.cachedAt || 0) <= RESULTS_CACHE_TTL_MS)
-      .sort(([, a], [, b]) => Number(b?.cachedAt || 0) - Number(a?.cachedAt || 0))
-      .slice(0, 12);
-
-    window.sessionStorage.setItem(RESULTS_CACHE_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
-  } catch {
-    // Ignore storage errors; the API result is still rendered normally.
-  }
-};
-
-export const useOpportunitiesBrowse = () => {
-  const [initialState] = useState(() => readPersistedBrowseState());
-  const initialCacheKey = buildResultsCacheKey({
-    debouncedSearch: initialState.searchInput.trim(),
-    typeFilter: initialState.typeFilter,
-    statusFilter: initialState.statusFilter,
-    cityFilter: initialState.cityFilter,
-    sourceFilter: initialState.sourceFilter,
-    workModeFilter: initialState.workModeFilter,
-    experienceFilter: initialState.experienceFilter,
-    datePostedFilter: initialState.datePostedFilter,
-    page: initialState.page,
-  });
-  const [initialCachedResults] = useState(() => readCachedResults(initialCacheKey));
+export const useOpportunitiesBrowse = ({
+  enabled = true,
+  lockedTypeFilter = '',
+  storageScopeKey = '',
+} = {}) => {
+  const [initialState] = useState(() => readPersistedBrowseState(storageScopeKey));
+  const [activeStorageScopeKey, setActiveStorageScopeKey] = useState(storageScopeKey);
   const [searchInput, setSearchInput] = useState(initialState.searchInput);
   const [debouncedSearch, setDebouncedSearch] = useState(initialState.searchInput.trim());
   const [typeFilter, setTypeFilter] = useState(initialState.typeFilter);
@@ -138,26 +93,109 @@ export const useOpportunitiesBrowse = () => {
   const [experienceFilter, setExperienceFilter] = useState(initialState.experienceFilter);
   const [datePostedFilter, setDatePostedFilter] = useState(initialState.datePostedFilter);
   const [page, setPage] = useState(initialState.page);
-
-  const [count, setCount] = useState(initialCachedResults?.count ?? 0);
-  const [opportunities, setOpportunities] = useState(initialCachedResults?.results ?? []);
   const [cityOptions, setCityOptions] = useState([]);
-  const [sourceOptions, setSourceOptions] = useState([]);
-  const [facets, setFacets] = useState(initialCachedResults?.facets ?? {});
-  const [next, setNext] = useState(initialCachedResults?.next ?? null);
-  const [previous, setPrevious] = useState(initialCachedResults?.previous ?? null);
-  const [loading, setLoading] = useState(!initialCachedResults);
-  const [isFetching, setIsFetching] = useState(false);
   const [showFetchingSpinner, setShowFetchingSpinner] = useState(false);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(Boolean(initialCachedResults));
-  const [error, setError] = useState('');
-  const [reloadToken, setReloadToken] = useState(0);
+  const effectiveTypeFilter = lockedTypeFilter || typeFilter;
   const hasInitializedSearchRef = useRef(false);
+  const previousStorageScopeKeyRef = useRef(storageScopeKey);
   const spinnerShownAtRef = useRef(0);
   const spinnerShowTimeoutRef = useRef(null);
   const spinnerHideTimeoutRef = useRef(null);
+  const storageScopeReady = activeStorageScopeKey === storageScopeKey;
+  const queryEnabled = Boolean(enabled && storageScopeReady);
+  const hasSearch = debouncedSearch.length > 0;
+  const datePostedParam = getDatePostedParam({
+    typeFilter: effectiveTypeFilter,
+    datePostedFilter,
+  });
+  const deadlineWindowParam = getDeadlineWindowParam({
+    typeFilter: effectiveTypeFilter,
+    datePostedFilter,
+  });
+  const browseSort = getBrowseSort({ hasSearch, typeFilter: effectiveTypeFilter });
+  const opportunityQueryParams = useMemo(
+    () => ({
+      scope: activeStorageScopeKey,
+      search: debouncedSearch,
+      type: effectiveTypeFilter,
+      status: statusFilter,
+      city: cityFilter,
+      source: sourceFilter,
+      workMode: workModeFilter,
+      experience: experienceFilter,
+      datePosted: datePostedParam,
+      deadlineWindow: deadlineWindowParam,
+      sort: browseSort,
+      page,
+      pageSize: DEFAULT_PAGE_SIZE,
+    }),
+    [
+      activeStorageScopeKey,
+      browseSort,
+      cityFilter,
+      datePostedParam,
+      deadlineWindowParam,
+      debouncedSearch,
+      effectiveTypeFilter,
+      experienceFilter,
+      page,
+      sourceFilter,
+      statusFilter,
+      workModeFilter,
+    ],
+  );
+  const opportunitiesQuery = useQuery({
+    queryKey: ['opportunities', 'list', opportunityQueryParams],
+    queryFn: () =>
+      listOpportunities({
+        search: opportunityQueryParams.search,
+        type: opportunityQueryParams.type,
+        status: opportunityQueryParams.status,
+        city: opportunityQueryParams.city,
+        source: opportunityQueryParams.source,
+        workMode: opportunityQueryParams.workMode,
+        experienceLevel: opportunityQueryParams.experience,
+        datePosted: opportunityQueryParams.datePosted,
+        deadlineWindow: opportunityQueryParams.deadlineWindow,
+        sort: opportunityQueryParams.sort,
+        page: opportunityQueryParams.page,
+        pageSize: opportunityQueryParams.pageSize,
+      }),
+    enabled: queryEnabled,
+    staleTime: OPPORTUNITIES_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
+  const sourcesQuery = useQuery({
+    queryKey: ['opportunities', 'sources'],
+    queryFn: listOpportunitySources,
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    enabled: queryEnabled,
+  });
+  const sourceOptions = sourcesQuery.data ?? [];
+  const data = opportunitiesQuery.data;
+  const opportunities = data?.results ?? [];
+  const count = data?.count ?? 0;
+  const facets = data?.facets ?? {};
+  const next = data?.next ?? null;
+  const previous = data?.previous ?? null;
+  const activeQuery = opportunitiesQuery;
+  const loading = Boolean(queryEnabled && activeQuery.isLoading);
+  const isFetching = Boolean(queryEnabled && activeQuery.isFetching);
+  const error = getQueryErrorMessage(activeQuery.error);
 
   useEffect(() => {
+    if (!sourceFilter) return;
+    if (sourceOptions.length === 0) return;
+    if (!sourceOptions.some((source) => String(source.id) === sourceFilter)) {
+      setSourceFilter('');
+      setPage(1);
+    }
+  }, [sourceOptions, sourceFilter]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+
     const timeoutId = setTimeout(() => {
       setDebouncedSearch(searchInput.trim());
 
@@ -169,14 +207,34 @@ export const useOpportunitiesBrowse = () => {
     }, SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [searchInput]);
+  }, [enabled, searchInput]);
 
   useEffect(() => {
+    if (previousStorageScopeKeyRef.current === storageScopeKey) return;
+    previousStorageScopeKeyRef.current = storageScopeKey;
+
+    const nextState = readPersistedBrowseState(storageScopeKey);
+    hasInitializedSearchRef.current = false;
+    setSearchInput(nextState.searchInput);
+    setDebouncedSearch(nextState.searchInput.trim());
+    setTypeFilter(nextState.typeFilter);
+    setStatusFilter(nextState.statusFilter);
+    setCityFilter(nextState.cityFilter);
+    setSourceFilter(nextState.sourceFilter);
+    setWorkModeFilter(nextState.workModeFilter);
+    setExperienceFilter(nextState.experienceFilter);
+    setDatePostedFilter(nextState.datePostedFilter);
+    setPage(nextState.page);
+    setActiveStorageScopeKey(storageScopeKey);
+  }, [storageScopeKey]);
+
+  useEffect(() => {
+    if (!enabled || !storageScopeReady) return;
     if (typeof window === 'undefined') return;
 
     const payload = {
       searchInput,
-      typeFilter,
+      typeFilter: effectiveTypeFilter,
       statusFilter,
       cityFilter,
       sourceFilter,
@@ -186,47 +244,46 @@ export const useOpportunitiesBrowse = () => {
       page,
     };
     try {
-      window.sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(payload));
+      window.sessionStorage.setItem(
+        buildScopedStorageKey(FILTERS_STORAGE_KEY, storageScopeKey),
+        JSON.stringify(payload),
+      );
     } catch {
       // Ignore storage errors (e.g., private mode restrictions).
     }
   }, [
-    searchInput,
-    typeFilter,
-    statusFilter,
     cityFilter,
-    sourceFilter,
-    workModeFilter,
-    experienceFilter,
     datePostedFilter,
+    effectiveTypeFilter,
+    enabled,
+    experienceFilter,
     page,
+    searchInput,
+    sourceFilter,
+    statusFilter,
+    storageScopeKey,
+    storageScopeReady,
+    workModeFilter,
   ]);
 
   useEffect(() => {
-    let isCancelled = false;
+    if (!data) return;
 
-    const fetchSources = async () => {
-      try {
-        const sources = await listOpportunitySources();
-        if (!isCancelled) {
-          setSourceOptions(sources);
-          if (sourceFilter && !sources.some((source) => String(source.id) === sourceFilter)) {
-            setSourceFilter('');
-            setPage(1);
-          }
-        }
-      } catch {
-        if (!isCancelled) {
-          setSourceOptions([]);
-        }
-      }
-    };
+    const facetCities = (data.facets?.locations ?? [])
+      .map((item) => String(item?.key || '').trim())
+      .filter(Boolean);
+    if (facetCities.length > 0) {
+      setCityOptions(facetCities);
+      return;
+    }
 
-    fetchSources();
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
+    const extractedCities = (data.results ?? [])
+      .map((item) => String(item?.ville || '').trim())
+      .filter(Boolean);
+    if (extractedCities.length > 0) {
+      setCityOptions(Array.from(new Set(extractedCities)).sort((a, b) => a.localeCompare(b)));
+    }
+  }, [data]);
 
   useEffect(() => {
     return () => {
@@ -291,121 +348,9 @@ export const useOpportunitiesBrowse = () => {
     };
   }, [isFetching, showFetchingSpinner]);
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    const fetchData = async () => {
-      const cacheKey = buildResultsCacheKey({
-        debouncedSearch,
-        typeFilter,
-        statusFilter,
-        cityFilter,
-        sourceFilter,
-        workModeFilter,
-        experienceFilter,
-        datePostedFilter,
-        page,
-      });
-      const cachedResults = readCachedResults(cacheKey);
-
-      try {
-        if (cachedResults) {
-          setCount(cachedResults.count ?? 0);
-          setNext(cachedResults.next ?? null);
-          setPrevious(cachedResults.previous ?? null);
-          setFacets(cachedResults.facets ?? {});
-          setOpportunities(cachedResults.results ?? []);
-          setHasLoadedOnce(true);
-          setLoading(false);
-          setIsFetching(true);
-        } else if (!hasLoadedOnce) {
-          setLoading(true);
-        } else {
-          setIsFetching(true);
-        }
-        setError('');
-
-        const hasSearch = debouncedSearch.length > 0;
-        const data = await listOpportunities({
-          search: debouncedSearch,
-          type: typeFilter,
-          status: statusFilter,
-          city: cityFilter,
-          source: sourceFilter,
-          workMode: workModeFilter,
-          experienceLevel: experienceFilter,
-          datePosted: datePostedFilter,
-          sort: hasSearch ? 'relevance' : DEFAULT_SORT,
-          page,
-          pageSize: DEFAULT_PAGE_SIZE,
-        });
-
-        if (isCancelled) return;
-
-        setCount(data.count ?? 0);
-        setNext(data.next ?? null);
-        setPrevious(data.previous ?? null);
-        setFacets(data.facets ?? {});
-        setOpportunities(data.results ?? []);
-        setHasLoadedOnce(true);
-        writeCachedResults(cacheKey, data);
-
-        const facetCities = (data.facets?.locations ?? [])
-          .map((item) => String(item?.key || '').trim())
-          .filter(Boolean);
-        if (facetCities.length > 0) {
-          setCityOptions(facetCities);
-        } else {
-          const extractedCities = (data.results ?? [])
-            .map((item) => String(item?.ville || '').trim())
-            .filter(Boolean);
-          if (extractedCities.length > 0) {
-            setCityOptions(Array.from(new Set(extractedCities)).sort((a, b) => a.localeCompare(b)));
-          }
-        }
-      } catch (err) {
-        if (isCancelled) return;
-        const message =
-          err?.response?.data?.detail ||
-          'Unable to load opportunities. Please try again.';
-        setError(message);
-
-        // Preserve existing data on incremental fetches to avoid list flashing.
-        if (!hasLoadedOnce) {
-          setOpportunities([]);
-          setFacets({});
-          setCount(0);
-          setNext(null);
-          setPrevious(null);
-        }
-      } finally {
-        if (!isCancelled) {
-          setLoading(false);
-          setIsFetching(false);
-        }
-      }
-    };
-
-    fetchData();
-    return () => {
-      isCancelled = true;
-    };
-  }, [
-    debouncedSearch,
-    typeFilter,
-    statusFilter,
-    cityFilter,
-    sourceFilter,
-    workModeFilter,
-    experienceFilter,
-    datePostedFilter,
-    page,
-    reloadToken,
-  ]);
-
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(count / DEFAULT_PAGE_SIZE)),
-    [count]
+    [count],
   );
 
   const setTypeFilterAndResetPage = (value) => {
@@ -456,7 +401,7 @@ export const useOpportunitiesBrowse = () => {
     setPage(1);
   };
 
-  const refetch = () => setReloadToken((prev) => prev + 1);
+  const refetch = () => activeQuery.refetch();
 
   return {
     opportunities,
@@ -476,7 +421,7 @@ export const useOpportunitiesBrowse = () => {
     error,
     searchInput,
     setSearchInput,
-    typeFilter,
+    typeFilter: effectiveTypeFilter,
     setTypeFilter: setTypeFilterAndResetPage,
     statusFilter,
     setStatusFilter: setStatusFilterAndResetPage,

@@ -19,6 +19,7 @@ FACET_QUERY_PARAMS = (
     "work_mode",
     "experience_level",
     "date_posted",
+    "deadline_window",
     "sector",
     "industry",
     "status",

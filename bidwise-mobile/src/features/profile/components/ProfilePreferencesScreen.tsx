@@ -14,6 +14,9 @@ import {
 import { useProfileEditor } from '@/src/features/profile/hooks/useProfileEditor';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
+const isCallsForTenderOnly = (values: string[]) =>
+  values.length === 1 && values[0] === 'CALLS_FOR_TENDER';
+
 export default function ProfilePreferencesScreen() {
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
@@ -65,6 +68,7 @@ export default function ProfilePreferencesScreen() {
   const visibleEmploymentTypes = editorState.employmentTypes.filter((value) =>
     visibleEmploymentTypeValues.has(value),
   );
+  const tenderOnly = isCallsForTenderOnly(editorState.opportunityTypes);
   const setOpportunityTypes = (values: string[]) => {
     const allowedEmploymentTypes = new Set(
       getEmploymentTypeOptionsForOpportunityTypes(values).map((option) => option.value),
@@ -72,14 +76,16 @@ export default function ProfilePreferencesScreen() {
     setStateField('opportunityTypes', values);
     setStateField(
       'employmentTypes',
-      editorState.employmentTypes.filter((value) => allowedEmploymentTypes.has(value)),
+      isCallsForTenderOnly(values)
+        ? []
+        : editorState.employmentTypes.filter((value) => allowedEmploymentTypes.has(value)),
     );
   };
 
   return (
     <ProfileEditorPage
-      title="Preferences"
-      subtitle="Choose the opportunity conditions you want BidWise to prioritize."
+      title={tenderOnly ? 'Tender preferences' : 'Preferences'}
+      subtitle={tenderOnly ? 'Choose the public tender filters BidWise should open first.' : 'Choose the opportunity conditions you want BidWise to prioritize.'}
       loading={loading}
       onRefresh={refreshProfile}
       onSave={handleSave}
@@ -89,8 +95,8 @@ export default function ProfilePreferencesScreen() {
       successMessage={successMessage}
     >
       <ProfileSection
-        title="Opportunity fit"
-        description="What kind of opportunities should appear first."
+        title={tenderOnly ? 'Tender filters' : 'Opportunity fit'}
+        description={tenderOnly ? 'Calls for tender use type and optional region filters only.' : 'What kind of opportunities should appear first.'}
         defaultOpen
         colors={{ card: cardColor, border: borderColor, text: textColor, muted: mutedColor }}
       >
@@ -104,7 +110,9 @@ export default function ProfilePreferencesScreen() {
           />
         </View>
         <View style={styles.fieldBlock}>
-          <Text style={[styles.fieldLabel, { color: textColor }]}>Preferred locations</Text>
+          <Text style={[styles.fieldLabel, { color: textColor }]}>
+            {tenderOnly ? 'Preferred tender regions' : 'Preferred locations'}
+          </Text>
           <View style={styles.locationInputRow}>
             <TextInput
               value={locationInput}
@@ -165,6 +173,7 @@ export default function ProfilePreferencesScreen() {
         </View>
       </ProfileSection>
 
+      {!tenderOnly ? (
       <ProfileSection
         title="Work conditions"
         description="Work mode, contract preferences, and salary expectations."
@@ -211,6 +220,7 @@ export default function ProfilePreferencesScreen() {
           cardColor={cardColor}
         />
       </ProfileSection>
+      ) : null}
     </ProfileEditorPage>
   );
 }

@@ -8,6 +8,9 @@ import { BUSINESS_FAMILY_OPTIONS } from '@/src/features/profile/constants/profil
 import { useProfileEditor } from '@/src/features/profile/hooks/useProfileEditor';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
+const isCallsForTenderOnly = (values: string[]) =>
+  values.length === 1 && values[0] === 'CALLS_FOR_TENDER';
+
 export default function ProfileCareerSignalsScreen() {
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
@@ -34,11 +37,12 @@ export default function ProfileCareerSignalsScreen() {
     handleSave,
     refreshProfile,
   } = useProfileEditor();
+  const tenderOnly = isCallsForTenderOnly(editorState.opportunityTypes);
 
   return (
     <ProfileEditorPage
       title="Career signals"
-      subtitle="Keep your skills, target roles, and sectors aligned so recommendations stay relevant."
+      subtitle={tenderOnly ? 'Keep optional sectors ready for tender filtering.' : 'Keep your skills, target roles, and sectors aligned so recommendations stay relevant.'}
       loading={loading}
       onRefresh={refreshProfile}
       onSave={handleSave}
@@ -48,11 +52,13 @@ export default function ProfileCareerSignalsScreen() {
       successMessage={successMessage}
     >
       <ProfileSection
-        title="Matching signals"
-        description="These signals feed recommendation and recruiter discovery."
+        title={tenderOnly ? 'Tender filters' : 'Matching signals'}
+        description={tenderOnly ? 'Sectors are optional and help you filter public tenders faster.' : 'These signals feed recommendation and recruiter discovery.'}
         defaultOpen
         colors={{ card: cardColor, border: borderColor, text: textColor, muted: mutedColor }}
       >
+        {!tenderOnly ? (
+        <>
         <ProfileAutocompleteInput
           label="Target roles"
           termType="role"
@@ -70,6 +76,8 @@ export default function ProfileCareerSignalsScreen() {
           placeholder="Python, React, SQL..."
           colors={colors}
         />
+        </>
+        ) : null}
         <View style={styles.fieldBlock}>
           <Text style={[styles.fieldLabel, { color: textColor }]}>Sectors / Interests</Text>
           <PreferenceChipGroup

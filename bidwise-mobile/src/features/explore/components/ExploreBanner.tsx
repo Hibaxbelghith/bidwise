@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
-export type ExploreBannerMode = 'guest' | 'incomplete_profile' | 'missing_cv' | 'ready';
+export type ExploreBannerMode = 'guest' | 'incomplete_profile' | 'missing_cv' | 'ready' | 'tender';
 
 type ExploreBannerProps = {
   mode: ExploreBannerMode;
@@ -31,6 +31,11 @@ const COPY: Record<ExploreBannerMode, { eyebrow: string; title: string; descript
     eyebrow: 'AI ready',
     title: 'Your personalized matches are waiting in For You',
     description: 'Explore everything, or jump straight into your recommendation feed for the best-ranked opportunities.',
+  },
+  tender: {
+    eyebrow: 'Public tenders',
+    title: 'Browse calls for tender by region and deadline',
+    description: 'Calls for tender are filtered by type, region, keywords, and deadline. No CV matching is required.',
   },
 };
 
@@ -63,7 +68,7 @@ export default function ExploreBanner({
       <Text style={[styles.description, { color: mutedColor }]}>{copy.description}</Text>
 
       <View style={styles.bannerFooter}>
-        {mode !== 'ready' ? (
+        {mode !== 'ready' && mode !== 'tender' ? (
           <Text style={[styles.footerHint, { color: mutedColor }]}>
             Explore now. Personalize when ready.
           </Text>

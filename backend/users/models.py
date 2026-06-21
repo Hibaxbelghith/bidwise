@@ -161,6 +161,12 @@ class Profil(models.Model):
     )
 
     # ── Onboarding: Location & Remote (Step 1) ─────────────
+    tender_preferences = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Calls-for-tender preferences: categories and optional max budget."
+    )
+
     preferred_locations = models.JSONField(
         default=list, blank=True,
         help_text="Preferred Tunisian cities/regions and custom locations"

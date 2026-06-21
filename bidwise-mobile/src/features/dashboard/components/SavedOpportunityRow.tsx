@@ -3,12 +3,18 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { Opportunity } from '@/src/features/opportunities/services/opportunitiesService';
 import {
+  formatDate,
   formatPublishedAgo,
   formatStatusLabel,
   formatTypeLabel,
   getOrganizationLabel,
   getOpportunityTitle,
 } from '@/src/features/opportunities/utils/opportunityFormatters';
+import {
+  formatDisplayValue,
+  getExtraData,
+  getProjectDocuments,
+} from '@/src/features/opportunities/utils/opportunityHelpers';
 
 type SavedOpportunityRowProps = {
   item: Opportunity;
@@ -30,12 +36,35 @@ export default function SavedOpportunityRow({
   onPress,
 }: SavedOpportunityRowProps) {
   const title = getOpportunityTitle(item);
+  const isProject = String(item.type_opportunite || item.type || '').trim().toUpperCase() === 'PROJET';
   const organization = getOrganizationLabel(item);
-  const location = String(item.ville || item.location || '').trim();
+  const extraData = getExtraData(item);
+  const documents = getProjectDocuments(item);
+  const lots = Array.isArray(extraData.lots) ? extraData.lots.filter(Boolean) : [];
+
+  const location = isProject
+    ? formatDisplayValue(extraData.region || extraData.region_execution || item.ville || item.location)
+    : String(item.ville || item.location || '').trim();
+
   const metaLabel = [formatTypeLabel(item.type_opportunite || item.type), location].filter(Boolean).join(' • ');
-  const secondaryMeta = [organization, formatStatusLabel(item.statut), formatPublishedAgo(item.date_publication)]
-    .filter(Boolean)
-    .join(' • ');
+
+  const secondaryMeta = isProject
+    ? [
+        organization ? `Acheteur: ${organization}` : '',
+        documents.length ? `${documents.length} file${documents.length > 1 ? 's' : ''}` : '',
+        lots.length ? `${lots.length} lot${lots.length > 1 ? 's' : ''}` : '',
+      ]
+        .filter(Boolean)
+        .join(' • ')
+    : [organization, formatStatusLabel(item.statut), formatPublishedAgo(item.date_publication)]
+        .filter(Boolean)
+        .join(' • ');
+
+  const tertiaryMeta = isProject
+    ? [formatStatusLabel(item.statut), item.date_limite ? `Deadline ${formatDate(item.date_limite)}` : '']
+        .filter(Boolean)
+        .join(' • ')
+    : '';
 
   return (
     <Pressable
@@ -55,6 +84,11 @@ export default function SavedOpportunityRow({
         {secondaryMeta ? (
           <Text numberOfLines={1} style={[styles.meta, { color: mutedColor }]}>
             {secondaryMeta}
+          </Text>
+        ) : null}
+        {tertiaryMeta ? (
+          <Text numberOfLines={1} style={[styles.meta, { color: mutedColor }]}>
+            {tertiaryMeta}
           </Text>
         ) : null}
       </View>

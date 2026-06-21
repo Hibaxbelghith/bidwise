@@ -23,6 +23,7 @@ import {
   toggleSavedOpportunity,
 } from '../utils/savedOpportunitiesStorage';
 import OpportunityLogo from './OpportunityLogo';
+import TenderOpportunityCard from './TenderOpportunityCard';
 
 interface OpportunityCardProps {
   item: Opportunity;
@@ -67,6 +68,7 @@ export default function OpportunityCard({
   onRequireLogin,
 }: OpportunityCardProps) {
   const [isSaved, setIsSaved] = useState(false);
+  const isProject = String(item.type_opportunite || '').trim().toUpperCase() === 'PROJET';
   const organizationLabel = getOrganizationLabel(item);
   const typeLabel = formatTypeLabel(item.type_opportunite);
   const statusLabel = formatStatusLabel(item.statut);
@@ -124,6 +126,22 @@ export default function OpportunityCard({
     const nextValue = await toggleSavedOpportunity(item.id);
     setIsSaved(nextValue);
   };
+
+  if (isProject) {
+    return (
+      <TenderOpportunityCard
+        item={item}
+        cardColor={cardColor}
+        borderColor={borderColor}
+        textColor={textColor}
+        mutedColor={mutedColor}
+        tintColor={tintColor}
+        isUserAuthenticated={isUserAuthenticated}
+        onPress={onPress}
+        onRequireLogin={onRequireLogin}
+      />
+    );
+  }
 
   return (
     <Pressable

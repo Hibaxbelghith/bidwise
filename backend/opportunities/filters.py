@@ -31,6 +31,7 @@ class OpportuniteFilterSet(django_filters.FilterSet):
     work_mode = django_filters.CharFilter(method="filter_work_mode")
     experience_level = django_filters.CharFilter(method="filter_experience_level")
     date_posted = django_filters.CharFilter(method="filter_date_posted")
+    deadline_window = django_filters.CharFilter(method="filter_deadline_window")
     sector = django_filters.CharFilter(method="filter_sector")
     industry = django_filters.CharFilter(method="filter_sector")
 
@@ -117,6 +118,20 @@ class OpportuniteFilterSet(django_filters.FilterSet):
         cutoff = timezone.localdate() - timedelta(days=days)
         return queryset.filter(date_publication__gte=cutoff)
 
+    def filter_deadline_window(self, queryset, _name, value):
+        normalized = str(value or "").strip().lower()
+        days_by_value = {
+            "week": 7,
+            "month": 30,
+        }
+        days = days_by_value.get(normalized)
+        if not days:
+            return queryset
+
+        today = timezone.localdate()
+        deadline = today + timedelta(days=days)
+        return queryset.filter(date_limite__gte=today, date_limite__lte=deadline)
+
     def filter_sector(self, queryset, _name, value):
         raw_value = str(value or "").strip()
         lookup_key = normalize_lookup_key(raw_value)
@@ -155,6 +170,7 @@ class OpportuniteFilterSet(django_filters.FilterSet):
             "work_mode",
             "experience_level",
             "date_posted",
+            "deadline_window",
             "sector",
             "industry",
         ]

@@ -79,6 +79,11 @@ const formatSalarySummary = (profile?: BidWiseProfile) => {
   return 'Salary not set';
 };
 
+const isTenderOnlyProfile = (profile?: BidWiseProfile) => {
+  const types = normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS);
+  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+};
+
 export default function ProfileScreen({ embedded = false }: ProfileScreenProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -93,16 +98,20 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
   const borderColor = useThemeColor({}, 'border');
 
   const completion = profile?.profile_completion || { score: 0, missing: [] };
+  const tenderOnly = isTenderOnlyProfile(profile);
   const displayName =
     [profile?.prenom, profile?.nom].filter(Boolean).join(' ')
     || typedUser?.email
     || 'BidWise profile';
   const subtitle =
     typedUser?.email
-    || 'Keep your signals clear so matching and recruiter discovery stay accurate.';
+    || (tenderOnly
+      ? 'Keep your public tender filters simple and clear.'
+      : 'Keep your signals clear so matching and recruiter discovery stay accurate.');
 
   const basicSummary = useMemo(() => {
     const nameSummary = [profile?.prenom, profile?.nom].filter(Boolean).join(' ').trim() || 'Add your name';
+    if (tenderOnly) return nameSummary;
     const normalizedExperience = String(profile?.niveau_experience || '').trim().toUpperCase();
     const experience = EXPERIENCE_LEVEL_LABELS[normalizedExperience]
       || formatPreference(profile?.niveau_experience)
@@ -110,13 +119,14 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
     const years =
       profile?.annees_experience != null ? `${profile.annees_experience} year(s)` : 'Years not set';
     return `${nameSummary} • ${experience} • ${years}`;
-  }, [profile?.annees_experience, profile?.niveau_experience, profile?.nom, profile?.prenom]);
+  }, [profile?.annees_experience, profile?.niveau_experience, profile?.nom, profile?.prenom, tenderOnly]);
 
   const preferencesSummary = useMemo(() => {
     const types = summarizeList(formatOpportunityTypes(profile?.opportunity_types), 'Opportunity types not set');
     const locations = summarizeList(normalizeLocations(profile?.preferred_locations), 'Locations not set');
+    if (tenderOnly) return `${types} - ${locations}`;
     return `${types} • ${locations} • ${formatSalarySummary(profile)}`;
-  }, [profile]);
+  }, [profile, tenderOnly]);
 
   const careerSummary = useMemo(() => {
     const roles = summarizeList(normalizeTextList(profile?.target_roles), 'Roles not set');
@@ -134,6 +144,7 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
 
   const missing = Array.isArray(completion.missing)
     ? completion.missing
+      .filter((item) => !tenderOnly || ['first_name', 'last_name', 'opportunity_types'].includes(item))
       .slice(0, 3)
       .map((item) => PROFILE_COMPLETION_LABELS[item] || formatPreference(item))
     : [];
@@ -160,7 +171,11 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
           <View style={styles.completionTop}>
             <Text style={[styles.completionScore, { color: textColor }]}>{completion.score}% complete</Text>
             <Text style={[styles.completionHint, { color: mutedColor }]}>
-              {missing.length ? `Next: ${missing.join(', ')}` : 'Your main profile signals are ready.'}
+              {missing.length
+                ? `Next: ${missing.join(', ')}`
+                : tenderOnly
+                  ? 'Your tender profile is ready.'
+                  : 'Your main profile signals are ready.'}
             </Text>
           </View>
           <View style={[styles.progressTrack, { backgroundColor: borderColor }]}>
@@ -180,34 +195,40 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
       <View style={styles.sectionList}>
         <ProfileSectionLinkCard
           title="Basic information"
-          description="Name and experience level."
+          description={tenderOnly ? 'Name and email.' : 'Name and experience level.'}
           summary={basicSummary}
           onPress={() => openRoute('/profile-basic')}
         />
         <ProfileSectionLinkCard
-          title="Preferences"
-          description="Locations, work mode, and salary."
+          title={tenderOnly ? 'Tender preferences' : 'Preferences'}
+          description={tenderOnly ? 'Opportunity type and preferred regions.' : 'Locations, work mode, and salary.'}
           summary={preferencesSummary}
           onPress={() => openRoute('/profile-preferences')}
         />
+        {!tenderOnly ? (
         <ProfileSectionLinkCard
           title="Career signals"
           description="Roles, skills, and sectors."
           summary={careerSummary}
           onPress={() => openRoute('/profile-career')}
         />
+        ) : null}
+        {!tenderOnly ? (
         <ProfileSectionLinkCard
           title="Resume"
           description="CV used for applications and AI extraction."
           summary={resumeSummary}
           onPress={() => openRoute('/profile-resume')}
         />
+        ) : null}
+        {!tenderOnly ? (
         <ProfileSectionLinkCard
           title="Settings"
           description="Recruiter visibility and account status."
           summary={settingsSummary}
           onPress={() => openRoute('/settings')}
         />
+        ) : null}
       </View>
     </ScrollView>
   );

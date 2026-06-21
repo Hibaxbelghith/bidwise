@@ -10,6 +10,7 @@ import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 import {
   buildExploreSourceFilters,
   EXPLORE_DATE_POSTED_FILTERS,
+  EXPLORE_DEADLINE_FILTERS,
   EXPLORE_TYPE_FILTERS,
   EXPLORE_WORK_MODE_FILTERS,
 } from '../constants/exploreFilters';
@@ -34,6 +35,7 @@ type ExploreFiltersBarProps = {
   textColor: string;
   mutedColor: string;
   tintColor: string;
+  tenderOnly?: boolean;
 };
 
 type FilterChipProps = {
@@ -97,6 +99,7 @@ export default function ExploreFiltersBar({
   textColor,
   mutedColor,
   tintColor,
+  tenderOnly = false,
 }: ExploreFiltersBarProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCities, setShowCities] = useState(false);
@@ -106,6 +109,12 @@ export default function ExploreFiltersBar({
     () => buildExploreSourceFilters(sourceOptions).slice(0, 5),
     [sourceOptions],
   );
+  const typeFilters = useMemo(() => {
+    return tenderOnly
+      ? EXPLORE_TYPE_FILTERS.filter((option) => option.value === 'PROJET')
+      : EXPLORE_TYPE_FILTERS;
+  }, [tenderOnly]);
+  const dateFilters = tenderOnly ? EXPLORE_DEADLINE_FILTERS : EXPLORE_DATE_POSTED_FILTERS;
 
   const selectedSourceLabel = useMemo(() => {
     return sourceFilters.find((option) => option.value === sourceFilter)?.label || 'All sources';
@@ -119,9 +128,14 @@ export default function ExploreFiltersBar({
 
   const selectedDatePostedLabel = useMemo(() => {
     return (
-      EXPLORE_DATE_POSTED_FILTERS.find((option) => option.value === datePostedFilter)?.label || 'Any time'
+      dateFilters.find((option) => option.value === datePostedFilter)?.label ||
+      (tenderOnly ? 'Any deadline' : 'Any time')
     );
-  }, [datePostedFilter]);
+  }, [dateFilters, datePostedFilter, tenderOnly]);
+
+  const filterSummary = tenderOnly
+    ? selectedDatePostedLabel
+    : `${selectedWorkModeLabel} · ${selectedDatePostedLabel} · ${selectedSourceLabel}`;
 
   return (
     <View style={[styles.card, { backgroundColor: cardColor, borderColor }]}>
@@ -137,12 +151,16 @@ export default function ExploreFiltersBar({
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-        {EXPLORE_TYPE_FILTERS.map((option) => (
+        {typeFilters.map((option) => (
           <FilterChip
             key={option.value}
             label={option.label}
             selected={option.value === typeFilter}
-            onPress={() => onTypeChange(option.value)}
+            onPress={() => {
+              if (!tenderOnly) {
+                onTypeChange(option.value);
+              }
+            }}
             borderColor={borderColor}
             textColor={textColor}
             tintColor={tintColor}
@@ -175,7 +193,7 @@ export default function ExploreFiltersBar({
         >
           <Ionicons name="options-outline" size={16} color={mutedColor} />
           <Text numberOfLines={1} style={[styles.quickFilterText, { color: textColor }]}>
-            More filters
+            {tenderOnly ? 'Deadline' : 'More filters'}
           </Text>
           <Ionicons
             name={showAdvanced ? 'chevron-up-outline' : 'chevron-down-outline'}
@@ -225,29 +243,33 @@ export default function ExploreFiltersBar({
 
       {showAdvanced ? (
         <View style={styles.advancedPanel}>
-          <View style={styles.advancedSection}>
-            <Text style={[styles.sectionTitle, { color: mutedColor }]}>Work mode</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              {EXPLORE_WORK_MODE_FILTERS.map((option) => (
-                <FilterChip
-                  key={option.value || 'all'}
-                  label={option.label}
-                  selected={option.value === workModeFilter}
-                  onPress={() => onWorkModeChange(option.value)}
-                  borderColor={borderColor}
-                  textColor={textColor}
-                  tintColor={tintColor}
-                  cardColor={cardColor}
-                  compact
-                />
-              ))}
-            </ScrollView>
-          </View>
+          {!tenderOnly ? (
+            <View style={styles.advancedSection}>
+              <Text style={[styles.sectionTitle, { color: mutedColor }]}>Work mode</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                {EXPLORE_WORK_MODE_FILTERS.map((option) => (
+                  <FilterChip
+                    key={option.value || 'all'}
+                    label={option.label}
+                    selected={option.value === workModeFilter}
+                    onPress={() => onWorkModeChange(option.value)}
+                    borderColor={borderColor}
+                    textColor={textColor}
+                    tintColor={tintColor}
+                    cardColor={cardColor}
+                    compact
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
 
           <View style={styles.advancedSection}>
-            <Text style={[styles.sectionTitle, { color: mutedColor }]}>Posted</Text>
+            <Text style={[styles.sectionTitle, { color: mutedColor }]}>
+              {tenderOnly ? 'Deadline' : 'Posted'}
+            </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              {EXPLORE_DATE_POSTED_FILTERS.map((option) => (
+              {dateFilters.map((option) => (
                 <FilterChip
                   key={option.value || 'all'}
                   label={option.label}
@@ -263,7 +285,7 @@ export default function ExploreFiltersBar({
             </ScrollView>
           </View>
 
-          {sourceFilters.length > 1 ? (
+          {!tenderOnly && sourceFilters.length > 1 ? (
             <View style={styles.advancedSection}>
               <Text style={[styles.sectionTitle, { color: mutedColor }]}>Source</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
@@ -286,7 +308,7 @@ export default function ExploreFiltersBar({
 
           <View style={styles.summaryRow}>
             <Text numberOfLines={1} style={[styles.summaryText, { color: mutedColor }]}>
-              {selectedWorkModeLabel} · {selectedDatePostedLabel} · {selectedSourceLabel}
+              {filterSummary}
             </Text>
           </View>
         </View>

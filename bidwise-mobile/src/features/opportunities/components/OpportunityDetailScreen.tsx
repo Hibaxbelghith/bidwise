@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
-import useOpportunityDetail from '../hooks/useOpportunityDetail';
+import { useOpportunityDetail } from '../hooks/useOpportunityDetail';
 import {
   formatDate,
   formatExperienceLabel,
@@ -335,15 +335,17 @@ export default function OpportunityDetailScreen() {
                     {formatStatusLabel(item.statut)}
                   </Text>
                 </View>
-                <View style={[styles.chip, { borderColor, backgroundColor: `${tintColor}14` }]}>
-                  <Text style={[styles.chipText, { color: tintColor }]}>
-                    {isUserAuthenticated
-                      ? semanticScore !== null
-                        ? `Match ${semanticScore}%`
-                        : 'Match --'
-                      : 'Match locked'}
-                  </Text>
-                </View>
+                {!isProject ? (
+                  <View style={[styles.chip, { borderColor, backgroundColor: `${tintColor}14` }]}>
+                    <Text style={[styles.chipText, { color: tintColor }]}>
+                      {isUserAuthenticated
+                        ? semanticScore !== null
+                          ? `Match ${semanticScore}%`
+                          : 'Match --'
+                        : 'Match locked'}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               <Text style={[styles.metaText, { color: mutedColor }]}>Location: {locationLabel}</Text>
@@ -352,7 +354,7 @@ export default function OpportunityDetailScreen() {
               </Text>
             </View>
 
-            {!isUserAuthenticated ? (
+            {!isProject && !isUserAuthenticated ? (
               <View style={[styles.guestLockStrip, { backgroundColor: cardColor, borderColor }]}>
                 <View style={styles.guestLockStripTextWrap}>
                   <Text style={[styles.guestLockStripTitle, { color: textColor }]}>
@@ -373,61 +375,61 @@ export default function OpportunityDetailScreen() {
               </View>
             ) : null}
 
-            <View style={[styles.sectionCard, { backgroundColor: cardColor, borderColor }]}>
-              <Text style={[styles.sectionTitle, { color: textColor }]}>Quick scan</Text>
+            {!isProject ? (
+              <View style={[styles.sectionCard, { backgroundColor: cardColor, borderColor }]}>
+                <Text style={[styles.sectionTitle, { color: textColor }]}>Quick scan</Text>
 
-              <View style={styles.scanGrid}>
-                <FactRow
-                  borderColor={borderColor}
-                  icon="Salary"
-                  label="Salary"
-                  mutedColor={mutedColor}
-                  textColor={textColor}
-                  value={salaryLabel}
-                />
-                <FactRow
-                  borderColor={borderColor}
-                  icon="Location"
-                  label="Location"
-                  mutedColor={mutedColor}
-                  textColor={textColor}
-                  value={locationLabel}
-                />
-                <FactRow
-                  borderColor={borderColor}
-                  icon="Contract"
-                  label="Contract"
-                  mutedColor={mutedColor}
-                  textColor={textColor}
-                  value={contractLabel}
-                />
-                <FactRow
-                  borderColor={borderColor}
-                  icon="Experience"
-                  label="Experience"
-                  mutedColor={mutedColor}
-                  textColor={textColor}
-                  value={formatExperienceLabel(item)}
-                />
-                <FactRow
-                  borderColor={borderColor}
-                  icon="Company"
-                  label="Company"
-                  mutedColor={mutedColor}
-                  textColor={textColor}
-                  value={companyLabel}
-                />
-                <FactRow
-                  borderColor={borderColor}
-                  icon="Source"
-                  label="Source"
-                  mutedColor={mutedColor}
-                  textColor={textColor}
-                  value={sourceLabel || 'BidWise'}
-                />
-              </View>
+                <View style={styles.scanGrid}>
+                  <FactRow
+                    borderColor={borderColor}
+                    icon="Salary"
+                    label="Salary"
+                    mutedColor={mutedColor}
+                    textColor={textColor}
+                    value={salaryLabel}
+                  />
+                  <FactRow
+                    borderColor={borderColor}
+                    icon="Location"
+                    label="Location"
+                    mutedColor={mutedColor}
+                    textColor={textColor}
+                    value={locationLabel}
+                  />
+                  <FactRow
+                    borderColor={borderColor}
+                    icon="Contract"
+                    label="Contract"
+                    mutedColor={mutedColor}
+                    textColor={textColor}
+                    value={contractLabel}
+                  />
+                  <FactRow
+                    borderColor={borderColor}
+                    icon="Experience"
+                    label="Experience"
+                    mutedColor={mutedColor}
+                    textColor={textColor}
+                    value={formatExperienceLabel(item)}
+                  />
+                  <FactRow
+                    borderColor={borderColor}
+                    icon="Company"
+                    label="Company"
+                    mutedColor={mutedColor}
+                    textColor={textColor}
+                    value={companyLabel}
+                  />
+                  <FactRow
+                    borderColor={borderColor}
+                    icon="Source"
+                    label="Source"
+                    mutedColor={mutedColor}
+                    textColor={textColor}
+                    value={sourceLabel || 'BidWise'}
+                  />
+                </View>
 
-              {!isProject ? (
                 <View style={[styles.scanGrid, styles.inlineSection]}>
                   <FactRow
                     borderColor={borderColor}
@@ -454,38 +456,38 @@ export default function OpportunityDetailScreen() {
                     value={languagesLabel}
                   />
                 </View>
-              ) : null}
 
-              <View style={styles.inlineSection}>
-                <View style={styles.inlineSectionHeader}>
-                  <Text style={[styles.inlineSectionTitle, { color: mutedColor }]}>Skills</Text>
-                  {skills.length > quickScanSkills.length ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setShowAllSkills((previous) => !previous)}
-                    >
-                      <Text style={[styles.inlineActionText, { color: tintColor }]}>
-                        {showAllSkills ? 'Show less' : `+${hiddenSkillsCount}`}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-
-                {visibleSkills.length ? (
-                  <View style={styles.skillsWrap}>
-                    {visibleSkills.map((skill) => (
-                      <View key={skill} style={[styles.skillChip, { borderColor }]}>
-                        <Text style={[styles.skillChipText, { color: textColor }]}>{skill}</Text>
-                      </View>
-                    ))}
+                <View style={styles.inlineSection}>
+                  <View style={styles.inlineSectionHeader}>
+                    <Text style={[styles.inlineSectionTitle, { color: mutedColor }]}>Skills</Text>
+                    {skills.length > quickScanSkills.length ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setShowAllSkills((previous) => !previous)}
+                      >
+                        <Text style={[styles.inlineActionText, { color: tintColor }]}>
+                          {showAllSkills ? 'Show less' : `+${hiddenSkillsCount}`}
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
-                ) : (
-                  <Text style={[styles.sectionBody, { color: mutedColor }]}>
-                    No structured skills.
-                  </Text>
-                )}
+
+                  {visibleSkills.length ? (
+                    <View style={styles.skillsWrap}>
+                      {visibleSkills.map((skill) => (
+                        <View key={skill} style={[styles.skillChip, { borderColor }]}>
+                          <Text style={[styles.skillChipText, { color: textColor }]}>{skill}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.sectionBody, { color: mutedColor }]}>
+                      No structured skills.
+                    </Text>
+                  )}
+                </View>
               </View>
-            </View>
+            ) : null}
 
             {description ? (
               <View style={[styles.sectionCard, { backgroundColor: cardColor, borderColor }]}>
@@ -689,7 +691,8 @@ export default function OpportunityDetailScreen() {
               </View>
             ) : null}
 
-            <View style={[styles.sectionCard, { backgroundColor: cardColor, borderColor }]}>
+            {!isProject ? (
+              <View style={[styles.sectionCard, { backgroundColor: cardColor, borderColor }]}>
               <Text style={[styles.sectionTitle, { color: textColor }]}>AI & recommendations</Text>
 
               {isUserAuthenticated ? (
@@ -812,7 +815,8 @@ export default function OpportunityDetailScreen() {
                   </Pressable>
                 </View>
               )}
-            </View>
+              </View>
+            ) : null}
           </>
         ) : null}
       </ScrollView>
@@ -854,7 +858,9 @@ export default function OpportunityDetailScreen() {
               onPress={() => void handleApplyPress()}
               disabled={applyDisabled}
             >
-              <Text style={styles.stickyPrimaryButtonText}>Apply</Text>
+              <Text style={styles.stickyPrimaryButtonText}>
+                {isProject ? 'See on MarchesPublics.gov.tn' : 'Apply'}
+              </Text>
             </Pressable>
           </>
         ) : (

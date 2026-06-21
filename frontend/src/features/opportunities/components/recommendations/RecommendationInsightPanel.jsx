@@ -109,7 +109,7 @@ const RecommendationInsightPanel = ({
 
       {viewModel.visibleReasons.length > 0 ? (
         <div className={['rounded-md p-3', viewModel.tone.surface].join(' ')}>
-          <p className="text-xs font-semibold uppercase">Why this matches</p>
+          <p className="text-xs font-semibold uppercase">{viewModel.reasonsTitle || 'Why this matches'}</p>
           <ul className="mt-2 grid gap-2 text-sm leading-5 sm:grid-cols-2">
             {viewModel.visibleReasons.map((reason) => (
               <li key={reason} className="flex items-start gap-2">

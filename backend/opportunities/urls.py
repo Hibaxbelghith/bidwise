@@ -17,6 +17,7 @@ from .views import (
     organization_opportunity_status_action_view,
     organization_tender_document_upload_view,
     pipeline_metrics_view,
+    tender_recommendations_view,
 )
 from .views_admin import (
     AdminDashboardView,
@@ -49,6 +50,7 @@ urlpatterns = [
     path('admin/organization-opportunities/<int:pk>/reject/', AdminOrganizationOpportunityDecisionView.as_view(), {"decision": "reject"}, name='admin_organization_opportunity_reject'),
     path('admin/scheduler-state/', AdminSchedulerStateView.as_view(), name='admin_scheduler_state'),
     path('metrics/pipeline/', pipeline_metrics_view, name='pipeline_metrics'),
+    path('opportunities/tenders/recommendations/', tender_recommendations_view, name='tender_recommendations'),
 
     # Organization
     path('organization/opportunities/', organization_opportunities_view, name='organization_opportunities'),

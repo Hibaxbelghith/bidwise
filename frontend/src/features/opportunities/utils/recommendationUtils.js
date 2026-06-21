@@ -198,6 +198,8 @@ const formatGapLabel = (gap) =>
 export const buildRecommendationViewModel = (recommendation, options = {}) => {
   if (!recommendation) return null;
 
+  const isTenderRecommendation =
+    normalizeText(recommendation.recommendation_mode).toUpperCase() === 'TENDER_WATCH';
   const scorePercent = getRecommendationScorePercent(
     recommendation.score ?? recommendation.match_score,
   );
@@ -219,8 +221,15 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     options.reasonLimit || 4,
   );
   const gaps = normalizeArray(recommendation.gaps).map(formatGapLabel).filter(Boolean);
-  const fitLabel =
-    scorePercent >= 80
+  const fitLabel = isTenderRecommendation
+    ? scorePercent >= 65
+      ? 'Strong priority'
+      : scorePercent >= 40
+        ? 'Watch closely'
+        : scorePercent > 0
+          ? 'Low priority'
+          : scoreLabel
+    : scorePercent >= 80
       ? 'Strong match'
       : scorePercent >= 60
         ? 'Good fit'
@@ -228,7 +237,11 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
           ? 'Worth a look'
           : scoreLabel;
   const scoreText =
-    scorePercent && scorePercent > 0 ? `${scorePercent}% match` : scoreLabel;
+    scorePercent && scorePercent > 0
+      ? isTenderRecommendation
+        ? `${scorePercent}% priority`
+        : `${scorePercent}% match`
+      : scoreLabel;
   const signalChips = buildSignalChips(recommendation);
   const primaryReason = visibleReasons[0] || '';
   const bucketReason = normalizeText(recommendation.recommendation_bucket_reason).replace(/[.!?]+$/, '');
@@ -236,8 +249,11 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     bucket === 'RELATED_REVIEW' && scorePercent >= 75 && bucketReason
       ? bucketReason
       : '';
-  const matchSummary =
-    options.context === 'detail'
+  const matchSummary = isTenderRecommendation
+    ? primaryReason
+      ? `${fitLabel}: ${primaryReason}.`
+      : `${fitLabel} based on your tender preferences.`
+    : options.context === 'detail'
       ? isStrongBucket && scorePercent >= 70 && primaryReason
         ? `Recommended to apply: ${primaryReason}.`
         : scorePercent >= 60 && primaryReason
@@ -252,17 +268,23 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
           : primaryReason
             ? `Worth reviewing: ${primaryReason}.`
             : `${fitLabel} based on your profile signals.`;
-  const panelTitle = options.context === 'detail' ? 'Your fit' : 'Recommendation match';
-  const verdictLabel =
-    isStrongBucket && scorePercent >= 70
+  const panelTitle = isTenderRecommendation
+    ? 'Tender priority'
+    : options.context === 'detail'
+      ? 'Your fit'
+      : 'Recommendation match';
+  const verdictLabel = isTenderRecommendation
+    ? fitLabel
+    : isStrongBucket && scorePercent >= 70
       ? 'Recommended to apply'
       : scorePercent >= 60
         ? 'Good fit'
         : scorePercent > 0
           ? 'Worth reviewing'
           : scoreLabel;
-  const verdictDescription =
-    isStrongBucket && scorePercent >= 70
+  const verdictDescription = isTenderRecommendation
+    ? 'This tender is ranked using your preferred regions, tender categories, and semantic similarity.'
+    : isStrongBucket && scorePercent >= 70
       ? 'Your profile has strong evidence for this opportunity.'
       : scorePercent >= 60
         ? 'The opportunity is relevant, but review the gaps before applying.'
@@ -281,7 +303,12 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     panelTitle,
     verdictLabel,
     verdictDescription,
-    reviewLabel: isRecommendedToApply ? 'Details to confirm' : 'Review before applying',
+    reasonsTitle: isTenderRecommendation ? 'Why this priority' : 'Why this matches',
+    reviewLabel: isTenderRecommendation
+      ? 'Review before action'
+      : isRecommendedToApply
+        ? 'Details to confirm'
+        : 'Review before applying',
     gaps: dedupe(gaps).slice(0, options.gapLimit || 4),
     hasGaps: gaps.length > 0,
     tone,

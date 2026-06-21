@@ -6,6 +6,9 @@ import { useProfileEditor } from '@/src/features/profile/hooks/useProfileEditor'
 import { EXPERIENCE_LEVEL_OPTIONS } from '@/src/features/profile/utils/profileEditorState';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
+const isCallsForTenderOnly = (values: string[]) =>
+  values.length === 1 && values[0] === 'CALLS_FOR_TENDER';
+
 export default function ProfileBasicInformationScreen() {
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
@@ -33,6 +36,7 @@ export default function ProfileBasicInformationScreen() {
     handleSave,
     refreshProfile,
   } = useProfileEditor();
+  const tenderOnly = isCallsForTenderOnly(editorState.opportunityTypes);
 
   return (
     <ProfileEditorPage
@@ -76,6 +80,7 @@ export default function ProfileBasicInformationScreen() {
         />
       </ProfileSection>
 
+      {!tenderOnly ? (
       <ProfileSection
         title="Experience"
         description="Help BidWise understand your current seniority."
@@ -102,6 +107,7 @@ export default function ProfileBasicInformationScreen() {
           cardColor={cardColor}
         />
       </ProfileSection>
+      ) : null}
     </ProfileEditorPage>
   );
 }

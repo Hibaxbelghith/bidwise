@@ -14,12 +14,12 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/features/auth/context/AuthContext';
 import { useThemeColor } from '@/src/shared/hooks/use-theme-color';
 
-import useOpportunitiesList, { type OpportunityTypeFilter } from '../hooks/useOpportunitiesList';
+import { useOpportunitiesList, type OpportunityTypeFilter } from '../hooks/useOpportunitiesList';
 import type { Opportunity } from '../services/opportunitiesService';
 import OpportunityCard from './OpportunityCard';
 import OpportunityCardSkeleton from './OpportunityCardSkeleton';
 
-const TYPE_FILTER_OPTIONS: Array<{ value: OpportunityTypeFilter; label: string }> = [
+const TYPE_FILTER_OPTIONS: { value: OpportunityTypeFilter; label: string }[] = [
   { value: 'ALL', label: 'All' },
   { value: 'EMPLOI', label: 'Job' },
   { value: 'STAGE', label: 'Intern' },

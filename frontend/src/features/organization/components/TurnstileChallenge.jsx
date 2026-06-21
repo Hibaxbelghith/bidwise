@@ -31,7 +31,7 @@ const ensureTurnstileScript = () =>
 
 const STATUS_COPY = {
   loading: 'Loading the security check...',
-  checking: 'Checking your browser automatically...',
+  checking: 'Checking your browser...',
   verified: 'Security check completed.',
   expired: 'Security check expired. Verifying again...',
   error: 'Security check unavailable. Refresh the page and try again.',

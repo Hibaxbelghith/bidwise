@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Button } from '../../../components/ui/button.jsx';
+import { useAuth } from '../../auth/AuthContext.jsx';
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -10,7 +11,11 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { ORGANIZATION_LOGIN_PATH } from '../organizationFlow.js';
+import {
+  getPostAuthRedirectPath,
+  isOrganizationAccount,
+  ORGANIZATION_LOGIN_PATH,
+} from '../organizationFlow.js';
 
 // Image de fond professionnelle
 const HERO_BG_IMAGE =
@@ -25,6 +30,15 @@ const opportunityTypes = [
 ];
 
 const OrganizationLandingPage = () => {
+  const { isAuthenticated, loading, user } = useAuth();
+  const hasResolvedAuth = !loading || Boolean(user);
+  const organizationPath =
+    hasResolvedAuth && isAuthenticated
+      ? getPostAuthRedirectPath({ user, organizationIntent: true })
+      : ORGANIZATION_LOGIN_PATH;
+  const isOrganization = isOrganizationAccount(user);
+  const organizationActionLabel = isOrganization ? 'Organization dashboard' : 'Post an opportunity';
+
   return (
     <div className="min-h-screen bg-white">
       {/* Navigation */}
@@ -41,18 +55,20 @@ const OrganizationLandingPage = () => {
               
             </div>
             <div className="flex items-center gap-4">
-              <Link
-                to={ORGANIZATION_LOGIN_PATH}
-                className="text-sm font-medium text-neutral-600 hover:text-neutral-900"
-              >
-                Sign in
-              </Link>
+              {!isAuthenticated ? (
+                <Link
+                  to={ORGANIZATION_LOGIN_PATH}
+                  className="text-sm font-medium text-neutral-600 hover:text-neutral-900"
+                >
+                  Sign in
+                </Link>
+              ) : null}
               <Button
                 asChild
                 size="sm"
                 className="bg-blue-600 px-5 text-sm text-white hover:bg-blue-700"
               >
-                <Link to={ORGANIZATION_LOGIN_PATH}>Post an opportunity</Link>
+                <Link to={organizationPath}>{organizationActionLabel}</Link>
               </Button>
               <Link
                 to="/opportunities"
@@ -95,9 +111,9 @@ const OrganizationLandingPage = () => {
                 size="lg"
                 className="bg-blue-600 px-8 py-6 text-base text-white hover:bg-blue-700"
               >
-                <Link to={ORGANIZATION_LOGIN_PATH}>
+                <Link to={organizationPath}>
                   <Megaphone className="mr-2 h-5 w-5" />
-                  Post an Opportunity
+                  {organizationActionLabel}
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
@@ -119,8 +135,8 @@ const OrganizationLandingPage = () => {
               variant="link"
               className="mt-2 text-blue-600 hover:text-blue-700"
             >
-              <Link to={ORGANIZATION_LOGIN_PATH}>
-                Start hiring today
+              <Link to={organizationPath}>
+                {isOrganization ? 'Go to dashboard' : 'Start hiring today'}
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
@@ -197,8 +213,8 @@ const OrganizationLandingPage = () => {
               asChild
               className="bg-blue-600 px-8 text-white hover:bg-blue-700"
             >
-              <Link to={ORGANIZATION_LOGIN_PATH}>
-                Post an opportunity
+              <Link to={organizationPath}>
+                {organizationActionLabel}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>

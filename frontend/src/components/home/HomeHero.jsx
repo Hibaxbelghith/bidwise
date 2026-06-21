@@ -20,6 +20,11 @@ const opportunitySources = [
 		imageClassName: 'h-full w-full object-cover',
 	},
 	{
+		name: 'Emploi Tunisie',
+		src: '/logos_sites_sources/emploiTunisie.png',
+		imageClassName: 'h-7 w-7 object-contain',
+	},
+	{
 		name: 'HAICOP - Marches Publics',
 		src: '/logos_sites_sources/HAICOP.png',
 		imageClassName: 'h-7 w-7 object-contain',

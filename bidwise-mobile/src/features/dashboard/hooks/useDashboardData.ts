@@ -19,7 +19,10 @@ const IN_PROGRESS_STATUSES = new Set([
   'EXTERNAL_REMIND_LATER',
 ]);
 
-export function useDashboardData(enabled: boolean) {
+export function useDashboardData(
+  enabled: boolean,
+  { includeApplications = true }: { includeApplications?: boolean } = {},
+) {
   const [savedItems, setSavedItems] = useState<Opportunity[]>([]);
   const [applications, setApplications] = useState<CandidateApplication[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,9 +50,13 @@ export function useDashboardData(enabled: boolean) {
     setError('');
     setNotice('');
 
+    const applicationRequest = includeApplications
+      ? fetchMyApplications()
+      : Promise.resolve([] as CandidateApplication[]);
+
     const [savedResult, applicationsResult] = await Promise.allSettled([
       fetchSavedOpportunities(),
-      fetchMyApplications(),
+      applicationRequest,
     ]);
 
     const savedFailed = savedResult.status === 'rejected';
@@ -71,13 +78,13 @@ export function useDashboardData(enabled: boolean) {
       setError('Unable to load your dashboard right now.');
     } else if (savedFailed) {
       setNotice('Saved opportunities are temporarily unavailable.');
-    } else if (applicationsFailed) {
+    } else if (applicationsFailed && includeApplications) {
       setNotice('Applications are temporarily unavailable.');
     }
 
     setLoading(false);
     setRefreshing(false);
-  }, [enabled]);
+  }, [enabled, includeApplications]);
 
   useEffect(() => {
     loadData(false);
@@ -100,6 +107,7 @@ export function useDashboardData(enabled: boolean) {
   }, [loadData]);
 
   const handleWithdraw = useCallback(async (applicationId: number) => {
+    if (!includeApplications) return;
     setWithdrawingId(applicationId);
     try {
       await withdrawMyApplication(applicationId);
@@ -113,7 +121,7 @@ export function useDashboardData(enabled: boolean) {
     } finally {
       setWithdrawingId(null);
     }
-  }, []);
+  }, [includeApplications]);
 
   const stats = useMemo(() => {
     const appliedCount = applications.length;

@@ -722,7 +722,12 @@ def normalize_raw_opportunity(raw_obj: RawOpportunite) -> dict[str, Any]:
         "date_limite",
         raw_id=raw_id,
     )
-    if not preserves_scraped_status and statut == StatutOpportunite.ACTIVE and date_limite and date_limite < date.today():
+    if (
+        statut == StatutOpportunite.ACTIVE
+        and date_limite
+        and date_limite < date.today()
+        and (not preserves_scraped_status or type_opportunite == TypeOpportunite.PROJET)
+    ):
         statut = StatutOpportunite.EXPIREE
 
     organisation_nom = _canonical_text(

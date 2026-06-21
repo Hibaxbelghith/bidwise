@@ -203,12 +203,14 @@ const OpportunityDetailPage = () => {
             ) : null}
 
 
-            <OpportunitySimilarSection
-              isUserAuthenticated={isUserAuthenticated}
-              similarOpportunities={viewModel.dedupedSimilar}
-              loading={detailPage.similarLoading}
-              error={detailPage.similarError}
-            />
+            {!viewModel.isProject ? (
+              <OpportunitySimilarSection
+                isUserAuthenticated={isUserAuthenticated}
+                similarOpportunities={viewModel.dedupedSimilar}
+                loading={detailPage.similarLoading}
+                error={detailPage.similarError}
+              />
+            ) : null}
           </div>
 
           <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start">
@@ -228,11 +230,13 @@ const OpportunityDetailPage = () => {
         </div>
       </main>
 
-      <OpportunityAssistantCard
-        opportunityId={id}
-        locked={!isUserAuthenticated}
-        floating
-      />
+      {!viewModel.isProject ? (
+        <OpportunityAssistantCard
+          opportunityId={id}
+          locked={!isUserAuthenticated}
+          floating
+        />
+      ) : null}
 
       <OpportunityActionBar
         isUserAuthenticated={isUserAuthenticated}

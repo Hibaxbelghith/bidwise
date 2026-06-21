@@ -97,6 +97,31 @@ class OpportunitySearchApiTests(APITestCase):
         self.assertEqual(by_id.status_code, status.HTTP_200_OK)
         self.assertEqual({item["titre"] for item in by_id.data["results"]}, {"LinkedIn role"})
 
+    def test_deadline_window_filters_projects_by_upcoming_deadline(self):
+        urgent = self.create_opp(
+            titre="Urgent public tender",
+            type_opportunite=TypeOpportunite.PROJET,
+            date_limite=date.today() + timedelta(days=5),
+        )
+        self.create_opp(
+            titre="Later public tender",
+            type_opportunite=TypeOpportunite.PROJET,
+            date_limite=date.today() + timedelta(days=12),
+        )
+        self.create_opp(
+            titre="Expired public tender",
+            type_opportunite=TypeOpportunite.PROJET,
+            date_limite=date.today() - timedelta(days=1),
+        )
+
+        response = self.client.get(
+            "/api/opportunities/",
+            {"type": TypeOpportunite.PROJET, "deadline_window": "week", "page_size": 10},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual({item["id"] for item in response.data["results"]}, {urgent.id})
+
     def test_sector_filter_matches_normalized_industry_and_company_sector_metadata(self):
         finance = self.create_opp(
             titre="Finance Backend",

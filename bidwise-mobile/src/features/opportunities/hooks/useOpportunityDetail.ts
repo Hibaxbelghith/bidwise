@@ -21,7 +21,6 @@ import {
 } from '../utils/opportunityHelpers';
 import {
   formatDate,
-  formatExperienceLabel,
   getOrganizationLabel,
   normalizeDescription,
 } from '../utils/opportunityFormatters';

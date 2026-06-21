@@ -3,12 +3,41 @@
  * Fournit l'état d'authentification à toute l'application
  */
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, startTransition } from 'react';
 import * as authService from './authService';
-import { removeTokens } from '../../lib/tokenManager';
+import { isAuthenticated as hasStoredSession, removeTokens } from '../../lib/tokenManager';
 
 // Créer le contexte
 const AuthContext = createContext(null);
+const CACHED_USER_KEY = 'bidwise_auth_user';
+
+const readCachedUser = () => {
+  if (typeof window === 'undefined' || !hasStoredSession()) return null;
+  try {
+    const raw = window.localStorage.getItem(CACHED_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedUser = (userData) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(CACHED_USER_KEY, JSON.stringify(userData));
+  } catch {
+    // Ignore storage failures; auth still works from the API response.
+  }
+};
+
+const clearCachedUser = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(CACHED_USER_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+};
 
 /**
  * Hook personnalisé pour utiliser le contexte d'authentification
@@ -27,9 +56,9 @@ export const useAuth = () => {
  * Wrapper toute l'application pour rendre l'état auth disponible partout
  */
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => readCachedUser());
+  const [isAuthenticated, setIsAuthenticated] = useState(() => hasStoredSession());
+  const [loading, setLoading] = useState(() => hasStoredSession() && !readCachedUser());
   const [error, setError] = useState(null);
 
   /**
@@ -38,12 +67,27 @@ export const AuthProvider = ({ children }) => {
    */
   useEffect(() => {
     const loadUser = async () => {
+      if (!hasStoredSession()) {
+        setLoading(false);
+        return;
+      }
+
+      const hasCachedUser = Boolean(readCachedUser());
       try {
         const userData = await authService.getCurrentUser({ skipAuthRedirect: true });
-        setUser(userData);
-        setIsAuthenticated(true);
+        writeCachedUser(userData);
+        if (hasCachedUser) {
+          startTransition(() => {
+            setUser(userData);
+            setIsAuthenticated(true);
+          });
+        } else {
+          setUser(userData);
+          setIsAuthenticated(true);
+        }
       } catch (err) {
         removeTokens();
+        clearCachedUser();
         setUser(null);
         setIsAuthenticated(false);
       } finally {
@@ -89,6 +133,7 @@ export const AuthProvider = ({ children }) => {
       const userData = await authService.getCurrentUser();
       setUser(userData);
       setIsAuthenticated(true);
+      writeCachedUser(userData);
 
       const onboarding_completed = userData?.profil?.onboarding_completed ?? false;
       return {
@@ -122,6 +167,7 @@ export const AuthProvider = ({ children }) => {
       const userData = await authService.getCurrentUser();
       setUser(userData);
       setIsAuthenticated(true);
+      writeCachedUser(userData);
 
       const onboarding_completed = userData?.profil?.onboarding_completed ?? false;
       return {
@@ -145,6 +191,7 @@ export const AuthProvider = ({ children }) => {
    */
   const logout = async () => {
     await authService.logout();
+    clearCachedUser();
     setUser(null);
     setIsAuthenticated(false);
     setError(null);
@@ -159,7 +206,10 @@ export const AuthProvider = ({ children }) => {
     try {
       setError(null);
       const updatedUser = await authService.updateProfile(profileData);
-      setUser(updatedUser);
+      writeCachedUser(updatedUser);
+      startTransition(() => {
+        setUser(updatedUser);
+      });
       return { success: true, data: updatedUser };
     } catch (err) {
       setError(err.message);
@@ -174,7 +224,10 @@ export const AuthProvider = ({ children }) => {
   const refreshUser = async () => {
     try {
       const userData = await authService.getCurrentUser();
-      setUser(userData);
+      writeCachedUser(userData);
+      startTransition(() => {
+        setUser(userData);
+      });
       return { success: true, data: userData };
     } catch (err) {
       console.error('Erreur lors du rafraîchissement:', err);

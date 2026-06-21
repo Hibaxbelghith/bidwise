@@ -359,7 +359,7 @@ class ProfilSerializerTests(TestCase):
         expected_fields = {
             'id', 'nom', 'prenom', 'competences', 'domaines_interet',
             'niveau_experience', 'annees_experience',
-            'opportunity_types', 'preferred_locations', 'preferred_location',
+            'opportunity_types', 'tender_preferences', 'preferred_locations', 'preferred_location',
             'remote_preference', 'work_mode_preferences',
             'compensation_expectation', 'compensation_min_expectation',
             'compensation_max_expectation', 'compensation_currency', 'compensation_period',
@@ -368,6 +368,27 @@ class ProfilSerializerTests(TestCase):
             'active_resume', 'profile_completion',
         }
         self.assertEqual(set(data.keys()), expected_fields)
+
+    def test_serializes_tender_preferences(self):
+        self.profil.tender_preferences = {
+            "categories": [
+                {"category": "Biens", "subcategory": "Matériels informatiques"},
+            ],
+            "max_budget": None,
+        }
+        self.profil.save(update_fields=["tender_preferences"])
+
+        data = ProfilSerializer(self.profil).data
+
+        self.assertEqual(
+            data["tender_preferences"],
+            {
+                "categories": [
+                    {"category": "Biens", "subcategory": "Matériels informatiques"},
+                ],
+                "max_budget": None,
+            },
+        )
 
     def test_profile_completion_is_deterministic_and_explicable(self):
         self.profil.prenom = "Hiba"
@@ -382,6 +403,21 @@ class ProfilSerializerTests(TestCase):
         self.assertIn("profile_completion", data)
         self.assertGreater(data["profile_completion"]["score"], 0)
         self.assertIn("resume", data["profile_completion"]["missing"])
+
+    def test_tender_only_profile_completion_ignores_job_recommendation_fields(self):
+        self.profil.opportunity_types = ["CALLS_FOR_TENDER"]
+        self.profil.competences = []
+        self.profil.target_roles = []
+        self.profil.domaines_interet = []
+        self.profil.save()
+
+        data = ProfilSerializer(self.profil).data
+
+        self.assertEqual(data["profile_completion"]["score"], 40)
+        self.assertEqual(
+            data["profile_completion"]["missing"],
+            ["first_name", "last_name"],
+        )
 
     def test_id_is_read_only(self):
         serializer = ProfilSerializer(self.profil, data={"id": 999, "nom": "Test"}, partial=True)
@@ -664,6 +700,68 @@ class ProfilUpdateSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("employment_types", serializer.errors)
 
+    def test_tender_preferences_accept_valid_closed_taxonomy_payload(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "tender_preferences": {
+                    "categories": [
+                        {"category": "Biens", "subcategory": "Matériels informatiques"},
+                        {"category": "Autre", "subcategory": "ignored"},
+                    ],
+                    "max_budget": "5000",
+                }
+            },
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(
+            instance.tender_preferences,
+            {
+                "categories": [
+                    {"category": "Biens", "subcategory": "Matériels informatiques"},
+                    {"category": "Autre", "subcategory": ""},
+                ],
+                "max_budget": 5000.0,
+            },
+        )
+
+    def test_tender_preferences_reject_invalid_subcategory_for_category(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "tender_preferences": {
+                    "categories": [
+                        {"category": "Biens", "subcategory": "Génie Civil"},
+                    ],
+                    "max_budget": None,
+                }
+            },
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("tender_preferences", serializer.errors)
+
+    def test_tender_preferences_reject_negative_budget(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "tender_preferences": {
+                    "categories": [
+                        {"category": "Biens", "subcategory": "Matériels informatiques"},
+                    ],
+                    "max_budget": -1,
+                }
+            },
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("tender_preferences", serializer.errors)
+
     def test_employment_types_reject_unknown_values(self):
         serializer = ProfilUpdateSerializer(
             self.profil,
@@ -763,6 +861,21 @@ class ProfilUpdateSerializerTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("domaines_interet", serializer.errors)
+
+    def test_profile_sectors_allow_empty_for_tender_only_profile(self):
+        serializer = ProfilUpdateSerializer(
+            self.profil,
+            data={
+                "opportunity_types": ["CALLS_FOR_TENDER"],
+                "domaines_interet": [],
+            },
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.opportunity_types, ["CALLS_FOR_TENDER"])
+        self.assertEqual(instance.domaines_interet, [])
 
     def test_profile_sectors_reject_unknown_terms(self):
         serializer = ProfilUpdateSerializer(

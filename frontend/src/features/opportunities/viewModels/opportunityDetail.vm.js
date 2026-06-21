@@ -106,7 +106,7 @@ export const buildOpportunityDetailViewModel = (opportunity) => {
       structuredProjectData.delai_validite || extraData.delai_validite || '',
     ).trim(),
     projectCautionLabel: getProjectCautionLabel(extraData, projectLots),
-    primaryActionLabel: isProject ? 'Open source' : 'Apply',
+    primaryActionLabel: isProject ? 'See on MarchesPublics.gov.tn' : 'Apply',
     companyLogo: getCompanyLogoAsset(opportunity),
     skills: getSkills(opportunity),
     skillsDetectedByAi: extraData?.llm_enrichment?.skills_source === 'llm',

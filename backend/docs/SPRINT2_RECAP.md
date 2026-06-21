@@ -1,14 +1,16 @@
 # Sprint 2 - Technical recap
 
-Last updated: 2026-05-05
+Last updated: 2026-06-19
 
 ## Verdict
 
-Sprint 2 is complete for the opportunities pipeline scope.
+Sprint 2 is complete for the opportunities pipeline scope and is ready to be explained in an academic defense.
 
 The implementation is no longer a simple scraper command. It is now a production-oriented ingestion architecture with a scheduler/orchestration core, manual CLI entry point, Celery workers, Celery Beat scheduling, Redis-backed locks, operational monitoring, anomaly detection, Discord alerting, automatic recovery, raw replay safety, canonical materialization, API exposure, embeddings, and similarity search.
 
 The original Sprint 2 target was the backend data layer behind opportunity discovery. That scope is implemented end to end: collection, raw persistence, normalization, enrichment, quality scoring, materialization, API exposure, embedding generation, and similarity.
+
+Latest local smoke audit on 2026-06-19 confirmed that the Docker stack is running, Celery Beat is dispatching tasks, the pipeline monitor reports no active anomaly, raw records are materialized, and opportunity embeddings are complete.
 
 ## Executive value for demo
 
@@ -19,6 +21,7 @@ These are the strongest Sprint 2 talking points for a technical presentation:
 - Monitoring: the system is self-monitored with anomaly detection, structured events, source freshness tracking, failed-run detection, Discord alerting, and automatic stuck-run recovery.
 - AI: vector embeddings power semantic similarity today and create the foundation for a future recommendation engine.
 - Quality: data quality is measured and enforced with validation, quality scoring, explicit rejection states, default image handling, and API-level quality metrics.
+- Operations: Flower, Docker logs, the admin dashboard, Redis-backed locks, and Discord alerts make the pipeline demonstrable and maintainable.
 
 ## Scope delivered
 
@@ -41,6 +44,7 @@ These are the strongest Sprint 2 talking points for a technical presentation:
 | Data quality metrics | Complete | `opportunities/dataset_metrics.py`, `/api/metrics/pipeline/` |
 | Image consistency | Complete | default logo validation in normalization, materialization, and serializers |
 | Alerting and recovery | Complete | Discord webhook alerting, Redis alert state, stuck-run recovery |
+| Celery/Flower observability | Complete | `flower` service on port `5555`, named Celery workers in `docker-compose.yml` |
 | Admin dashboard | Complete | `frontend/src/features/admin/DashboardAdminPage.jsx` |
 
 ## Active source coverage
@@ -49,7 +53,7 @@ Active source registry:
 
 | Source key | Scraper | Priority | Default cadence | Stale cadence | Stale after | Max duration |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `linkedin` | `LinkedInScraper` | 1 | 1 hour | 15 minutes | 12 hours | 10 minutes |
+| `linkedin` | `LinkedInScraper` | 1 | 1 hour | 15 minutes | 12 hours | 30 minutes |
 | `keejob` | `KeejobScraper` | 2 | 2 hours | 30 minutes | 12 hours | 20 minutes |
 | `emploi_tn` | `EmploiTunisieScraper` | 3 | 6 hours | 1 hour | 24 hours | 20 minutes |
 | `marches_publics` | `MarchesPublicsScraper` | 4 | 12 hours | 2 hours | 48 hours | 30 minutes |
@@ -60,6 +64,45 @@ Legacy aliases are supported:
 - `marchespublics` maps to `marches_publics`
 
 The source registry and aliases live in the scheduler/orchestrator module, `opportunities/pipeline.py`. Runtime source order comes from `OPPORTUNITY_PIPELINE_SOURCES`, then `OPPORTUNITY_SOURCE_CONFIG.priority`.
+
+Source-specific extraction summary:
+
+- LinkedIn uses the public guest jobs endpoints, paginates with a safe offset cap, optionally fetches detail pages, extracts title, company, location, publication date, contract/availability, description, skills, logo, and detects expired detail pages when LinkedIn exposes a closed-application signal.
+- Keejob fetches listing and detail pages, extracts structured sidebar fields, company logo, publication date, deadline, contract, experience, education, salary-like signals, skills, and marks expired offers only when an explicit expired badge is found.
+- EmploiTunisie fetches listing and detail pages, extracts publication date, structured job fields, skills, company metadata, and expiration date from visible detail blocks or JSON-LD `validThrough`.
+- MarchesPublics collects calls for tender, extracts publication date, deadline, buyer/organization, project description, region/address, documents, lots when available, and tender urgency metadata.
+
+Current source volumes observed during the 2026-06-19 smoke audit:
+
+| Source name | Canonical opportunities | Active opportunities | Latest publication |
+| --- | ---: | ---: | --- |
+| LinkedIn | 2766 | 2308 | 2026-06-19 |
+| Keejob | 1657 | 1557 | 2026-06-19 |
+| EmploiTunisie | 476 | 473 | 2026-06-19 |
+| MarchesPublics | 1025 | 545 | 2026-06-19 |
+
+These values are environment snapshots, not fixed product constants. They are useful in a defense to prove that the pipeline was running and refreshing the database close to the presentation date.
+
+## Timing strategy per source
+
+The scraping schedule is intentionally source-specific. The objective is not to scrape every website continuously, but to balance freshness, external-site load, data completeness, and operational stability.
+
+| Source | Normal cadence | Stale cadence | Timing rationale |
+| --- | ---: | ---: | --- |
+| LinkedIn | 1 hour | 15 minutes | Highly dynamic source with frequent new jobs. It is also the slowest and most rate-limit-sensitive source, so it is monitored closely and allowed a longer duration threshold. |
+| Keejob | 2 hours | 30 minutes | Stable job board with regular updates. A moderate cadence keeps data fresh without unnecessary repeated requests. |
+| EmploiTunisie | 6 hours | 1 hour | Lower update frequency and detail-page extraction for richer fields such as expiration date, skills, company metadata, and structured job attributes. |
+| MarchesPublics | 12 hours | 2 hours | Calls for tender change less frequently than job listings, so a slower cadence is enough while still preserving freshness. |
+
+The scheduler is adaptive rather than a simple fixed cron. For each source, it evaluates the last run, last successful run with created or updated records, failure history, freshness window, running tasks, and source-specific max duration.
+
+Important behaviors:
+
+- If a source is fresh and not due, `opportunities.collect_opportunities` can finish with `SUCCESS` and `skipped`; this is expected and prevents unnecessary scraping.
+- If a source becomes stale, the scheduler uses the shorter stale cadence to recover freshness faster.
+- If a source fails, the next attempt follows its `failure_retry_seconds` instead of waiting for the normal cadence.
+- If a source run stays `RUNNING` longer than its allowed max duration, monitoring can mark it as stuck, alert administrators, clear locks, and allow a future retry.
+- LinkedIn currently uses a 30-minute max duration because detail extraction and large result volumes are slower, and the project prioritizes data quality and completeness over raw scraping speed.
 
 ## Actual pipeline path
 
@@ -80,6 +123,19 @@ Celery Beat or CLI
   -> embedding generation
   -> similarity/API/admin dashboard/metrics
 ```
+
+Detailed stage explanation for a defense:
+
+1. Collection: Celery Beat periodically calls `opportunities.collect_opportunities`; the scheduler selects due sources and dispatches `opportunities.collect_source` per source.
+2. Source scraping: each scraper adapts one external website into a list of raw opportunity dictionaries while respecting max pages, delays, retries, duplicate detection, and early stop rules.
+3. Raw persistence: `opportunities/scraping/pipeline.py` stores the full payload in `RawOpportunite`, computes a payload hash and content fingerprint, and updates existing raw rows idempotently.
+4. Normalization: `normalize_raw_opportunity` maps source-specific fields into BidWise canonical fields such as title, organization, city, type, status, publication date, deadline, contract, experience, skills, and source URL.
+5. Enrichment: `enrich_opportunity_text` merges structured fields with deterministic NLP extraction for skills, salary, languages, and description-derived fallback values.
+6. Quality scoring: `evaluate_opportunity` validates usability, measures data completeness, and gives each opportunity an explainable quality score.
+7. Materialization: `materialize_opportunity` creates or updates the canonical `Opportunite` row with transactional deduplication and conservative merge rules.
+8. Embeddings: `opportunities.generate_embeddings` generates multilingual sentence-transformer vectors for semantic similarity and recommendation features.
+9. Exposure: API endpoints, filters, sorting, similar opportunities, admin dashboard, and metrics read from the canonical database instead of scraping synchronously.
+10. Monitoring: `opportunities.monitor_pipeline` evaluates source freshness, stuck runs, failures, duration anomalies, embedding backlog, and sends Discord alerts when needed.
 
 Role boundaries in the raw-to-canonical step:
 
@@ -183,7 +239,18 @@ celery_enrichment
 celery_profile
   queue: profile_resume
   role: resume parsing and profile embedding tasks
+
+celery_notifications
+  queue: notifications
+  role: asynchronous email and notification delivery
 ```
+
+The Docker Compose worker commands use explicit Celery names for a clearer Flower view:
+
+- `scraping@%h` for the default pipeline queue
+- `enrichment@%h` for opportunity LLM enrichment
+- `profile@%h` for resume/profile tasks
+- `notifications@%h` for notification tasks
 
 Why this matters:
 
@@ -191,6 +258,7 @@ Why this matters:
 - Scraping must stay responsive even when LLM enrichment is running.
 - The enrichment worker uses `--concurrency=1` and `--prefetch-multiplier=1` so one slow local model call does not reserve a large backlog.
 - `CELERY_TASK_ROUTES` sends `ai.enrich_opportunity_llm_backfill` and `ai.enrich_opportunity_with_llm` to `opportunity_enrichment`, not to the default scraping queue.
+- Notification work is also isolated so emails do not block scraping or embeddings.
 
 The periodic LLM backfill is configured through:
 
@@ -237,6 +305,27 @@ Redis is used for:
 - alert state and anti-spam metadata, with Django cache fallback
 
 Locks use owner tokens and a Lua release script so one task cannot accidentally release another task's lock.
+
+### Flower operational interface
+
+Flower is included as a Docker service and is exposed locally on:
+
+```text
+http://localhost:5555
+```
+
+Recommended screenshots for a defense:
+
+- Workers page: proves that the Celery infrastructure is alive. It should show the named workers online: `scraping@...`, `enrichment@...`, `profile@...`, and `notifications@...`.
+- Tasks page: proves real execution. The most useful rows are `opportunities.collect_opportunities`, `opportunities.collect_source`, `opportunities.materialize_opportunities`, `opportunities.generate_embeddings`, `opportunities.monitor_pipeline`, and `ai.enrich_opportunity_llm_backfill`.
+
+Interpretation rules:
+
+- `collect_opportunities` with `SUCCESS` and result `skipped` is normal when Celery Beat ran but no source was due according to the scheduler.
+- `collect_source` with `SUCCESS` proves that a source scraper actually ran.
+- `monitor_pipeline` with `status: healthy` and `alerts: []` proves that no active pipeline anomaly was detected.
+- `generate_embeddings` with `remaining: 0` proves that the canonical opportunities have embeddings.
+- `Failed = 0` on the Workers page is a strong operational signal for a demo.
 
 ## Intelligent scheduling and source orchestration
 
@@ -356,6 +445,8 @@ Alert behavior:
 - recovery notifications are sent when a previously active issue disappears
 
 Stuck source runs are treated specially: they alert immediately with threshold `1` because they can block a source lock.
+
+Discord messages are intended for administrators/operators. A typical warning contains the source name, anomaly type, detection count, measured value, expected threshold, user impact, and recommended action. Examples include slow scraping duration, no new opportunities within the freshness window, repeated source failures, stuck runs, and embedding backlog/no-progress issues.
 
 ## Fault tolerance and resilience
 

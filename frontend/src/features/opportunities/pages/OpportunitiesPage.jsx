@@ -22,6 +22,11 @@ const OPPORTUNITY_TAB_STORAGE_KEY = 'bidwise:opportunities-active-tab:v1';
 const RECOMMENDATION_ENGINE_VERSION = 'jobbert-hybrid-v3';
 const VALID_TABS = new Set(['for-you', 'explore']);
 
+const isTenderOnlyProfile = (profile) => {
+  const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
+  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+};
+
 const getInitialOpportunityTab = (location) => {
   const searchTab = new URLSearchParams(location.search).get('tab');
   if (VALID_TABS.has(searchTab)) return searchTab;
@@ -48,6 +53,8 @@ const buildRecommendationCacheKey = (user) => {
     locations: profile.preferred_locations || [],
     workModes: profile.work_mode_preferences || [],
     employmentTypes: profile.employment_types || [],
+    opportunityTypes: profile.opportunity_types || [],
+    tenderPreferences: profile.tender_preferences || {},
     experienceLevel: profile.niveau_experience || '',
     years: profile.annees_experience ?? '',
     resume: activeResume.id || activeResume.date_modification || '',
@@ -59,6 +66,11 @@ const buildRecommendationCacheKey = (user) => {
   };
 
   return JSON.stringify(profileSignals);
+};
+
+const buildBrowseStorageScopeKey = ({ isUserAuthenticated, user }) => {
+  if (!isUserAuthenticated) return 'guest';
+  return `user:${user?.id || user?.email || 'authenticated'}`;
 };
 
 const getVisiblePageNumbers = (currentPage, totalPages) => {
@@ -83,8 +95,15 @@ const OpportunitiesPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(() => getInitialOpportunityTab(location));
-  const [pendingReturnPosition, setPendingReturnPosition] = useState(null);
+  const pendingReturnPositionRef = useRef(null);
   const { isAuthenticated, loading: authLoading, user } = useAuth();
+  const authPendingWithoutUser = authLoading && !user;
+  const isUserAuthenticated = !authPendingWithoutUser && isAuthenticated;
+  const browseStorageScopeKey = useMemo(
+    () => buildBrowseStorageScopeKey({ isUserAuthenticated, user }),
+    [isUserAuthenticated, user],
+  );
+  const tenderOnly = isUserAuthenticated && isTenderOnlyProfile(user?.profil);
   const {
     opportunities,
     cityOptions,
@@ -118,14 +137,17 @@ const OpportunitiesPage = () => {
     setPage,
     resetFilters,
     refetch,
-  } = useOpportunitiesBrowse();
+  } = useOpportunitiesBrowse({
+    enabled: !authPendingWithoutUser,
+    lockedTypeFilter: tenderOnly ? 'PROJET' : '',
+    storageScopeKey: browseStorageScopeKey,
+  });
 
-  const isUserAuthenticated = !authLoading && isAuthenticated;
   const showProfileCompletionPrompt =
     isUserAuthenticated && user?.profil?.onboarding_completed === false;
   const hasActiveFilters = Boolean(
     searchInput ||
-      typeFilter ||
+      (!tenderOnly && typeFilter) ||
       statusFilter ||
       cityFilter ||
       sourceFilter ||
@@ -133,17 +155,19 @@ const OpportunitiesPage = () => {
       experienceFilter ||
       datePostedFilter
   );
-  const forYouEnabled = isUserAuthenticated && canUseForYouFeed(user);
-  const profileRecommendationTier = getProfileRecommendationTier(user);
+  const forYouEnabled = isUserAuthenticated && (tenderOnly || canUseForYouFeed(user));
+  const profileRecommendationTier = tenderOnly ? 'complete' : getProfileRecommendationTier(user);
   const recommendationCacheKey = useMemo(() => buildRecommendationCacheKey(user), [user]);
   const recommendationsState = useOpportunityRecommendations({
     enabled: forYouEnabled,
     includeDetails: true,
     limit: 50,
     cacheKey: recommendationCacheKey,
+    recommendationType: tenderOnly ? 'tender' : 'job',
   });
   const { refetch: refetchRecommendations } = recommendationsState;
-  const effectiveTab = authLoading ? activeTab : isUserAuthenticated ? activeTab : 'explore';
+  const hasAppliedTenderExploreDefaultsRef = useRef(false);
+  const effectiveTab = authPendingWithoutUser ? 'loading' : isUserAuthenticated ? activeTab : 'explore';
   const opportunitiesWithRecommendations = useMemo(
     () =>
       opportunities.map((opportunity) => {
@@ -157,6 +181,7 @@ const OpportunitiesPage = () => {
   const forYouLoading = recommendationsState.loading;
   const forYouError = recommendationsState.error;
   const forYouShowFetchingSpinner = recommendationsState.isFetching || recommendationsState.isHydratingDetails;
+  const forYouItemsCount = recommendationsState.recommendedOpportunities.length;
 
   const countLabel = useMemo(() => {
     if (loading && opportunities.length === 0) return '';
@@ -194,46 +219,82 @@ const OpportunitiesPage = () => {
           pathname: location.pathname,
           search: `?${params.toString()}`,
         },
-        { replace: true, state: location.state },
+        { replace: true },
       );
     },
-    [location.pathname, location.search, location.state, navigate],
+    [location.pathname, location.search, navigate],
   );
 
   useEffect(() => {
-    const returnTab = location.state?.returnTab;
-    if (returnTab === 'for-you' || returnTab === 'explore') {
-      setOpportunityTab(returnTab);
-    }
+    if (authPendingWithoutUser || !tenderOnly) return;
+    if (hasAppliedTenderExploreDefaultsRef.current) return;
 
-    if (returnTab === 'for-you' || returnTab === 'explore') {
-      setPendingReturnPosition({
-        tab: returnTab,
-        opportunityId: location.state?.opportunityId ?? null,
-        scrollY: Number(location.state?.scrollY),
-      });
+    hasAppliedTenderExploreDefaultsRef.current = true;
+    const explicitTab = new URLSearchParams(location.search).get('tab');
+    if (!VALID_TABS.has(explicitTab)) {
+      setOpportunityTab('for-you');
     }
-  }, [location.state, setOpportunityTab]);
+    setSearchInput('');
+    setTypeFilter('PROJET');
+    setStatusFilter('');
+    setCityFilter('');
+    setSourceFilter('');
+    setWorkModeFilter('');
+    setExperienceFilter('');
+    setDatePostedFilter('');
+  }, [
+    authPendingWithoutUser,
+    isUserAuthenticated,
+    location.search,
+    setCityFilter,
+    setDatePostedFilter,
+    setExperienceFilter,
+    setOpportunityTab,
+    setSearchInput,
+    setSourceFilter,
+    setStatusFilter,
+    setTypeFilter,
+    setWorkModeFilter,
+    user?.profil,
+    tenderOnly,
+  ]);
 
   useEffect(() => {
+    const returnTab = location.state?.returnTab;
+
+    if (returnTab !== 'for-you' && returnTab !== 'explore') return;
+
+    pendingReturnPositionRef.current = {
+      tab: returnTab,
+      opportunityId: location.state?.opportunityId ?? null,
+      scrollY: Number(location.state?.scrollY),
+    };
+
+    const searchTab = new URLSearchParams(location.search).get('tab');
+    if (activeTab !== returnTab || searchTab !== returnTab) {
+      setOpportunityTab(returnTab);
+    }
+  }, [activeTab, location.search, location.state, setOpportunityTab]);
+
+  useEffect(() => {
+    const pendingReturnPosition = pendingReturnPositionRef.current;
+
     if (!pendingReturnPosition || typeof window === 'undefined') return;
     if (pendingReturnPosition.tab !== effectiveTab) return;
-    if (effectiveTab === 'for-you' && forYouLoading) return;
     if (effectiveTab === 'explore' && loading) return;
+    if (effectiveTab === 'for-you' && forYouLoading) return;
 
-    window.requestAnimationFrame(() => {
-      const opportunityId = pendingReturnPosition.opportunityId;
-      const target = opportunityId
-        ? document.getElementById(`opportunity-card-${opportunityId}`)
-        : null;
-      if (target) {
-        target.scrollIntoView({ behavior: 'auto', block: 'center' });
-      } else if (Number.isFinite(pendingReturnPosition.scrollY) && pendingReturnPosition.scrollY >= 0) {
-        window.scrollTo({ top: pendingReturnPosition.scrollY, behavior: 'auto' });
-      }
-      setPendingReturnPosition(null);
-    });
-  }, [effectiveTab, forYouLoading, loading, pendingReturnPosition]);
+    const opportunityId = pendingReturnPosition.opportunityId;
+    const target = opportunityId
+      ? document.getElementById(`opportunity-card-${opportunityId}`)
+      : null;
+    if (target) {
+      target.scrollIntoView({ behavior: 'auto', block: 'center' });
+    } else if (Number.isFinite(pendingReturnPosition.scrollY) && pendingReturnPosition.scrollY >= 0) {
+      window.scrollTo({ top: pendingReturnPosition.scrollY, behavior: 'auto' });
+    }
+    pendingReturnPositionRef.current = null;
+  }, [effectiveTab, forYouItemsCount, forYouLoading, loading, opportunities.length]);
 
   const scrollToResultsTopAfterFilter = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -244,8 +305,30 @@ const OpportunitiesPage = () => {
   }, [scrollToResultsTop]);
 
   const resetFiltersAndScroll = useCallback(() => {
+    if (tenderOnly) {
+      setSearchInput('');
+      setTypeFilter('PROJET');
+      setStatusFilter('');
+      setCityFilter('');
+      setSourceFilter('');
+      setWorkModeFilter('');
+      setExperienceFilter('');
+      setDatePostedFilter('');
+      return;
+    }
     resetFilters();
-  }, [resetFilters]);
+  }, [
+    resetFilters,
+    setCityFilter,
+    setDatePostedFilter,
+    setExperienceFilter,
+    setSearchInput,
+    setSourceFilter,
+    setStatusFilter,
+    setTypeFilter,
+    setWorkModeFilter,
+    tenderOnly,
+  ]);
 
   const retryForYouFeed = useCallback(() => {
     refetchRecommendations();
@@ -296,13 +379,14 @@ const OpportunitiesPage = () => {
     setDatePostedFilter,
     opportunities,
     resetFilters: resetFiltersAndScroll,
+    tenderOnly,
   };
 
   return (
     <div className="bidwise-browse-page min-h-screen bg-neutral-50">
       <OpportunitiesBrowseHeader
         isUserAuthenticated={isUserAuthenticated}
-        authLoading={authLoading}
+        authLoading={authPendingWithoutUser}
         user={user}
       />
 
@@ -311,6 +395,18 @@ const OpportunitiesPage = () => {
         isUserAuthenticated={isUserAuthenticated}
         onTabChange={setOpportunityTab}
       />
+
+      {effectiveTab === 'loading' ? (
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <div className="min-h-[60vh] rounded-md border border-neutral-200 bg-white p-6 shadow-sm">
+            <div className="max-w-xl space-y-3">
+              <div className="h-4 w-40 rounded bg-neutral-100" />
+              <div className="h-3 w-full max-w-md rounded bg-neutral-100" />
+              <div className="h-3 w-2/3 rounded bg-neutral-100" />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {effectiveTab === 'explore' ? <OpportunitiesBrowseFilters {...filterProps} /> : null}
 
@@ -321,11 +417,12 @@ const OpportunitiesPage = () => {
           <ForYouFeed
             user={user}
             isUserAuthenticated={isUserAuthenticated}
-            authLoading={authLoading}
+            authLoading={authPendingWithoutUser}
             profileRecommendationTier={profileRecommendationTier}
             hasActiveFilters={hasActiveFilters}
             recommendations={recommendationsState.recommendations}
             recommendedOpportunities={recommendationsState.recommendedOpportunities}
+            isTenderFeed={tenderOnly}
             loading={forYouLoading}
             showFetchingSpinner={forYouShowFetchingSpinner}
             error={forYouError}

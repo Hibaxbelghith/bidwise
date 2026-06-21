@@ -24,6 +24,9 @@ const StepLocation = ({ data, onChange, error = '' }) => {
 	const selectedModes = Array.isArray(data.work_mode_preferences)
 		? data.work_mode_preferences
 		: [];
+	const tenderOnly = Array.isArray(data.opportunity_types)
+		&& data.opportunity_types.length === 1
+		&& data.opportunity_types[0] === 'CALLS_FOR_TENDER';
 	const locationRequired = selectedModes.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID');
 
 	return (
@@ -32,7 +35,7 @@ const StepLocation = ({ data, onChange, error = '' }) => {
 				id="preferredLocations"
 				value={data.preferred_locations}
 				onChange={(locations) => onChange('preferred_locations', locations)}
-				placeholder={locationRequired ? 'Search Tunis, Sfax, Sousse...' : 'Optional for remote roles'}
+				placeholder={tenderOnly || locationRequired ? 'Search Tunis, Sfax, Sousse...' : 'Optional for remote roles'}
 				maxItems={10}
 			/>
 			<p className="text-xs text-neutral-500">
@@ -41,6 +44,13 @@ const StepLocation = ({ data, onChange, error = '' }) => {
 					: ''}
 			</p>
 
+			{tenderOnly ? (
+				error ? (
+					<p className="text-sm text-red-600" role="alert">
+						{error}
+					</p>
+				) : null
+			) : (
 			<div className="space-y-2">
 				<Label>Work style</Label>
 				<PreferenceChipGroup
@@ -55,6 +65,7 @@ const StepLocation = ({ data, onChange, error = '' }) => {
 					</p>
 				) : null}
 			</div>
+			)}
 		</div>
 	);
 };

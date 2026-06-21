@@ -31,6 +31,7 @@ import BusinessFamilySelect from './components/BusinessFamilySelect.jsx';
 import ProfileAutocompleteInput from './components/ProfileAutocompleteInput.jsx';
 import PreferenceChipGroup from './components/PreferenceChipGroup.jsx';
 import ResumeSection from './components/ResumeSection.jsx';
+import StepTenderPreferences from '../onboarding/steps/StepTenderPreferences.jsx';
 import {
 	ALL_EMPLOYMENT_TYPE_OPTIONS,
 	OPPORTUNITY_TYPE_OPTIONS,
@@ -72,6 +73,7 @@ const FIELD_SECTION_BY_ERROR_KEY = {
 	preferredLocations: 'work',
 	salaryExpectation: 'work',
 	interests: 'career',
+	tenderPreferences: 'work',
 };
 
 const FIELD_ERROR_LABELS = {
@@ -81,11 +83,19 @@ const FIELD_ERROR_LABELS = {
 	preferredLocations: 'Desired work locations',
 	salaryExpectation: 'Expected salary range',
 	interests: 'Sectors',
+	tenderPreferences: 'Tender preferences',
+};
+
+const getProfileNavLabel = (item, tenderOnly) => {
+	if (!tenderOnly || item.id !== 'work') return item.label;
+	return 'Tender Preferences';
 };
 
 const MAX_PREFERRED_LOCATIONS = 10;
 
 const PROFILE_COMPLETION_SUGGESTIONS = [
+	{ key: 'first_name', label: 'Add your first name', weight: 30 },
+	{ key: 'last_name', label: 'Add your last name', weight: 30 },
 	{ key: 'resume', label: 'Upload your resume (+15%)', weight: 15 },
 	{ key: 'skills', label: 'Add at least one skill', weight: 10 },
 	{ key: 'target_roles', label: 'Add a target role', weight: 10 },
@@ -135,13 +145,6 @@ const Profile = () => {
 	const profile = user?.profil;
 	const accountEmail = user?.email || user?.username || '';
 	const profileCompletion = profile?.profile_completion || { score: 0, missing: [] };
-	const profileCompletionSuggestions = useMemo(() => {
-		const missing = new Set(Array.isArray(profileCompletion.missing) ? profileCompletion.missing : []);
-		return PROFILE_COMPLETION_SUGGESTIONS
-			.filter((suggestion) => missing.has(suggestion.key))
-			.sort((a, b) => b.weight - a.weight)
-			.slice(0, 3);
-	}, [profileCompletion.missing]);
 	const lastHydratedEditorStateRef = useRef('');
 	const preserveDraftOnResumeRefreshRef = useRef(false);
 	const fieldRefs = useRef({});
@@ -162,6 +165,7 @@ const Profile = () => {
 	const [preferredLocations, setPreferredLocations] = useState([]);
 	const [workModePreferences, setWorkModePreferences] = useState([]);
 	const [employmentTypes, setEmploymentTypes] = useState([]);
+	const [tenderPreferences, setTenderPreferences] = useState({ categories: [], max_budget: null });
 	const [profileVisibility, setProfileVisibility] = useState(true);
 	const [isLoading, setIsLoading] = useState(false);
 	const [showSuccess, setShowSuccess] = useState(false);
@@ -169,6 +173,25 @@ const Profile = () => {
 	const [validationSummary, setValidationSummary] = useState('');
 	const [fieldErrors, setFieldErrors] = useState({});
 	const [activeSection, setActiveSection] = useState('personal');
+	const isTenderOnlyProfile =
+		opportunityTypes.length === 1 &&
+		opportunityTypes[0] === 'CALLS_FOR_TENDER';
+	const profileCompletionSuggestions = useMemo(() => {
+		const missing = new Set(Array.isArray(profileCompletion.missing) ? profileCompletion.missing : []);
+		if (isTenderOnlyProfile) {
+			return PROFILE_COMPLETION_SUGGESTIONS
+				.filter((suggestion) => ['first_name', 'last_name'].includes(suggestion.key))
+				.filter((suggestion) => missing.has(suggestion.key))
+				.sort((a, b) => b.weight - a.weight);
+		}
+		return PROFILE_COMPLETION_SUGGESTIONS
+			.filter((suggestion) => missing.has(suggestion.key))
+			.sort((a, b) => b.weight - a.weight)
+			.slice(0, 3);
+	}, [isTenderOnlyProfile, profileCompletion.missing]);
+	const visibleNavItems = isTenderOnlyProfile
+		? NAV_ITEMS.filter((item) => ['personal', 'work'].includes(item.id))
+		: NAV_ITEMS;
 	
 	const skillsPayload = useMemo(() => normalizeSkillList(skills), [skills]);
 	const interestsPayload = useMemo(() => normalizeBusinessFamilyValues(interests), [interests]);
@@ -194,7 +217,38 @@ const Profile = () => {
 		),
 		[formData.salaryMinExpectation, formData.salaryMaxExpectation, formData.salaryPeriod]
 	);
-	const locationRequired = workModePreferencesPayload.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID');
+	const locationRequired =
+		!isTenderOnlyProfile &&
+		workModePreferencesPayload.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID');
+	const profileStrengthHelpText = isTenderOnlyProfile
+		? 'Complete the basics to filter public tenders faster'
+		: 'Complete your profile to get better recommendations';
+	const profileStrengthTitle = isTenderOnlyProfile ? 'Profile setup' : 'Profile strength';
+	const personalTitle = isTenderOnlyProfile ? 'Account Information' : 'Personal Information';
+	const personalSubtitle = isTenderOnlyProfile
+		? 'Your identity and contact details'
+		: 'Your identity and professional background';
+	const preferencesTitle = isTenderOnlyProfile ? 'Tender Preferences' : 'Job Preferences';
+	const preferencesSubtitle = isTenderOnlyProfile
+		? 'Choose how BidWise should open public tenders for you'
+		: "Tell us what you're looking for";
+	const locationLabel = isTenderOnlyProfile ? 'Preferred tender regions' : 'Desired work locations';
+	const locationPlaceholder = isTenderOnlyProfile
+		? 'Optional: add a region'
+		: locationRequired
+			? 'Add a location'
+			: 'Optional for remote roles';
+	const locationHelperText = isTenderOnlyProfile
+		? 'Optional. If empty, all tender regions remain visible.'
+		: locationRequired
+			? 'Location is required for on-site or hybrid work.'
+			: 'Location is optional when you are open to remote work.';
+	const fieldErrorLabel = (key) => {
+		if (isTenderOnlyProfile && key === 'preferredLocations') {
+			return 'Preferred tender regions';
+		}
+		return FIELD_ERROR_LABELS[key];
+	};
 
 	const handleInterestsChange = (values) => {
 		setInterests(values);
@@ -230,7 +284,8 @@ const Profile = () => {
 			setOpportunityTypes(nextEditorState.opportunityTypes);
 			setPreferredLocations(nextEditorState.preferredLocations);
 			setWorkModePreferences(nextEditorState.workModePreferences);
-			setEmploymentTypes(nextEditorState.employmentTypes);
+		setEmploymentTypes(nextEditorState.employmentTypes);
+			setTenderPreferences(nextEditorState.tenderPreferences || { categories: [], max_budget: null });
 			setProfileVisibility(nextEditorState.profileVisibility);
 		}
 
@@ -294,6 +349,23 @@ const Profile = () => {
 			getEmploymentTypeOptionsForOpportunityTypes(normalizedValues).map((option) => option.value)
 		);
 		setEmploymentTypes((prev) => prev.filter((value) => allowedEmploymentTypes.has(value)));
+		if (normalizedValues.length === 1 && normalizedValues[0] === 'CALLS_FOR_TENDER') {
+			setFieldErrors((prev) => ({
+				...prev,
+				yearsOfExperience: '',
+				salaryExpectation: '',
+				interests: '',
+				preferredLocations: '',
+			}));
+			setValidationSummary('');
+		}
+	};
+
+	const handleTenderPreferencesChange = (field, value) => {
+		if (field !== 'tender_preferences') return;
+		setTenderPreferences(value && typeof value === 'object' ? value : { categories: [], max_budget: null });
+		setFieldErrors((prev) => ({ ...prev, tenderPreferences: '' }));
+		setValidationSummary('');
 	};
 
 	useEffect(() => {
@@ -338,10 +410,10 @@ const Profile = () => {
 		const nextFieldErrors = {
 			firstName: firstNameValidation.error,
 			lastName: lastNameValidation.error,
-			yearsOfExperience: yearsValidation.error,
-			salaryExpectation: salaryValidation.error,
+			yearsOfExperience: isTenderOnlyProfile ? '' : yearsValidation.error,
+			salaryExpectation: isTenderOnlyProfile ? '' : salaryValidation.error,
 			interests:
-				interestsPayload.length === 0
+				!isTenderOnlyProfile && interestsPayload.length === 0
 					? 'Choose at least one sector.'
 					: '',
 			preferredLocations:
@@ -350,7 +422,21 @@ const Profile = () => {
 					: locationRequired && preferredLocationsPayload.length === 0
 						? 'Choose at least one location for on-site or hybrid work.'
 						: '',
+			tenderPreferences: '',
 		};
+		if (isTenderOnlyProfile) {
+			const firstTenderCategory = Array.isArray(tenderPreferences?.categories)
+				? tenderPreferences.categories[0]
+				: null;
+			const maxBudget = tenderPreferences?.max_budget;
+			if (!firstTenderCategory?.category) {
+				nextFieldErrors.tenderPreferences = 'Select a tender category.';
+			} else if (firstTenderCategory.category !== 'Autre' && !firstTenderCategory.subcategory) {
+				nextFieldErrors.tenderPreferences = 'Select a tender subcategory.';
+			} else if (maxBudget !== null && maxBudget !== '' && Number(maxBudget) < 0) {
+				nextFieldErrors.tenderPreferences = 'Enter a positive maximum caution budget.';
+			}
+		}
 		const hasFieldErrors = Object.values(nextFieldErrors).some(Boolean);
 
 		if (hasFieldErrors) {
@@ -361,7 +447,27 @@ const Profile = () => {
 
 		setValidationSummary('');
 		setIsLoading(true);
-		const payload = {
+		const normalizedOpportunityTypes = normalizeOptionValues(opportunityTypes, OPPORTUNITY_TYPE_OPTIONS);
+		const payload = isTenderOnlyProfile ? {
+			prenom: firstNameValidation.value,
+			nom: lastNameValidation.value,
+			opportunity_types: ['CALLS_FOR_TENDER'],
+			tender_preferences: tenderPreferences,
+			preferred_locations: preferredLocationsPayload,
+			domaines_interet: [],
+			competences: [],
+			niveau_experience: null,
+			annees_experience: null,
+			target_roles: [],
+			work_mode_preferences: [],
+			employment_types: [],
+			compensation_expectation: null,
+			compensation_min_expectation: null,
+			compensation_max_expectation: null,
+			compensation_currency: 'TND',
+			compensation_period: DEFAULT_COMPENSATION_PERIOD,
+			profile_visibility: profileVisibility,
+		} : {
 			prenom: firstNameValidation.value,
 			nom: lastNameValidation.value,
 			competences: skillsPayload,
@@ -369,7 +475,7 @@ const Profile = () => {
 			niveau_experience: formData.experienceLevel || null,
 			annees_experience: yearsValidation.value,
 			target_roles: targetRolesPayload,
-			opportunity_types: normalizeOptionValues(opportunityTypes, OPPORTUNITY_TYPE_OPTIONS),
+			opportunity_types: normalizedOpportunityTypes,
 			preferred_locations: preferredLocationsPayload,
 			work_mode_preferences: workModePreferencesPayload,
 			employment_types: employmentTypesPayload,
@@ -395,6 +501,11 @@ const Profile = () => {
 			setInterests(normalizeBusinessFamilyValues(persistedProfile.domaines_interet));
 			setTargetRoles(normalizeTextList(persistedProfile.target_roles));
 			setOpportunityTypes(normalizeOptionValues(persistedProfile.opportunity_types, OPPORTUNITY_TYPE_OPTIONS));
+			setTenderPreferences(
+				persistedProfile.tender_preferences && typeof persistedProfile.tender_preferences === 'object'
+					? persistedProfile.tender_preferences
+					: { categories: [], max_budget: null }
+			);
 			setShowSuccess(true);
 			setTimeout(() => setShowSuccess(false), 3000);
 		} else if (result.error) {
@@ -445,7 +556,7 @@ const Profile = () => {
 							{/* Profile completion card */}
 							<div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
 								<div className="flex items-center justify-between mb-3">
-									<span className="text-sm font-medium text-neutral-900">Profile strength</span>
+									<span className="text-sm font-medium text-neutral-900">{profileStrengthTitle}</span>
 									<span className="text-sm font-bold text-blue-600">{profileCompletion.score}%</span>
 								</div>
 								<div className="h-2 overflow-hidden rounded-full bg-neutral-100">
@@ -455,7 +566,7 @@ const Profile = () => {
 									/>
 								</div>
 								<p className="mt-3 text-xs text-neutral-500">
-									Complete your profile to get better recommendations
+									{profileStrengthHelpText}
 								</p>
 								{profileCompletionSuggestions.length > 0 ? (
 									<ul className="mt-3 space-y-1.5">
@@ -471,7 +582,7 @@ const Profile = () => {
 
 							{/* Navigation */}
 							<nav className="space-y-0.5">
-								{NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+								{visibleNavItems.map(({ id, label, icon: Icon }) => (
 									<button
 										key={id}
 										onClick={() => scrollToSection(id)}
@@ -483,7 +594,7 @@ const Profile = () => {
 									>
 										<span className="flex items-center gap-2">
 											<Icon className="h-4 w-4" />
-											{label}
+											{getProfileNavLabel({ id, label }, isTenderOnlyProfile)}
 										</span>
 										<ChevronRight className={`h-3.5 w-3.5 ${activeSection === id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
 									</button>
@@ -516,8 +627,8 @@ const Profile = () => {
 							{/* Section 1: Personal Information */}
 							<section id="personal" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
-									<h2 className="text-lg font-semibold text-neutral-900">Personal Information</h2>
-									<p className="text-sm text-neutral-500">Your identity and professional background</p>
+									<h2 className="text-lg font-semibold text-neutral-900">{personalTitle}</h2>
+									<p className="text-sm text-neutral-500">{personalSubtitle}</p>
 								</div>
 								
 								<div className="space-y-4">
@@ -586,6 +697,7 @@ const Profile = () => {
 											) : null}
 										</div>
 
+										{!isTenderOnlyProfile ? (
 										<div className="space-y-1">
 											<Label htmlFor="experienceLevel" className="text-sm font-medium text-neutral-700">Experience level</Label>
 											<Select
@@ -604,7 +716,9 @@ const Profile = () => {
 												</SelectContent>
 											</Select>
 										</div>
+										) : null}
 
+										{!isTenderOnlyProfile ? (
 										<div
 											ref={(node) => {
 												fieldRefs.current.yearsOfExperience = node;
@@ -630,18 +744,20 @@ const Profile = () => {
 												</p>
 											) : null}
 										</div>
+										) : null}
 									</div>
 								</div>
 							</section>
 
-							{/* Section 2: Job Preferences */}
+							{/* Section 2: Preferences */}
 							<section id="work" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
-									<h2 className="text-lg font-semibold text-neutral-900">Job Preferences</h2>
-									<p className="text-sm text-neutral-500">Tell us what you're looking for</p>
+									<h2 className="text-lg font-semibold text-neutral-900">{preferencesTitle}</h2>
+									<p className="text-sm text-neutral-500">{preferencesSubtitle}</p>
 								</div>
 
 								<div className="space-y-5">
+									{!isTenderOnlyProfile ? (
 									<div>
 										<ProfileAutocompleteInput
 											id="targetRole"
@@ -653,6 +769,7 @@ const Profile = () => {
 											placeholder="Add a job title"
 										/>
 									</div>
+									) : null}
 
 									<div
 										ref={(node) => {
@@ -661,16 +778,14 @@ const Profile = () => {
 									>
 										<LocationMultiSelect
 											id="preferredLocations"
-											label="Desired work locations"
+											label={locationLabel}
 											value={preferredLocations}
 											onChange={handlePreferredLocationsChange}
-											placeholder={locationRequired ? 'Add a location' : 'Optional for remote roles'}
+											placeholder={locationPlaceholder}
 											maxItems={MAX_PREFERRED_LOCATIONS}
 										/>
 										<p className="mt-2 text-xs text-neutral-500">
-											{locationRequired
-												? 'Location is required for on-site or hybrid work.'
-												: 'Location is optional when you are open to remote work.'}
+											{locationHelperText}
 										</p>
 										{fieldErrors.preferredLocations ? (
 											<p id="preferredLocations-error" className="mt-2 text-sm text-red-600" role="alert">
@@ -679,6 +794,7 @@ const Profile = () => {
 										) : null}
 									</div>
 
+									{!isTenderOnlyProfile ? (
 									<div
 										ref={(node) => {
 											fieldRefs.current.salaryExpectation = node;
@@ -715,7 +831,9 @@ const Profile = () => {
 											</p>
 										) : null}
 									</div>
+									) : null}
 
+									{!isTenderOnlyProfile ? (
 									<div>
 										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Remote work preferences</Label>
 										<PreferenceChipGroup
@@ -724,6 +842,7 @@ const Profile = () => {
 											onChange={handleWorkModePreferencesChange}
 										/>
 									</div>
+									) : null}
 
 									<div>
 										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Opportunity types</Label>
@@ -734,6 +853,22 @@ const Profile = () => {
 										/>
 									</div>
 
+									{isTenderOnlyProfile ? (
+									<div
+										ref={(node) => {
+											fieldRefs.current.tenderPreferences = node;
+										}}
+										className="rounded-md border border-neutral-200 bg-neutral-50 p-4"
+									>
+										<StepTenderPreferences
+											data={{ tender_preferences: tenderPreferences }}
+											onChange={handleTenderPreferencesChange}
+											error={fieldErrors.tenderPreferences}
+										/>
+									</div>
+									) : null}
+
+									{!isTenderOnlyProfile ? (
 									<div>
 										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Contract types</Label>
 										<PreferenceChipGroup
@@ -742,10 +877,12 @@ const Profile = () => {
 											onChange={setEmploymentTypes}
 										/>
 									</div>
+									) : null}
 								</div>
 							</section>
 
 							{/* Section 3: Resume */}
+							{!isTenderOnlyProfile ? (
 							<section id="resume" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
 									<h2 className="text-lg font-semibold text-neutral-900">Resume & CV</h2>
@@ -758,8 +895,10 @@ const Profile = () => {
 									onChanged={handleResumeChanged}
 								/>
 							</section>
+							) : null}
 
 							{/* Section 4: Career Signals */}
+							{!isTenderOnlyProfile ? (
 							<section id="career" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
 									<h2 className="text-lg font-semibold text-neutral-900">Career Signals</h2>
@@ -767,6 +906,7 @@ const Profile = () => {
 								</div>
 
 								<div className="space-y-5">
+									{!isTenderOnlyProfile ? (
 									<div>
 										<ProfileAutocompleteInput
 											id="skills"
@@ -777,6 +917,7 @@ const Profile = () => {
 											placeholder="Add a skill"
 										/>
 									</div>
+									) : null}
 
 									<div
 										ref={(node) => {
@@ -798,8 +939,10 @@ const Profile = () => {
 									</div>
 								</div>
 							</section>
+							) : null}
 
 							{/* Section 5: Account Settings */}
+							{!isTenderOnlyProfile ? (
 							<section id="settings" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
 									<h2 className="text-lg font-semibold text-neutral-900">Account Settings</h2>
@@ -822,6 +965,7 @@ const Profile = () => {
 
 								</div>
 							</section>
+							) : null}
 
 							{/* Sticky Save Bar */}
 							<div className="sticky bottom-4 z-20 rounded-lg border border-neutral-200 bg-white p-4 shadow-lg">
@@ -830,7 +974,7 @@ const Profile = () => {
 										<div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">
 											{validationSummary}
 											{getFirstErrorKey(fieldErrors)
-												? ` ${FIELD_ERROR_LABELS[getFirstErrorKey(fieldErrors)]} needs attention.`
+												? ` ${fieldErrorLabel(getFirstErrorKey(fieldErrors))} needs attention.`
 												: ''}
 										</div>
 									) : (
@@ -843,7 +987,7 @@ const Profile = () => {
 									<Button
 											type="submit"
 											
-											disabled={isLoading || Boolean(salaryValidation.error)}
+											disabled={isLoading || (!isTenderOnlyProfile && Boolean(salaryValidation.error))}
 										>
 											{isLoading ? (
 												<>

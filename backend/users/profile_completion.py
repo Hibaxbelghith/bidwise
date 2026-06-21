@@ -18,6 +18,13 @@ PROFILE_COMPLETION_WEIGHTS = (
     ("resume", 15),
 )
 
+TENDER_PROFILE_COMPLETION_WEIGHTS = (
+    ("first_name", 30),
+    ("last_name", 30),
+    ("opportunity_types", 40),
+    ("locations", 0),
+)
+
 
 def _has_text(value: Any) -> bool:
     return bool(str(value or "").strip())
@@ -37,6 +44,11 @@ def _has_active_resume(profile: Any) -> bool:
         return False
 
 
+def _is_calls_for_tender_only(profile: Any) -> bool:
+    selected = getattr(profile, "opportunity_types", []) or []
+    return isinstance(selected, list) and selected == ["CALLS_FOR_TENDER"]
+
+
 def calculate_profile_completion(profile: Any) -> dict[str, Any]:
     checks = {
         "first_name": _has_text(getattr(profile, "prenom", "")),
@@ -52,6 +64,19 @@ def calculate_profile_completion(profile: Any) -> dict[str, Any]:
         "interests": _has_list(getattr(profile, "domaines_interet", [])),
         "resume": _has_active_resume(profile),
     }
+    if _is_calls_for_tender_only(profile):
+        total_weight = sum(weight for _name, weight in TENDER_PROFILE_COMPLETION_WEIGHTS)
+        earned = sum(weight for name, weight in TENDER_PROFILE_COMPLETION_WEIGHTS if checks.get(name))
+        missing = [
+            name
+            for name, weight in TENDER_PROFILE_COMPLETION_WEIGHTS
+            if weight > 0 and not checks.get(name)
+        ]
+        return {
+            "score": round((earned / total_weight) * 100) if total_weight else 0,
+            "missing": missing,
+        }
+
     total_weight = sum(weight for _name, weight in PROFILE_COMPLETION_WEIGHTS)
     earned = sum(weight for name, weight in PROFILE_COMPLETION_WEIGHTS if checks.get(name))
     missing = [name for name, _weight in PROFILE_COMPLETION_WEIGHTS if not checks.get(name)]

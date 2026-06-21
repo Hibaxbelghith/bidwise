@@ -44,7 +44,7 @@ from .models import (
     RawOpportuniteProcessingStatus,
     StatutOpportunite,
 )
-from .organization_expiration import expire_due_organization_opportunities
+from .organization_expiration import expire_due_opportunities, expire_due_organization_opportunities
 from .organization_notification_emails import (
     build_admin_approved_email,
     build_admin_rejected_email,
@@ -452,6 +452,18 @@ def expire_organization_opportunities_task():
         result["inspected"],
         result["expired"],
         result["by_reason"],
+    )
+    return result
+
+
+@shared_task(name="opportunities.expire_due_opportunities")
+def expire_due_opportunities_task():
+    result = expire_due_opportunities()
+    logger.info(
+        "Opportunity deadline expiration completed inspected=%s expired=%s filters=%s",
+        result["inspected"],
+        result["expired"],
+        result["filters"],
     )
     return result
 

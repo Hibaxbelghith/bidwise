@@ -37,6 +37,83 @@ export const OPPORTUNITY_TYPE_OPTIONS = [
 	{ value: 'CALLS_FOR_TENDER', label: 'Calls for tender' },
 ];
 
+export const TENDER_CATEGORY_OPTIONS = [
+	{
+		value: 'Biens',
+		label: 'Goods',
+		subcategories: [
+			{ value: 'Autres Fournitures', label: 'Other Supplies' },
+			{ value: 'Autres types de matériels', label: 'Other Equipment' },
+			{ value: 'Equipements hydromécaniques', label: 'Hydromechanical Equipment' },
+			{ value: 'Equipements informatiques', label: 'IT Equipment' },
+			{ value: 'Fournitures', label: 'Supplies' },
+			{ value: 'Fournitures agricoles', label: 'Agricultural Supplies' },
+			{ value: 'Fournitures de bureau', label: 'Office Supplies' },
+			{ value: 'Habillement', label: 'Clothing' },
+			{ value: 'Matériel', label: 'Equipment' },
+			{ value: 'Matériel Médical', label: 'Medical Equipment' },
+			{ value: 'Matériel agricole', label: 'Agricultural Equipment' },
+			{ value: 'Matériels de Bureau', label: 'Office Equipment' },
+			{ value: 'Matériels de reprographie', label: 'Reprography Equipment' },
+			{ value: 'Matériels électriques', label: 'Electrical Equipment' },
+			{ value: 'Matériels électroniques', label: 'Electronic Equipment' },
+			{ value: 'Matériels informatiques', label: 'IT Hardware' },
+			{ value: 'Matériels roulants', label: 'Vehicles' },
+			{ value: 'Matériels scientifiques', label: 'Scientific Equipment' },
+			{ value: 'Mobilier', label: 'Furniture' },
+			{ value: 'Nourriture', label: 'Food Supplies' },
+			{ value: "Produits d'entretien", label: 'Cleaning Products' },
+			{ value: 'Produits pharmaceutiques', label: 'Pharmaceutical Products' },
+		],
+	},
+	{
+		value: 'Travaux',
+		label: 'Works',
+		subcategories: [
+			{ value: 'Ascenseur', label: 'Elevator' },
+			{ value: 'Autres travaux', label: 'Other Works' },
+			{ value: 'Charpente métallique', label: 'Metal Structure' },
+			{ value: 'Climatisation', label: 'Air Conditioning' },
+			{ value: 'Electricité', label: 'Electricity' },
+			{ value: 'Forages hydrauliques', label: 'Hydraulic Drilling' },
+			{ value: 'Fondation Spéciale', label: 'Special Foundation' },
+			{ value: 'Génie Civil', label: 'Civil Engineering' },
+			{ value: 'Lac collinaire', label: 'Hill Reservoir' },
+			{ value: 'Ouvrages hydrauliques', label: 'Hydraulic Works' },
+			{ value: 'Peinture et vitrerie', label: 'Painting and Glazing' },
+			{ value: 'Pose de canalisation', label: 'Pipeline Installation' },
+			{ value: 'Réalisation des réseaux de télécommunication', label: 'Telecommunication Networks' },
+			{ value: 'Revêtement routier', label: 'Road Surfacing' },
+			{ value: 'Routes', label: 'Roads' },
+			{ value: 'Travaux de Rehabilitation', label: 'Rehabilitation Works' },
+			{ value: 'VRD', label: 'Roads and Utilities' },
+		],
+	},
+	{
+		value: 'Services',
+		label: 'Services',
+		subcategories: [
+			{ value: 'Autres services', label: 'Other Services' },
+			{ value: 'Maintenance', label: 'Maintenance' },
+			{ value: 'Maintenance technique', label: 'Technical Maintenance' },
+			{ value: 'Nettoyage', label: 'Cleaning' },
+			{ value: 'Services', label: 'Services' },
+		],
+	},
+	{
+		value: 'Etudes',
+		label: 'Studies',
+		subcategories: [
+			{ value: 'Activité littéraire et artistique', label: 'Literary and Artistic Activity' },
+			{ value: 'Autres études', label: 'Other Studies' },
+			{ value: 'Etudes', label: 'Studies' },
+			{ value: "Etudes d'impact", label: 'Impact Studies' },
+			{ value: 'Formation', label: 'Training' },
+		],
+	},
+	{ value: 'Autre', label: 'Other', subcategories: [] },
+];
+
 export const BUSINESS_FAMILY_OPTIONS = [
 	{ value: 'software_web', label: 'Software Web', group: 'Technology' },
 	{ value: 'backend', label: 'Backend Engineering', group: 'Technology' },
@@ -178,7 +255,7 @@ export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
 	{
 		value: 'CALLS_FOR_TENDER',
 		label: 'Calls for tender',
-		description: 'Public tenders and project opportunities',
+		description: 'Public and private tenders',
 		values: ['CALLS_FOR_TENDER'],
 	},
 ];
@@ -338,6 +415,9 @@ export const normalizeProfilePreferenceData = (data = {}) => ({
 	target_roles: normalizeTextList(data.target_roles),
 	competences: normalizeSkillList(data.competences),
 	domaines_interet: normalizeBusinessFamilyValues(data.domaines_interet),
+	tender_preferences: data.tender_preferences && typeof data.tender_preferences === 'object'
+		? data.tender_preferences
+		: { categories: [], max_budget: null },
 	profile_visibility: data.profile_visibility ?? true,
 });
 

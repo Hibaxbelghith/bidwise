@@ -9,7 +9,7 @@ from opportunities.models import (
     StatutOpportunite,
     TypeOpportunite,
 )
-from opportunities.organization_expiration import expire_due_organization_opportunities
+from opportunities.organization_expiration import expire_due_opportunities, expire_due_organization_opportunities
 
 
 class OrganizationOpportunityExpirationTests(TestCase):
@@ -96,3 +96,69 @@ class OrganizationOpportunityExpirationTests(TestCase):
         self.assertEqual(suspended.statut, StatutOpportunite.SUSPENDUE)
         self.assertEqual(scraped.statut, StatutOpportunite.ACTIVE)
         self.assertEqual(result["expired"], 0)
+
+    def test_global_expiration_can_expire_scraped_projects(self):
+        marches = SourceOpportunite.objects.create(
+            nom="MarchesPublics",
+            url="https://www.marchespublics.gov.tn",
+            type_source="PORTAIL_PROJET",
+        )
+        scraped_project = self.create_opportunity(
+            organisation=None,
+            source=marches,
+            type_opportunite=TypeOpportunite.PROJET,
+            date_limite=self.today - timedelta(days=1),
+        )
+        future_project = self.create_opportunity(
+            organisation=None,
+            source=marches,
+            type_opportunite=TypeOpportunite.PROJET,
+            date_limite=self.today + timedelta(days=1),
+        )
+
+        result = expire_due_opportunities(
+            today=self.today,
+            type_opportunite=TypeOpportunite.PROJET,
+            apply_changes=True,
+        )
+
+        scraped_project.refresh_from_db()
+        future_project.refresh_from_db()
+        self.assertEqual(scraped_project.statut, StatutOpportunite.EXPIREE)
+        self.assertEqual(future_project.statut, StatutOpportunite.ACTIVE)
+        self.assertEqual(result["expired_ids"], [scraped_project.id])
+
+    def test_global_expiration_can_expire_scraped_jobs_and_internships(self):
+        linkedin = SourceOpportunite.objects.create(
+            nom="LinkedIn",
+            url="https://www.linkedin.com/jobs",
+            type_source="PORTAIL_EMPLOI",
+        )
+        scraped_job = self.create_opportunity(
+            organisation=None,
+            source=linkedin,
+            type_opportunite=TypeOpportunite.EMPLOI,
+            date_limite=self.today - timedelta(days=1),
+        )
+        scraped_internship = self.create_opportunity(
+            organisation=None,
+            source=linkedin,
+            type_opportunite=TypeOpportunite.STAGE,
+            date_limite=self.today - timedelta(days=1),
+        )
+        future_job = self.create_opportunity(
+            organisation=None,
+            source=linkedin,
+            type_opportunite=TypeOpportunite.EMPLOI,
+            date_limite=self.today + timedelta(days=1),
+        )
+
+        result = expire_due_opportunities(today=self.today, apply_changes=True)
+
+        scraped_job.refresh_from_db()
+        scraped_internship.refresh_from_db()
+        future_job.refresh_from_db()
+        self.assertEqual(scraped_job.statut, StatutOpportunite.EXPIREE)
+        self.assertEqual(scraped_internship.statut, StatutOpportunite.EXPIREE)
+        self.assertEqual(future_job.statut, StatutOpportunite.ACTIVE)
+        self.assertEqual(result["expired_ids"], [scraped_job.id, scraped_internship.id])

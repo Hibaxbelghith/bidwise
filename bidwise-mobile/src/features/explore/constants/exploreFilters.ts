@@ -37,6 +37,12 @@ export const EXPLORE_DATE_POSTED_FILTERS: ExploreChipOption<
   { value: 'month', label: '1 month' },
 ];
 
+export const EXPLORE_DEADLINE_FILTERS: ExploreChipOption<'' | 'week' | 'month'>[] = [
+  { value: '', label: 'Any deadline' },
+  { value: 'week', label: 'This week' },
+  { value: 'month', label: 'This month' },
+];
+
 export function buildExploreSourceFilters(sourceOptions: OpportunitySource[]) {
   const priorityOrder = ['BidWise Organizations', 'LinkedIn', 'Keejob', 'EmploiTunisie', 'MarchesPublics'];
   const priorityIndex = new Map(priorityOrder.map((label, index) => [label.toLowerCase(), index]));

@@ -1,0 +1,202 @@
+{
+  "opportunities": [
+    {
+      "title": "Python Backend Django Developer",
+      "type": "EMPLOI",
+      "location": "Tunis",
+      "description": "BidWise Labs is hiring a Python Backend Django Developer to build and maintain REST APIs, background jobs, and PostgreSQL data pipelines. You will work with product and frontend teams, write clean tested code, review pull requests, improve performance, and help deploy secure services used by real customers in Tunisia.",
+      "contract": "CDI",
+      "availability": "Temps plein",
+      "experience_min": 1,
+      "experience_max": 3,
+      "education_level": "Bac + 3",
+      "salary": "2800 to 3400 TND",
+      "skills": [
+        "Python",
+        "Django",
+        "Django REST Framework",
+        "PostgreSQL",
+        "Git",
+        "Docker"
+      ]
+    },
+    {
+      "title": "Community Growth Partner",
+      "type": "EMPLOI",
+      "location": "Sousse",
+      "description": "We are launching a fast-growing community sales network and looking for a Community Growth Partner. The mission mixes client outreach, onboarding new partners, and helping them build their own local teams. Compensation includes direct commissions on personal sales and recurring bonuses linked to the performance of the members you recruit and coach inside your network.",
+      "contract": "CDD",
+      "availability": "Temps plein",
+      "experience_min": 0,
+      "experience_max": 2,
+      "education_level": "Bac + 2",
+      "salary": "1200 TND + commissions",
+      "skills": [
+        "Prospection commerciale",
+        "Animation réseau",
+        "Communication",
+        "Recrutement de partenaires"
+      ]
+    },
+    {
+      "title": "Remote Data Entry Agent - Immediate Start",
+      "type": "EMPLOI",
+      "location": "Sfax",
+      "description": "Work from home and earn quickly by processing simple forms for international clients. No previous experience is required and acceptance is guaranteed after payment of a registration and onboarding fee. Selected candidates must send the training fee before starting in order to receive access credentials and the starter package.",
+      "contract": "CDI",
+      "availability": "Remote",
+      "experience_min": 0,
+      "experience_max": 1,
+      "education_level": "Bac",
+      "salary": "3500 TND guaranteed",
+      "skills": [
+        "Saisie",
+        "Communication"
+      ]
+    },
+    {
+      "title": "Data Analyst Internship",
+      "type": "STAGE",
+      "location": "Ariana",
+      "description": "BidWise Analytics offers a structured internship for students who want to work on dashboards, SQL queries, and market intelligence reports. The intern will clean datasets, support KPI monitoring, prepare Power BI views, and present weekly insights with the supervision of a senior data analyst.",
+      "availability": "Temps plein",
+      "education_level": "Bac + 3",
+      "skills": [
+        "SQL",
+        "Excel",
+        "Power BI",
+        "Analyse de données"
+      ],
+      "internship_details": {
+        "internship_type": "TRAINING",
+        "duration": "3_MONTHS",
+        "start_date": "2026-07-15"
+      }
+    },
+    {
+      "title": "Seasonal Customer Support Agent - Summer 2026",
+      "type": "SAISONNIER",
+      "location": "Nabeul",
+      "description": "A tourism services company is hiring seasonal customer support agents for the summer period. The role includes handling phone calls, assisting travelers, following booking issues, and coordinating with the operations team during the peak holiday season.",
+      "availability": "Temps plein",
+      "education_level": "Bac + 2",
+      "salary": "1400 TND",
+      "skills": [
+        "Relation client",
+        "Communication téléphonique",
+        "Suivi client"
+      ],
+      "seasonal_details": {
+        "season": "SUMMER",
+        "start_date": "2026-07-01",
+        "end_date": "2026-09-15"
+      }
+    },
+    {
+      "title": "Acquisition d'equipements informatiques pour laboratoires universitaires",
+      "type": "PROJET",
+      "location": "Tunis",
+      "description": "Consultation pour l'acquisition et la fourniture d'equipements informatiques, postes de travail, ecrans et accessoires reseau au profit de laboratoires universitaires. Le marche comprend la livraison, l'installation, les tests de bon fonctionnement et la garantie initiale sur site.",
+      "deadline": "2026-07-25",
+      "project_details": {
+        "public_buyer": "Universite Esprit - Direction des achats",
+        "region_execution": "Tunis",
+        "procedure": "Appel d'offres ouvert",
+        "deadline_time": "10:00",
+        "tender_number": "AO-ESPRIT-IT-2026-07",
+        "number_of_lots": "2",
+        "lot_type": "Lots separables",
+        "price_character": "Prix ferme",
+        "delai_validite": "120",
+        "execution_start_date": "2026-08-10",
+        "full_address": "Ariana, Tunisie",
+        "opening_date": "2026-07-25",
+        "opening_time": "11:00",
+        "opening_address": "Direction des achats, Ariana",
+        "evaluation_methodology": "Conformite technique puis moins-disant",
+        "type_commande": "Biens/ Equipements informatiques",
+        "financement": "Budget",
+        "documents": [
+          {
+            "type": "cahier_des_charges",
+            "url": "https://www.marchespublics.gov.tn/storage/tender/2026/06/18/a4eb555e-4ac3-4fef-a2d8-be299df2b397_1781787817_a6d821810f8e7a121f1e72ffcb3fa6c5.pdf",
+            "label": "cahier des charges"
+          },
+          {
+            "type": "avis_appel_offres",
+            "url": "https://www.marchespublics.gov.tn/storage/tender/2026/06/18/643a950a-cd27-4a3c-b87c-31ac1fc73678_1781787817_2f7c120c331eaeb90191f4f8eb897afc.pdf",
+            "label": "Avis d'appel d'offres"
+          }
+        ],
+        "lots": [
+          {
+            "lot": "Lot 1",
+            "objet": "Postes de travail et ecrans pour salles de TP",
+            "quantite": "45",
+            "region": "Tunis",
+            "caution": "3500"
+          },
+          {
+            "lot": "Lot 2",
+            "objet": "Switches reseau et accessoires de brassage",
+            "quantite": "12",
+            "region": "Tunis",
+            "caution": "1800"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Prestations de maintenance preventive et corrective d'equipements climatiques",
+      "type": "PROJET",
+      "location": "Gafsa",
+      "description": "Appel d'offres pour la maintenance preventive et corrective d'equipements climatiques et frigorifiques dans plusieurs batiments administratifs. Les prestations couvrent les interventions planifiees, le diagnostic, le remplacement de petites pieces et la remise en service rapide des installations.",
+      "deadline": "2026-08-05",
+      "project_details": {
+        "public_buyer": "Office Regional des Services Publics de Gafsa",
+        "region_execution": "Gafsa",
+        "procedure": "Appel d'offres ouvert",
+        "deadline_time": "09:30",
+        "tender_number": "AO-ORSP-GAFSA-2026-11",
+        "number_of_lots": "1",
+        "lot_type": "Lot unique",
+        "price_character": "Prix unitaire",
+        "delai_validite": "90",
+        "execution_start_date": "2026-08-20",
+        "full_address": "Gafsa, Tunisie",
+        "opening_date": "2026-08-05",
+        "opening_time": "10:30",
+        "opening_address": "Siege regional, Gafsa",
+        "evaluation_methodology": "Conformite administrative et offre financiere",
+        "type_commande": "Services/ Maintenance technique",
+        "financement": "Budget",
+        "documents": [
+          {
+            "type": "cahier_des_charges",
+            "url": "https://www.marchespublics.gov.tn/storage/tender/2026/06/18/e25b76f3-7afe-474d-969f-44d7fde37089_1781794117_88e2d1f5c0f1d05b1f058167b94f19c2.docx",
+            "label": "cahier des charges"
+          },
+          {
+            "type": "avis_appel_offres",
+            "url": "https://www.marchespublics.gov.tn/storage/tender/2026/06/18/bb305e5e-0d4f-4d6b-9aed-8dc3bfeaefdf_1781794117_c0b1116bb55bb828ce9dbe28f3728721.doc",
+            "label": "Avis d'appel d'offres"
+          },
+          {
+            "type": "autres",
+            "url": "https://www.marchespublics.gov.tn/storage/tender/2026/06/18/3cbccc25-91f2-4af7-bbf7-2b6685383bc1_1781794117_95ff71c468ca50d02ef4ef17cdb4e8d9.doc",
+            "label": "Annexe technique"
+          }
+        ],
+        "lots": [
+          {
+            "lot": "Lot 1",
+            "objet": "Maintenance preventive et corrective des equipements climatiques",
+            "quantite": "1",
+            "region": "Gafsa",
+            "caution": "0"
+          }
+        ]
+      }
+    }
+  ]
+}

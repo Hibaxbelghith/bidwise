@@ -9,6 +9,11 @@ import {
 
 const normalizeList = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
 
+const isCallsForTenderOnlyProfile = (user) => {
+  const types = normalizeList(user?.profil?.opportunity_types).map((item) => String(item).trim().toUpperCase());
+  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+};
+
 const getProfileStatus = (user) => {
   const profile = user?.profil || {};
   const completionScore = getProfileCompletionScore(user);
@@ -41,6 +46,10 @@ export const buildBrowseInterruptionCards = ({ isUserAuthenticated, user, onShow
         to: '/login',
       },
     ];
+  }
+
+  if (isCallsForTenderOnlyProfile(user)) {
+    return [];
   }
 
   const status = getProfileStatus(user);

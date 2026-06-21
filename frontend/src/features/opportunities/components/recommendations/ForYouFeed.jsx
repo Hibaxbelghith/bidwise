@@ -134,6 +134,7 @@ const ForYouFeed = ({
   hasActiveFilters,
   recommendations = [],
   recommendedOpportunities,
+  isTenderFeed = false,
   loading,
   showFetchingSpinner,
   error,
@@ -239,10 +240,12 @@ const ForYouFeed = ({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-neutral-950">
-              Your AI recommendation feed
+              {isTenderFeed ? 'Your call-for-tender recommendation feed' : 'Your AI recommendation feed'}
             </p>
             <p className="mt-1 text-sm text-neutral-600">
-              Strong matches are shown first. Lower-confidence opportunities stay separated so you can review them without inflated scores.
+              {isTenderFeed
+                ? 'High-priority tenders are shown first using your regions, tender categories, and semantic similarity.'
+                : 'Strong matches are shown first. Lower-confidence opportunities stay separated so you can review them without inflated scores.'}
             </p>
           </div>
         </div>
@@ -299,8 +302,12 @@ const ForYouFeed = ({
           <div className="space-y-3 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-2">
             {strongMatchItems.length > 0 ? (
               <FeedSection
-                title="Strong matches"
-                description="Best aligned with your role, skills, CV, and preferences."
+                title={isTenderFeed ? 'Strong priorities' : 'Strong matches'}
+                description={
+                  isTenderFeed
+                    ? 'Best aligned with your tender categories, regions, and project context.'
+                    : 'Best aligned with your role, skills, CV, and preferences.'
+                }
                 items={strongMatchItems}
                 selectedOpportunity={selectedOpportunity}
                 isUserAuthenticated={isUserAuthenticated}
@@ -309,9 +316,21 @@ const ForYouFeed = ({
             ) : null}
             {relatedReviewItems.length > 0 ? (
               <FeedSection
-                title={strongMatchItems.length > 0 ? 'Related opportunities to review' : 'Related opportunities'}
+                title={
+                  isTenderFeed
+                    ? strongMatchItems.length > 0
+                      ? 'Tenders to monitor'
+                      : 'Tender priorities'
+                    : strongMatchItems.length > 0
+                      ? 'Related opportunities to review'
+                      : 'Related opportunities'
+                }
                 description={
-                  strongMatchItems.length > 0
+                  isTenderFeed
+                    ? strongMatchItems.length > 0
+                      ? 'Relevant tenders kept separate because they need manual review before action.'
+                      : 'Best active tenders based on your categories and regions.'
+                    : strongMatchItems.length > 0
                     ? 'Lower-confidence matches kept separate because they need a human check.'
                     : 'No strong match is available yet, so these are the safest related opportunities to inspect.'
                 }

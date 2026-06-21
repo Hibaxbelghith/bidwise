@@ -13,6 +13,7 @@ import StepSalary from './steps/StepSalary.jsx';
 import StepEmploymentType from './steps/StepEmploymentType.jsx';
 import StepTargetRoles from './steps/StepTargetRoles.jsx';
 import StepVisibility from './steps/StepVisibility.jsx';
+import StepTenderPreferences from './steps/StepTenderPreferences.jsx';
 import {
 	getEmploymentTypeOptionsForOpportunityTypes,
 	normalizeProfilePreferenceData,
@@ -42,9 +43,11 @@ const STEPS = [
 	StepEmploymentType,
 	StepTargetRoles,
 	StepVisibility,
+	StepTenderPreferences,
 ];
 
 const TOTAL_STEPS = STEPS.length;
+const TENDER_PREFERENCES_STEP = TOTAL_STEPS - 1;
 
 const STEP_META = [
 	{
@@ -81,6 +84,10 @@ const STEP_META = [
 		subtitle:
 			'Control how your profile appears to recruiters. You can change this anytime in settings.',
 	},
+	{
+		title: 'What tender categories interest you?',
+		subtitle: 'Choose a controlled category so BidWise can prioritize relevant active tenders.',
+	},
 ];
 
 const initialData = {
@@ -96,8 +103,22 @@ const initialData = {
 	target_roles: [],
 	competences: [],
 	domaines_interet: [],
+	tender_preferences: { categories: [], max_budget: null },
 	profile_visibility: true,
 };
+
+const isCallsForTenderOnly = (value) =>
+	Array.isArray(value) &&
+	value.length === 1 &&
+	value[0] === 'CALLS_FOR_TENDER';
+
+const buildTenderOnlyPayload = (data) => ({
+	opportunity_types: ['CALLS_FOR_TENDER'],
+	preferred_locations: data.preferred_locations || [],
+	tender_preferences: data.tender_preferences || { categories: [], max_budget: null },
+	onboarding_completed: true,
+	last_onboarding_step: TENDER_PREFERENCES_STEP,
+});
 
 const buildStoredProfileData = (data, onboardingCompleted = false) => ({
 	...normalizeProfilePreferenceData(data),
@@ -126,6 +147,28 @@ const buildDeferredOnboardingPayload = (data, currentStep) => {
 const getStepValidationError = (step, data) => {
 	if (step === 0 && (!Array.isArray(data.opportunity_types) || data.opportunity_types.length === 0)) {
 		return 'Select at least one opportunity type to help us recommend relevant matches.';
+	}
+
+	if (isCallsForTenderOnly(data.opportunity_types)) {
+		if (step === 1 && (!Array.isArray(data.preferred_locations) || data.preferred_locations.length === 0)) {
+			return 'Choose at least one region of interest.';
+		}
+		if (step === TENDER_PREFERENCES_STEP) {
+			const firstCategory = Array.isArray(data.tender_preferences?.categories)
+				? data.tender_preferences.categories[0]
+				: null;
+			if (!firstCategory?.category) {
+				return 'Select a tender category.';
+			}
+			if (firstCategory.category !== 'Autre' && !firstCategory.subcategory) {
+				return 'Select a tender subcategory.';
+			}
+			const maxBudget = data.tender_preferences?.max_budget;
+			if (maxBudget !== null && maxBudget !== '' && Number(maxBudget) < 0) {
+				return 'Enter a positive maximum budget.';
+			}
+		}
+		return '';
 	}
 
 	if (step === 1 && (!Array.isArray(data.work_mode_preferences) || data.work_mode_preferences.length === 0)) {
@@ -169,6 +212,13 @@ const getStepValidationError = (step, data) => {
 };
 
 const findFirstIncompleteRequiredStep = (data) => {
+	if (isCallsForTenderOnly(data.opportunity_types)) {
+		for (const step of [0, 1, TENDER_PREFERENCES_STEP]) {
+			const error = getStepValidationError(step, data);
+			if (error) return { step, error };
+		}
+		return null;
+	}
 	for (const step of [0, 1, 2, 3, 4, 5, 6]) {
 		const error = getStepValidationError(step, data);
 		if (error) {
@@ -248,6 +298,13 @@ const Onboarding = () => {
 					getEmploymentTypeOptionsForOpportunityTypes(value).map((option) => option.value)
 				);
 				next.employment_types = (prev.employment_types || []).filter((item) => allowed.has(item));
+				if (isCallsForTenderOnly(value)) {
+					next.work_mode_preferences = [];
+					next.employment_types = [];
+					next.target_roles = [];
+					next.competences = [];
+					next.domaines_interet = [];
+				}
 			}
 			return next;
 		});
@@ -262,20 +319,32 @@ const Onboarding = () => {
 		}
 		setValidationError('');
 		setSubmissionError(null);
-		if (currentStep === TOTAL_STEPS - 1) {
+		if (currentStep === 0 && isCallsForTenderOnly(data.opportunity_types)) {
+			setCurrentStep(1);
+			return;
+		}
+		if (currentStep === 1 && isCallsForTenderOnly(data.opportunity_types)) {
+			setCurrentStep(TENDER_PREFERENCES_STEP);
+			return;
+		}
+		if (currentStep === TENDER_PREFERENCES_STEP || (!isCallsForTenderOnly(data.opportunity_types) && currentStep === TOTAL_STEPS - 2)) {
 			handleFinish();
 		} else {
-			setCurrentStep((s) => Math.min(s + 1, TOTAL_STEPS - 1));
+			setCurrentStep((s) => Math.min(s + 1, TOTAL_STEPS - 2));
 		}
 	};
 
 	const handleBack = () => {
 		setValidationError('');
-		setCurrentStep((s) => Math.max(s - 1, 0));
+		setCurrentStep((s) => {
+			if (s === TENDER_PREFERENCES_STEP && isCallsForTenderOnly(data.opportunity_types)) return 1;
+			return Math.max(s - 1, 0);
+		});
 	};
 
 	const handleFinish = async () => {
-		const incompleteStep = findFirstIncompleteRequiredStep(data);
+		const tenderOnly = isCallsForTenderOnly(data.opportunity_types);
+		const incompleteStep = tenderOnly ? null : findFirstIncompleteRequiredStep(data);
 		if (incompleteStep) {
 			setCurrentStep(incompleteStep.step);
 			setValidationError(incompleteStep.error);
@@ -286,21 +355,23 @@ const Onboarding = () => {
 		setSubmissionError(null);
 		setIsSubmitting(true);
 		try {
-			const payload = {
-				...normalizeProfilePreferenceData(data),
-				compensation_expectation:
-					data.compensation_min_expectation ?? data.compensation_max_expectation ?? null,
-				onboarding_completed: true,
-				last_onboarding_step: currentStep,
-			};
+			const payload = tenderOnly
+				? buildTenderOnlyPayload(data)
+				: {
+					...normalizeProfilePreferenceData(data),
+					compensation_expectation:
+						data.compensation_min_expectation ?? data.compensation_max_expectation ?? null,
+					onboarding_completed: true,
+					last_onboarding_step: currentStep,
+				};
 			const result = await updateUserProfile(payload);
 			if (result.success) {
 				localStorage.setItem(
 					USER_PROFILE_STORAGE_KEY,
-					JSON.stringify(buildStoredProfileData(data, true))
+					JSON.stringify(buildStoredProfileData(tenderOnly ? payload : data, true))
 				);
 				sessionStorage.removeItem(STORAGE_KEY);
-				navigate('/opportunities', { replace: true });
+				navigate(tenderOnly ? '/opportunities?type=PROJET' : '/opportunities', { replace: true });
 			} else {
 				setSubmissionError(result.error || 'Failed to save profile');
 			}
@@ -345,8 +416,12 @@ const Onboarding = () => {
 
 	const StepComponent = STEPS[currentStep];
 	const meta = STEP_META[currentStep];
-	const progress = Math.round(((currentStep + 1) / TOTAL_STEPS) * 100);
-	const isLastStep = currentStep === TOTAL_STEPS - 1;
+	const tenderOnly = isCallsForTenderOnly(data.opportunity_types);
+	const tenderProgressMap = { 0: 33, 1: 66, [TENDER_PREFERENCES_STEP]: 100 };
+	const progress = tenderOnly
+		? (tenderProgressMap[currentStep] || 33)
+		: Math.round(((currentStep + 1) / (TOTAL_STEPS - 1)) * 100);
+	const isLastStep = tenderOnly ? currentStep === TENDER_PREFERENCES_STEP : currentStep === TOTAL_STEPS - 2;
 
 	return (
 		<section className="flex min-h-screen items-start justify-center bg-neutral-50 px-4 py-12" aria-labelledby="onboarding-heading">
@@ -364,7 +439,7 @@ const Onboarding = () => {
 					<div className="border-b border-neutral-100 px-8 pt-6 pb-4">
 						<div className="mb-2 flex items-center justify-between text-sm text-neutral-500">
 							<span>
-								Step {currentStep + 1} of {TOTAL_STEPS}
+								Step {tenderOnly ? (currentStep === TENDER_PREFERENCES_STEP ? 3 : currentStep + 1) : currentStep + 1} of {tenderOnly ? 3 : TOTAL_STEPS - 1}
 							</span>
 							<span>{progress}%</span>
 						</div>

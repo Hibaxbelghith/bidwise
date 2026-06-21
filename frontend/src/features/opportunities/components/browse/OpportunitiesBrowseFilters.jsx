@@ -35,6 +35,40 @@ const DATE_POSTED_OPTIONS = [
   { value: 'month', label: 'Last month' },
 ];
 
+const DEADLINE_WINDOW_OPTIONS = [
+  { value: 'all', label: 'Any deadline' },
+  { value: 'week', label: 'This week' },
+  { value: 'month', label: 'This month' },
+];
+
+const SOURCE_LOGOS = [
+  {
+    match: /keejob/i,
+    src: '/logos_sites_sources/keejob_logo.jpg',
+    alt: 'Keejob logo',
+  },
+  {
+    match: /linkedin/i,
+    src: '/logos_sites_sources/logos_opportunities/LinkedIn_icon.svg.webp',
+    alt: 'LinkedIn logo',
+  },
+  {
+    match: /emploi\s*tunisie|emploitunisie/i,
+    src: '/logos_sites_sources/emploiTunisie.png',
+    alt: 'EmploiTunisie logo',
+  },
+  {
+    match: /bidwise/i,
+    src: '/BidWise Icon.png',
+    alt: 'BidWise logo',
+  },
+  {
+    match: /march[eé]s?\s*publics|haicop|tunips|tuneps/i,
+    src: '/logos_sites_sources/HAICOP.png',
+    alt: 'Marches publics logo',
+  },
+];
+
 const countBy = (items, getKey) =>
   (items || []).reduce((accumulator, item) => {
     const key = String(getKey(item) || '').trim();
@@ -82,7 +116,40 @@ const inferExperienceLevel = (opportunity) => {
   return 'senior';
 };
 
-const FilterPill = ({ active, children, count, onClick }) => (
+const getSourceLogo = (sourceName) => {
+  const normalized = String(sourceName || '').trim();
+  if (!normalized) return null;
+  return SOURCE_LOGOS.find((logo) => logo.match.test(normalized)) || null;
+};
+
+const SourceLogo = ({ sourceName }) => {
+  const logo = getSourceLogo(sourceName);
+  const fallbackInitial = String(sourceName || '?').trim().charAt(0).toUpperCase() || '?';
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const shouldShowImage = Boolean(logo) && !imageFailed;
+
+  return (
+    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded bg-white ring-1 ring-neutral-200">
+      {shouldShowImage ? (
+        <img
+          src={logo.src}
+          alt={logo.alt}
+          className="h-full w-full object-contain"
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+            setImageFailed(true);
+          }}
+        />
+      ) : (
+        <span className="text-[10px] font-bold text-neutral-500">{fallbackInitial}</span>
+      )}
+    </span>
+  );
+};
+
+const FilterPill = ({ active, children, count, leadingVisual = null, onClick }) => (
   <button
     type="button"
     aria-pressed={active}
@@ -101,6 +168,7 @@ const FilterPill = ({ active, children, count, onClick }) => (
           active ? 'border-blue-600 bg-blue-600' : 'border-neutral-300 bg-white',
         ].join(' ')}
       />
+      {leadingVisual}
       <span className="truncate">{children}</span>
     </span>
     <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-700">
@@ -213,6 +281,7 @@ const SidebarFilters = ({
   opportunities,
   facets,
   sourceOptions,
+  tenderOnly = false,
   typeFilter,
   setTypeFilter,
   sourceFilter,
@@ -250,7 +319,11 @@ const SidebarFilters = ({
   return (
     <div className="space-y-6">
       <FilterGroup title="Opportunity types">
-        {showTypeSkeleton ? (
+        {tenderOnly ? (
+          <FilterPill active count={typeCounts.PROJET || 0} onClick={() => {}}>
+            Calls for tender
+          </FilterPill>
+        ) : showTypeSkeleton ? (
           TYPE_OPTIONS.map((option) => <FilterPillSkeleton key={option.value} />)
         ) : (
           TYPE_OPTIONS.map((option) => (
@@ -296,6 +369,7 @@ const SidebarFilters = ({
         </>
       ) : null}
 
+      {!tenderOnly ? (
       <FilterGroup title="Sources">
         {sourceOptions.length > 0 ? (
           sourceOptions.map((source) => (
@@ -303,6 +377,7 @@ const SidebarFilters = ({
               key={source.id}
               active={sourceFilter === String(source.id)}
               count={sourceCounts[String(source.id)] || 0}
+              leadingVisual={<SourceLogo sourceName={source.nom} />}
               onClick={() => setSourceFilter(sourceFilter === String(source.id) ? '' : String(source.id))}
             >
               {source.nom}
@@ -316,6 +391,7 @@ const SidebarFilters = ({
           </>
         )}
       </FilterGroup>
+      ) : null}
     </div>
   );
 };
@@ -343,12 +419,14 @@ const OpportunitiesBrowseFilters = ({
   setDatePostedFilter,
   opportunities,
   resetFilters,
+  tenderOnly = false,
 }) => {
   const sidebarProps = {
     loading,
     opportunities,
     facets,
     sourceOptions,
+    tenderOnly,
     typeFilter,
     setTypeFilter,
     sourceFilter,
@@ -362,6 +440,11 @@ const OpportunitiesBrowseFilters = ({
   const locationOptions = facetLocationOptions.length
     ? facetLocationOptions
     : cityOptions.map((city) => ({ key: city, count: 0 }));
+  const dateFilterOptions = tenderOnly ? DEADLINE_WINDOW_OPTIONS : DATE_POSTED_OPTIONS;
+  const dateFilterPlaceholder = tenderOnly ? 'Deadline' : 'Date posted';
+  const searchPlaceholder = tenderOnly
+    ? 'Search tenders: IT, construction, supplies...'
+    : 'Search roles, skills or companies...';
 
   if (variant === 'sidebar') {
     return (
@@ -393,7 +476,7 @@ const OpportunitiesBrowseFilters = ({
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
             <Input
               type="text"
-              placeholder="Search roles, skills or companies..."
+              placeholder={searchPlaceholder}
               className="h-11 bg-white pl-9 text-neutral-900 placeholder:text-neutral-500"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
@@ -412,12 +495,12 @@ const OpportunitiesBrowseFilters = ({
               setDatePostedFilter(value === 'all' ? '' : value);
             }}
           >
-            <SelectTrigger className="h-11 bg-white">
+          <SelectTrigger className="h-11 bg-white">
               <CalendarDays className="h-4 w-4 text-neutral-500" />
-              <SelectValue placeholder="Date posted" />
+              <SelectValue placeholder={dateFilterPlaceholder} />
             </SelectTrigger>
             <SelectContent>
-              {DATE_POSTED_OPTIONS.map((option) => (
+              {dateFilterOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

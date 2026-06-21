@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { BriefcaseBusiness, CalendarDays, Globe2, MapPin, Sparkles } from 'lucide-react';
+import { BriefcaseBusiness, CalendarDays, ClipboardList, Globe2, MapPin, Sparkles } from 'lucide-react';
 
 import { Badge } from '../../../../components/ui/badge.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
@@ -14,11 +14,12 @@ const ForYouPreviewCard = memo(({
   onSelect,
 }) => {
   const viewModel = buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated);
+  const isProject = viewModel.isProject;
   const recommendation = opportunity?.recommendation || opportunity;
   const recommendationVm = buildRecommendationViewModel(recommendation, { compact: true });
   const reasons = recommendationVm?.visibleReasons?.slice(0, 2) || [];
   const signalChips = recommendationVm?.signalChips?.slice(0, 3) || [];
-  const skills = viewModel.skillsPreview.slice(0, 2);
+  const skills = isProject ? [] : viewModel.skillsPreview.slice(0, 2);
 
   return (
     <button
@@ -68,25 +69,35 @@ const ForYouPreviewCard = memo(({
           ) : null}
 
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-600">
-            {viewModel.publishedAgoLabel ? (
+            {isProject && viewModel.deadlineDateLabel ? (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
+                <span className="truncate">Deadline {viewModel.deadlineDateLabel}</span>
+              </span>
+            ) : viewModel.publishedAgoLabel ? (
               <span className="inline-flex min-w-0 items-center gap-1">
                 <CalendarDays className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
                 <span className="truncate">Published {viewModel.publishedAgoLabel}</span>
               </span>
             ) : null}
-            {viewModel.locationLabel ? (
+            {(isProject ? viewModel.projectRegionLabel : viewModel.locationLabel) ? (
               <span className="inline-flex min-w-0 items-center gap-1">
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
-                <span className="truncate">{viewModel.locationLabel}</span>
+                <span className="truncate">{isProject ? viewModel.projectRegionLabel : viewModel.locationLabel}</span>
               </span>
             ) : null}
-            {viewModel.contractTypeLabel ? (
+            {isProject && viewModel.projectTypeCommandeLabel ? (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <ClipboardList className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
+                <span className="truncate">{viewModel.projectTypeCommandeLabel}</span>
+              </span>
+            ) : viewModel.contractTypeLabel ? (
               <span className="inline-flex min-w-0 items-center gap-1">
                 <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
                 <span className="truncate">{viewModel.contractTypeLabel}</span>
               </span>
             ) : null}
-            {viewModel.experienceLabel ? (
+            {!isProject && viewModel.experienceLabel ? (
               <span className="truncate">{viewModel.experienceLabel}</span>
             ) : null}
           </div>

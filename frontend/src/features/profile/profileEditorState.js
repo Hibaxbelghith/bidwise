@@ -80,6 +80,9 @@ export const buildProfileEditorState = ({
     employmentTypes: backendEmploymentTypes.length
       ? backendEmploymentTypes
       : onboardingPreferences.employment_types,
+    tenderPreferences: profile?.tender_preferences && typeof profile.tender_preferences === 'object'
+      ? profile.tender_preferences
+      : onboardingPreferences.tender_preferences,
     profileVisibility:
       profile?.profile_visibility ?? onboardingPreferences.profile_visibility,
   };

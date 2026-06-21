@@ -512,6 +512,10 @@ CELERY_BEAT_SCHEDULER = os.getenv(
     "celery.beat:PersistentScheduler",
 )
 CELERY_BEAT_SCHEDULE = {
+    "expire-due-opportunities-hourly": {
+        "task": "opportunities.expire_due_opportunities",
+        "schedule": crontab(minute=3),
+    },
     "expire-organization-opportunities-hourly": {
         "task": "opportunities.expire_organization_opportunities",
         "schedule": crontab(minute=5),

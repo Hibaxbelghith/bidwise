@@ -2,14 +2,15 @@ import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
+  listTenderRecommendations,
   listOpportunityRecommendations,
   normalizeOpportunity,
 } from '../services/opportunitiesService.js';
 import { mergeRecommendationIntoOpportunity } from '../utils/recommendationUtils.js';
 
 const DEFAULT_RECOMMENDATION_LIMIT = 20;
-const RECOMMENDATION_STALE_TIME_MS = 2 * 60 * 1000;
-const RECOMMENDATION_GC_TIME_MS = 10 * 60 * 1000;
+const RECOMMENDATION_STALE_TIME_MS = 10 * 60 * 1000;
+const RECOMMENDATION_GC_TIME_MS = 30 * 60 * 1000;
 
 const emptyRecommendations = [];
 const emptyOpportunities = [];
@@ -39,36 +40,58 @@ export const useOpportunityRecommendations = ({
   includeDetails = false,
   limit = DEFAULT_RECOMMENDATION_LIMIT,
   cacheKey = 'default',
+  recommendationType = 'job',
 } = {}) => {
+  const isTenderRecommendation = recommendationType === 'tender';
   const recommendationsQueryKey = useMemo(
-    () => ['opportunity-recommendations', cacheKey, limit],
-    [cacheKey, limit],
+    () => ['opportunities', 'recommendations', { cacheKey, limit, recommendationType }],
+    [cacheKey, limit, recommendationType],
   );
 
   const recommendationsQuery = useQuery({
     queryKey: recommendationsQueryKey,
-    queryFn: () => listOpportunityRecommendations({ limit }),
-    enabled,
+    queryFn: async () => {
+      if (!isTenderRecommendation) {
+        return listOpportunityRecommendations({ limit });
+      }
+
+      const payload = await listTenderRecommendations({ limit });
+      return payload.results;
+    },
+    enabled: Boolean(enabled),
     staleTime: RECOMMENDATION_STALE_TIME_MS,
     gcTime: RECOMMENDATION_GC_TIME_MS,
-    refetchOnMount: 'always',
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const recommendations = recommendationsQuery.data || emptyRecommendations;
+  const rawRecommendations = recommendationsQuery.data || emptyRecommendations;
+  const recommendations = useMemo(
+    () =>
+      isTenderRecommendation
+        ? rawRecommendations.map((item) => item?.recommendation).filter(Boolean)
+        : rawRecommendations,
+    [isTenderRecommendation, rawRecommendations],
+  );
+  const recommendationIds = useMemo(
+    () => recommendations.map((item) => item.id).join(','),
+    [recommendations],
+  );
   const detailsQuery = useQuery({
-    queryKey: ['opportunity-recommendation-details', cacheKey, recommendations.map((item) => item.id).join(',')],
+    queryKey: ['opportunities', 'recommendation-details', { cacheKey, ids: recommendationIds }],
     queryFn: () => loadRecommendationDetails({ recommendations }),
-    enabled: enabled && includeDetails && recommendations.length > 0,
+    enabled: Boolean(enabled && includeDetails && !isTenderRecommendation && recommendations.length > 0),
     staleTime: RECOMMENDATION_STALE_TIME_MS,
     gcTime: RECOMMENDATION_GC_TIME_MS,
-    refetchOnMount: 'always',
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const hydratedOpportunities = detailsQuery.data || emptyOpportunities;
+  const hydratedOpportunities = isTenderRecommendation
+    ? rawRecommendations
+    : detailsQuery.data || emptyOpportunities;
   const hydratedById = useMemo(() => {
     const map = new Map();
     hydratedOpportunities.forEach((opportunity) => {
@@ -110,9 +133,9 @@ export const useOpportunityRecommendations = ({
     recommendations,
     recommendationById,
     recommendedOpportunities,
-    loading: enabled && recommendationsQuery.isLoading,
-    isFetching: enabled && (recommendationsQuery.isFetching || detailsQuery.isFetching),
-    isHydratingDetails: enabled && includeDetails && detailsQuery.isFetching && recommendations.length > 0,
+    loading: Boolean(enabled && recommendationsQuery.isLoading),
+    isFetching: Boolean(enabled && (recommendationsQuery.isFetching || detailsQuery.isFetching)),
+    isHydratingDetails: Boolean(enabled && includeDetails && detailsQuery.isFetching && recommendations.length > 0),
     error:
       recommendationsQuery.error?.response?.data?.detail ||
       recommendationsQuery.error?.message ||
