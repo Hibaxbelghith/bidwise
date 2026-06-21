@@ -160,6 +160,7 @@ export default function OpportunityCard({
       <View style={styles.headerRow}>
         <OpportunityLogo
           logoUrl={getCompanyLogoUrl(item)}
+          sourceName={sourceLabel}
           borderColor={borderColor}
           cardColor={cardColor}
           size={52}

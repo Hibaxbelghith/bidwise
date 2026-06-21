@@ -30,6 +30,7 @@ export type ProfileEditorFieldErrors = {
   yearsOfExperience?: string;
   salaryRange?: string;
   preferredLocations?: string;
+  tenderPreferences?: string;
 };
 
 export function useProfileEditor() {
@@ -135,6 +136,17 @@ export function useProfileEditor() {
     if (editorState.preferredLocations.length > MAX_PREFERRED_LOCATIONS) {
       nextFieldErrors.preferredLocations = `Choose up to ${MAX_PREFERRED_LOCATIONS} preferred locations.`;
     }
+    if (tenderOnly) {
+      const selectedTenderCategory = editorState.tenderPreferences.categories[0];
+      const maxBudget = editorState.tenderPreferences.max_budget;
+      if (!selectedTenderCategory?.category) {
+        nextFieldErrors.tenderPreferences = 'Select a tender category.';
+      } else if (selectedTenderCategory.category !== 'Autre' && !selectedTenderCategory.subcategory) {
+        nextFieldErrors.tenderPreferences = 'Select a tender subcategory.';
+      } else if (maxBudget !== null && maxBudget !== '' && Number(maxBudget) < 0) {
+        nextFieldErrors.tenderPreferences = 'Enter a positive maximum caution budget.';
+      }
+    }
 
     setFieldErrors(nextFieldErrors);
     return {
@@ -149,6 +161,7 @@ export function useProfileEditor() {
     editorState.formData.yearsOfExperience,
     editorState.opportunityTypes,
     editorState.preferredLocations.length,
+    editorState.tenderPreferences,
     salaryValidation.error,
   ]);
 
@@ -165,9 +178,10 @@ export function useProfileEditor() {
       const tenderOnly = isCallsForTenderOnly(editorState.opportunityTypes);
       const payload = tenderOnly
         ? {
-            prenom: firstNameValidation.value || null,
-            nom: lastNameValidation.value || null,
+            prenom: firstNameValidation.value || '',
+            nom: lastNameValidation.value || '',
             opportunity_types: ['CALLS_FOR_TENDER'],
+            tender_preferences: editorState.tenderPreferences,
             preferred_locations: editorState.preferredLocations,
             domaines_interet: [],
             competences: [],

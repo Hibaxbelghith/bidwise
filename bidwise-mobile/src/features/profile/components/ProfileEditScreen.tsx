@@ -20,6 +20,7 @@ import SalaryExpectationField from '@/src/features/profile/components/SalaryExpe
 import {
   BUSINESS_FAMILY_OPTIONS,
   getEmploymentTypeOptionsForOpportunityTypes,
+  normalizeExclusiveOpportunityTypes,
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
   TUNISIAN_LOCATION_OPTIONS,
   WORK_MODE_OPTIONS,
@@ -133,10 +134,14 @@ export default function ProfileEditScreen() {
     visibleEmploymentTypeValues.has(value),
   );
   const setOpportunityTypes = (values: string[]) => {
-    const allowedEmploymentTypes = new Set(
-      getEmploymentTypeOptionsForOpportunityTypes(values).map((option) => option.value),
+    const normalizedValues = normalizeExclusiveOpportunityTypes(
+      values,
+      editorState.opportunityTypes,
     );
-    setStateField('opportunityTypes', values);
+    const allowedEmploymentTypes = new Set(
+      getEmploymentTypeOptionsForOpportunityTypes(normalizedValues).map((option) => option.value),
+    );
+    setStateField('opportunityTypes', normalizedValues);
     setStateField(
       'employmentTypes',
       editorState.employmentTypes.filter((value) => allowedEmploymentTypes.has(value)),

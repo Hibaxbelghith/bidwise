@@ -44,6 +44,16 @@ export type ProfileCompletion = {
   missing: string[];
 };
 
+export type TenderCategoryPreference = {
+  category: string;
+  subcategory: string;
+};
+
+export type TenderPreferences = {
+  categories: TenderCategoryPreference[];
+  max_budget: string | number | null;
+};
+
 export type BidWiseProfile = {
   id?: number;
   nom?: string;
@@ -53,6 +63,7 @@ export type BidWiseProfile = {
   niveau_experience?: string;
   annees_experience?: number | null;
   opportunity_types?: string[];
+  tender_preferences?: TenderPreferences | null;
   preferred_locations?: string[];
   preferred_location?: string | null;
   remote_preference?: string | null;
@@ -74,6 +85,7 @@ export type BidWiseProfile = {
 export type OnboardingState = Pick<
   BidWiseProfile,
   | 'opportunity_types'
+  | 'tender_preferences'
   | 'preferred_locations'
   | 'work_mode_preferences'
   | 'compensation_expectation'
@@ -123,4 +135,5 @@ export type ProfileEditorState = {
   skills: string[];
   interests: string[];
   profileVisibility: boolean;
+  tenderPreferences: TenderPreferences;
 };

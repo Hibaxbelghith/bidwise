@@ -19,6 +19,7 @@ function clampStep(value: unknown): number {
 export function buildOnboardingDataFromProfile(profile?: BidWiseProfile | null): OnboardingData {
   const normalized = normalizeProfilePreferenceData({
     opportunity_types: profile?.opportunity_types,
+    tender_preferences: profile?.tender_preferences,
     preferred_locations: profile?.preferred_locations,
     work_mode_preferences: profile?.work_mode_preferences,
     compensation_expectation: profile?.compensation_expectation,

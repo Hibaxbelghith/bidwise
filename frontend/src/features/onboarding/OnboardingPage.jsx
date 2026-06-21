@@ -16,6 +16,7 @@ import StepVisibility from './steps/StepVisibility.jsx';
 import StepTenderPreferences from './steps/StepTenderPreferences.jsx';
 import {
 	getEmploymentTypeOptionsForOpportunityTypes,
+	normalizeExclusiveOpportunityTypes,
 	normalizeProfilePreferenceData,
 } from '../profile/profilePreferences.js';
 import {
@@ -292,13 +293,16 @@ const Onboarding = () => {
 
 	const handleChange = (field, value) => {
 		setData((prev) => {
-			const next = { ...prev, [field]: value };
+			const normalizedValue = field === 'opportunity_types'
+				? normalizeExclusiveOpportunityTypes(value, prev.opportunity_types)
+				: value;
+			const next = { ...prev, [field]: normalizedValue };
 			if (field === 'opportunity_types') {
 				const allowed = new Set(
-					getEmploymentTypeOptionsForOpportunityTypes(value).map((option) => option.value)
+					getEmploymentTypeOptionsForOpportunityTypes(normalizedValue).map((option) => option.value)
 				);
 				next.employment_types = (prev.employment_types || []).filter((item) => allowed.has(item));
-				if (isCallsForTenderOnly(value)) {
+				if (isCallsForTenderOnly(normalizedValue)) {
 					next.work_mode_preferences = [];
 					next.employment_types = [];
 					next.target_roles = [];

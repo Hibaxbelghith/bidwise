@@ -141,6 +141,7 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
     error,
     profileTier,
     isColdProfile,
+    isTenderOnlyProfile,
     handleRefresh,
   } = useForYouFeed({
     ready: !authLoading,
@@ -167,7 +168,20 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
     !showLoading &&
     !error;
   const showResults = isAuthenticated && qualifiedCount > 0 && !error;
-  const isPartialProfile = isAuthenticated && profileTier === 'partial';
+  const isPartialProfile = isAuthenticated && !isTenderOnlyProfile && profileTier === 'partial';
+  const primaryMetricLabel = isTenderOnlyProfile ? 'Strong priorities' : 'Strong matches';
+  const secondaryMetricLabel = isTenderOnlyProfile ? 'To review' : 'Review next';
+  const signalMetricLabel = isTenderOnlyProfile ? 'Tender profile' : 'Profile signal';
+  const incompleteTitle = isTenderOnlyProfile
+    ? 'Complete tender preferences'
+    : 'Complete your profile to unlock For You';
+  const incompleteDescription = isTenderOnlyProfile
+    ? 'Choose at least one region and tender category so BidWise can rank active calls for tender.'
+    : 'Add roles, preferences, skills, or a CV so BidWise can rank opportunities with stronger signals.';
+  const emptyTitle = isTenderOnlyProfile ? 'No tender priorities yet' : 'No strong recommendations yet';
+  const emptyDescription = isTenderOnlyProfile
+    ? 'BidWise did not find enough active tenders for your selected categories and regions right now.'
+    : 'BidWise did not find enough qualified matches right now. You can still explore all active opportunities.';
 
   return (
     <View style={[styles.root, { backgroundColor }]}>
@@ -190,15 +204,15 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
           <View style={styles.kpiRow}>
             <View style={[styles.kpiCard, { backgroundColor: cardColor, borderColor }]}>
               <Text style={[styles.kpiValue, { color: textColor }]}>{strongMatches.length}</Text>
-              <Text style={[styles.kpiLabel, { color: mutedColor }]}>Strong matches</Text>
+              <Text style={[styles.kpiLabel, { color: mutedColor }]}>{primaryMetricLabel}</Text>
             </View>
             <View style={[styles.kpiCard, { backgroundColor: cardColor, borderColor }]}>
               <Text style={[styles.kpiValue, { color: textColor }]}>{relatedOpportunities.length}</Text>
-              <Text style={[styles.kpiLabel, { color: mutedColor }]}>Review next</Text>
+              <Text style={[styles.kpiLabel, { color: mutedColor }]}>{secondaryMetricLabel}</Text>
             </View>
             <View style={[styles.kpiCard, { backgroundColor: cardColor, borderColor }]}>
               <Text style={[styles.kpiValue, { color: textColor }]}>{isPartialProfile ? 'Partial' : 'Ready'}</Text>
-              <Text style={[styles.kpiLabel, { color: mutedColor }]}>Profile signal</Text>
+              <Text style={[styles.kpiLabel, { color: mutedColor }]}>{signalMetricLabel}</Text>
             </View>
           </View>
         ) : null}
@@ -248,9 +262,9 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
 
         {!showLoading && error ? (
           <StateCard
-            icon="alert-circle-outline"
-            title="Unable to load recommendations"
-            description={error}
+            icon="sync-outline"
+            title="Recommendations are taking longer than expected"
+            description="Your personalized feed is still syncing. You can retry now or keep browsing active opportunities."
             textColor={textColor}
             mutedColor={mutedColor}
             borderColor={borderColor}
@@ -283,8 +297,8 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
         {showIncompleteProfile ? (
           <StateCard
             icon="document-text-outline"
-            title="Complete your profile to unlock For You"
-            description="Add roles, preferences, skills, or a CV so BidWise can rank opportunities with stronger signals."
+            title={incompleteTitle}
+            description={incompleteDescription}
             textColor={textColor}
             mutedColor={mutedColor}
             borderColor={borderColor}
@@ -317,8 +331,8 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
         {showEmptyState ? (
           <StateCard
             icon="search-outline"
-            title="No strong recommendations yet"
-            description="BidWise did not find enough qualified matches right now. You can still explore all active opportunities."
+            title={emptyTitle}
+            description={emptyDescription}
             textColor={textColor}
             mutedColor={mutedColor}
             borderColor={borderColor}
@@ -336,11 +350,15 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
             {strongMatches.length ? (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: textColor }]}>Strong matches</Text>
+                  <Text style={[styles.sectionTitle, { color: textColor }]}>
+                    {isTenderOnlyProfile ? 'Strong priorities' : 'Strong matches'}
+                  </Text>
                   <Text style={[styles.sectionCount, { color: tintColor }]}>{strongMatches.length}</Text>
                 </View>
                 <Text style={[styles.sectionDescription, { color: mutedColor }]}>
-                  Best aligned with your role, skills, CV, and preferences.
+                  {isTenderOnlyProfile
+                    ? 'Best aligned with your tender categories, regions, and project context.'
+                    : 'Best aligned with your role, skills, CV, and preferences.'}
                 </Text>
                 <View style={styles.cardList}>
                   {strongMatches.map((item) => (
@@ -363,12 +381,18 @@ export default function ForYouScreen({ embedded = false }: ForYouScreenProps) {
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Text style={[styles.sectionTitle, { color: textColor }]}>
-                    {strongMatches.length ? 'More opportunities for you' : 'Recommended for review'}
+                    {isTenderOnlyProfile
+                      ? 'Tenders to monitor'
+                      : strongMatches.length
+                        ? 'More opportunities for you'
+                        : 'Recommended for review'}
                   </Text>
                   <Text style={[styles.sectionCount, { color: tintColor }]}>{relatedOpportunities.length}</Text>
                 </View>
                 <Text style={[styles.sectionDescription, { color: mutedColor }]}>
-                  Lower-confidence opportunities that still match important parts of your profile.
+                  {isTenderOnlyProfile
+                    ? 'Relevant tenders kept separate because they need manual review before action.'
+                    : 'Lower-confidence opportunities that still match important parts of your profile.'}
                 </Text>
                 <View style={styles.cardList}>
                   {relatedOpportunities.map((item) => (

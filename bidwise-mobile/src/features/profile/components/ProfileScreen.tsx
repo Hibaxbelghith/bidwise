@@ -8,6 +8,7 @@ import type { BidWiseProfile, ProfileUser } from '@/src/features/profile/types';
 import {
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
+  TENDER_CATEGORY_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
 import {
   formatBusinessFamilyLabels,
@@ -79,6 +80,17 @@ const formatSalarySummary = (profile?: BidWiseProfile) => {
   return 'Salary not set';
 };
 
+const formatTenderCategorySummary = (profile?: BidWiseProfile) => {
+  const selected = profile?.tender_preferences?.categories?.[0];
+  if (!selected?.category) return 'Tender category not set';
+
+  const category = TENDER_CATEGORY_OPTIONS.find((option) => option.value === selected.category);
+  const subcategory = category?.subcategories.find((option) => option.value === selected.subcategory);
+  if (category?.label && subcategory?.label) return `${category.label} / ${subcategory.label}`;
+  if (category?.label) return category.label;
+  return selected.subcategory ? `${selected.category} / ${selected.subcategory}` : selected.category;
+};
+
 const isTenderOnlyProfile = (profile?: BidWiseProfile) => {
   const types = normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS);
   return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
@@ -124,7 +136,7 @@ export default function ProfileScreen({ embedded = false }: ProfileScreenProps) 
   const preferencesSummary = useMemo(() => {
     const types = summarizeList(formatOpportunityTypes(profile?.opportunity_types), 'Opportunity types not set');
     const locations = summarizeList(normalizeLocations(profile?.preferred_locations), 'Locations not set');
-    if (tenderOnly) return `${types} - ${locations}`;
+    if (tenderOnly) return `${types} - ${locations} - ${formatTenderCategorySummary(profile)}`;
     return `${types} • ${locations} • ${formatSalarySummary(profile)}`;
   }, [profile, tenderOnly]);
 

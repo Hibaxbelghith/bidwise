@@ -19,6 +19,11 @@ export const STEP_DEFINITIONS: StepDefinition[] = [
     description: 'Location is required for on-site or hybrid work, and optional for remote.',
   },
   {
+    key: 'tender_preferences',
+    title: 'Which tenders should we prioritize?',
+    description: 'Choose an official tender category so BidWise can rank public projects for you.',
+  },
+  {
     key: 'skills',
     title: 'Add your key skills',
     description: 'Skills power your AI match score.',
@@ -52,6 +57,7 @@ export const STEP_DEFINITIONS: StepDefinition[] = [
 
 export const INITIAL_ONBOARDING_DATA: OnboardingData = {
   opportunity_types: [],
+  tender_preferences: { categories: [], max_budget: null },
   preferred_locations: [],
   work_mode_preferences: [],
   compensation_expectation: '',

@@ -16,6 +16,7 @@ import OnboardingProgress from '@/src/features/profile/components/onboarding/Onb
 import OnboardingStepContent from '@/src/features/profile/components/onboarding/OnboardingStepContent';
 import {
   getEmploymentTypeOptionsForOpportunityTypes,
+  normalizeExclusiveOpportunityTypes,
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
 import {
@@ -74,8 +75,19 @@ export default function OnboardingScreen() {
     [borderColor, cardColor, mutedColor, textColor, tintColor],
   );
 
-  const isLast = currentStep === STEP_DEFINITIONS.length - 1;
-  const step = STEP_DEFINITIONS[currentStep];
+  const tenderOnly = isCallsForTenderOnly(data.opportunity_types);
+  const activeSteps = useMemo(
+    () =>
+      STEP_DEFINITIONS.filter((item) =>
+        tenderOnly
+          ? ['opportunity_intent', 'location', 'tender_preferences'].includes(item.key)
+          : item.key !== 'tender_preferences',
+      ),
+    [tenderOnly],
+  );
+  const activeStepIndex = Math.min(currentStep, activeSteps.length - 1);
+  const isLast = activeStepIndex === activeSteps.length - 1;
+  const step = activeSteps[activeStepIndex];
 
   useEffect(() => {
     let cancelled = false;
@@ -175,13 +187,17 @@ export default function OnboardingScreen() {
       const opportunityTypes = selected
         ? prev.opportunity_types.filter((value) => !option.values.includes(value))
         : Array.from(new Set([...prev.opportunity_types, ...option.values]));
+      const exclusiveOpportunityTypes = normalizeExclusiveOpportunityTypes(
+        opportunityTypes,
+        prev.opportunity_types,
+      );
       const allowedEmploymentTypes = new Set(
-        getEmploymentTypeOptionsForOpportunityTypes(opportunityTypes).map((item) => item.value),
+        getEmploymentTypeOptionsForOpportunityTypes(exclusiveOpportunityTypes).map((item) => item.value),
       );
 
       return {
         ...prev,
-        opportunity_types: opportunityTypes,
+        opportunity_types: exclusiveOpportunityTypes,
         employment_types: prev.employment_types.filter((value) =>
           allowedEmploymentTypes.has(value),
         ),
@@ -207,6 +223,16 @@ export default function OnboardingScreen() {
     const normalized = tenderOnly
       ? {
           opportunity_types: ['CALLS_FOR_TENDER'],
+          preferred_locations: data.preferred_locations,
+          tender_preferences: data.tender_preferences,
+          work_mode_preferences: [],
+          employment_types: [],
+          target_roles: [],
+          competences: [],
+          domaines_interet: [],
+          compensation_expectation: null,
+          compensation_min_expectation: null,
+          compensation_max_expectation: null,
           onboarding_completed: onboardingCompleted,
           last_onboarding_step: stepIndex,
         }
@@ -252,7 +278,7 @@ export default function OnboardingScreen() {
 
       await persistOnboardingProgress({
         onboardingCompleted: true,
-        stepIndex: currentStep,
+        stepIndex: activeStepIndex,
       });
       await loadUserProfile();
       router.replace('/explore');
@@ -275,7 +301,7 @@ export default function OnboardingScreen() {
 
       await persistOnboardingProgress({
         onboardingCompleted: false,
-        stepIndex: currentStep,
+        stepIndex: activeStepIndex,
       });
       await loadUserProfile();
       router.replace('/explore');
@@ -302,24 +328,19 @@ export default function OnboardingScreen() {
 
     setError('');
 
-    if (currentStep === 0 && isCallsForTenderOnly(data.opportunity_types)) {
-      await finishOnboarding();
-      return;
-    }
-
     if (isLast) {
       await finishOnboarding();
       return;
     }
 
-    const nextStep = currentStep + 1;
+    const nextStep = activeStepIndex + 1;
 
     try {
       setSaving(true);
       await persistOnboardingProgress({
         onboardingCompleted: false,
-        stepIndex: nextStep,
-      });
+          stepIndex: nextStep,
+        });
       setCurrentStep(nextStep);
     } catch (errorResponse) {
       setError(
@@ -336,8 +357,8 @@ export default function OnboardingScreen() {
   const handleBack = () => {
     if (loadingProfile) return;
 
-    if (currentStep > 0) {
-      setCurrentStep((value) => value - 1);
+    if (activeStepIndex > 0) {
+      setCurrentStep(activeStepIndex - 1);
     }
   };
 
@@ -355,8 +376,8 @@ export default function OnboardingScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <OnboardingProgress
-        currentStep={currentStep}
-        steps={STEP_DEFINITIONS}
+        currentStep={activeStepIndex}
+        steps={activeSteps}
         tint={tintColor}
         border={borderColor}
       />
@@ -387,7 +408,7 @@ export default function OnboardingScreen() {
         textColor={textColor}
         mutedColor={mutedColor}
         tintColor={tintColor}
-        currentStep={currentStep}
+        currentStep={activeStepIndex}
         isLast={isLast}
         saving={saving}
         onBack={handleBack}

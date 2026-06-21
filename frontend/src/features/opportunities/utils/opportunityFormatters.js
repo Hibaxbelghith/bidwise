@@ -96,6 +96,7 @@ const sanitizeCompanyLogoUrl = (rawLogo) => {
 };
 
 const getSourceLogoAsset = (opportunity) => {
+  const opportunityType = String(opportunity?.type_opportunite || opportunity?.type || '').trim().toUpperCase();
   const source = opportunity?.source && typeof opportunity.source === 'object' ? opportunity.source : {};
   const sourceName = String(
     source.nom ||
@@ -115,7 +116,10 @@ const getSourceLogoAsset = (opportunity) => {
     ),
   );
 
-  return matchedRule?.assetPath || '';
+  if (matchedRule?.assetPath) return matchedRule.assetPath;
+  if (opportunityType === 'PROJET') return `${SOURCE_LOGOS_BASE_PATH}/HAICOP.png`;
+
+  return '';
 };
 
 const isPlaceholderCompanyLogo = (value) => {

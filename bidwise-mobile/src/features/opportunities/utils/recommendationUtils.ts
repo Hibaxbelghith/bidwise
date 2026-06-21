@@ -70,6 +70,21 @@ export type RecommendationSignalChip = {
 
 export type ForYouProfileTier = 'insufficient' | 'partial' | 'complete';
 
+export function isCallsForTenderOnlyUser(user: ProfileUser | null | undefined): boolean {
+  const types = normalizeArray(user?.profil?.opportunity_types).map((item) => item.toUpperCase());
+  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+}
+
+export function hasTenderRecommendationPreferences(user: ProfileUser | null | undefined): boolean {
+  const profile = user?.profil;
+  const regions = normalizeArray(profile?.preferred_locations);
+  const categories = Array.isArray(profile?.tender_preferences?.categories)
+    ? profile.tender_preferences.categories
+    : [];
+
+  return regions.length > 0 && categories.length > 0;
+}
+
 export function getRecommendationScorePercent(value: unknown): number | null {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -86,6 +101,10 @@ export function getProfileCompletionScore(user: ProfileUser | null | undefined):
 export function getProfileRecommendationTier(
   user: ProfileUser | null | undefined,
 ): ForYouProfileTier {
+  if (isCallsForTenderOnlyUser(user)) {
+    return hasTenderRecommendationPreferences(user) ? 'complete' : 'insufficient';
+  }
+
   const score = getProfileCompletionScore(user);
   if (score < FOR_YOU_PROFILE_MIN_SCORE) return 'insufficient';
   if (score <= FOR_YOU_PROFILE_FULL_SCORE) return 'partial';
@@ -128,6 +147,16 @@ export function isStrongMatchRecommendation(
 export function getRecommendationConfidenceLabel(
   recommendation: Recommendation | null | undefined,
 ): string {
+  const type = normalizeText(recommendation?.type_opportunite || recommendation?.type).toUpperCase();
+  if (type === 'PROJET') {
+    const scorePercent = getRecommendationScorePercent(
+      recommendation?.score ?? recommendation?.match_score,
+    );
+    if (scorePercent !== null && scorePercent >= 60) return 'Strong priority';
+    if (scorePercent !== null && scorePercent >= 40) return 'Review priority';
+    return 'Low priority';
+  }
+
   const key = normalizeText(recommendation?.recommendation_confidence).toUpperCase();
   return CONFIDENCE_LABELS[key] || 'Confidence improving';
 }
@@ -150,6 +179,24 @@ export function getRecommendationSignalChips(
   recommendation: Recommendation | null | undefined,
 ): RecommendationSignalChip[] {
   if (!recommendation) return [];
+
+  const type = normalizeText(recommendation.type_opportunite || recommendation.type).toUpperCase();
+  if (type === 'PROJET') {
+    const reasons = normalizeArray(recommendation.reasons || recommendation.reason);
+    const chips: RecommendationSignalChip[] = [];
+    if (reasons.some((reason) => /subcategory/i.test(reason))) {
+      chips.push({ key: 'category', label: 'Category' });
+    } else if (reasons.some((reason) => /category/i.test(reason))) {
+      chips.push({ key: 'category', label: 'Category' });
+    }
+    if (reasons.some((reason) => /region/i.test(reason))) {
+      chips.push({ key: 'region', label: 'Region' });
+    }
+    if (reasons.some((reason) => /semantic/i.test(reason))) {
+      chips.push({ key: 'semantic', label: 'Similarity' });
+    }
+    return chips.slice(0, 3);
+  }
 
   const evidence = recommendation.evidence_summary || {};
   const chips: RecommendationSignalChip[] = [];

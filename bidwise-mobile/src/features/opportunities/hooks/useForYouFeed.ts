@@ -4,12 +4,14 @@ import type { ProfileUser } from '@/src/features/profile/types';
 
 import {
   listOpportunityRecommendations,
+  listTenderRecommendations,
   type Opportunity,
   type Recommendation,
 } from '../services/opportunitiesService';
 import { getErrorMessage, wait } from '../utils/opportunityHelpers';
 import {
   getProfileRecommendationTier,
+  isCallsForTenderOnlyUser,
   isColdProfileRecommendationState,
   isQualifiedRecommendation,
   isStrongMatchRecommendation,
@@ -39,6 +41,7 @@ export function useForYouFeed({
   const [error, setError] = useState('');
   const [hasLoaded, setHasLoaded] = useState(false);
   const fetchLockRef = useRef(false);
+  const isTenderOnlyProfile = useMemo(() => isCallsForTenderOnlyUser(user), [user]);
 
   const profileTier = useMemo<ForYouProfileTier>(
     () => getProfileRecommendationTier(user),
@@ -56,7 +59,9 @@ export function useForYouFeed({
       const startedAt = Date.now();
 
       try {
-        const data = await listOpportunityRecommendations({ limit });
+        const data = isTenderOnlyProfile
+          ? await listTenderRecommendations({ limit: Math.max(limit, 50) })
+          : await listOpportunityRecommendations({ limit });
         setRecommendations(Array.isArray(data) ? data.filter((item) => item?.id) : []);
         setError('');
       } catch (requestError) {
@@ -74,7 +79,7 @@ export function useForYouFeed({
         fetchLockRef.current = false;
       }
     },
-    [isAuthenticated, limit, ready],
+    [isAuthenticated, isTenderOnlyProfile, limit, ready],
   );
 
   useEffect(() => {
@@ -136,6 +141,7 @@ export function useForYouFeed({
     hasLoaded,
     profileTier,
     isColdProfile,
+    isTenderOnlyProfile,
     handleRefresh,
   };
 }

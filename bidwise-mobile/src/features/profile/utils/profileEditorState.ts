@@ -11,11 +11,13 @@ import {
   normalizeOptionValues,
   normalizeSkillList,
   normalizeTextList,
+  normalizeTenderPreferences,
 } from '@/src/features/profile/utils/profileValidation';
 import {
   ALL_EMPLOYMENT_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
   WORK_MODE_OPTIONS,
+  normalizeExclusiveOpportunityTypes,
 } from '@/src/features/profile/constants/profileOptions';
 
 export const EXPERIENCE_LEVEL_OPTIONS = [
@@ -30,13 +32,16 @@ export function buildProfileEditorState(user: ProfileUser | null): ProfileEditor
 
   return {
     formData: buildProfileEditFormData(profile, user),
-    opportunityTypes: normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS),
+    opportunityTypes: normalizeExclusiveOpportunityTypes(
+      normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS),
+    ),
     preferredLocations: normalizeLocations(profile?.preferred_locations),
     workModePreferences: normalizeOptionValues(profile?.work_mode_preferences, WORK_MODE_OPTIONS),
     employmentTypes: normalizeOptionValues(profile?.employment_types, ALL_EMPLOYMENT_TYPE_OPTIONS),
     targetRoles: normalizeTextList(profile?.target_roles),
     skills: normalizeSkillList(profile?.competences),
     interests: normalizeBusinessFamilyValues(profile?.domaines_interet),
+    tenderPreferences: normalizeTenderPreferences(profile?.tender_preferences),
     profileVisibility: profile?.profile_visibility ?? true,
   };
 }
@@ -75,6 +80,7 @@ export function buildProfileUpdatePayload(state: ProfileEditorState) {
     target_roles: normalizeTextList(state.targetRoles),
     competences: normalizeSkillList(state.skills),
     domaines_interet: normalizeBusinessFamilyValues(state.interests),
+    tender_preferences: normalizeTenderPreferences(state.tenderPreferences),
     profile_visibility: state.profileVisibility,
   };
 }

@@ -37,6 +37,19 @@ export const OPPORTUNITY_TYPE_OPTIONS = [
 	{ value: 'CALLS_FOR_TENDER', label: 'Calls for tender' },
 ];
 
+export const normalizeExclusiveOpportunityTypes = (nextValues = [], previousValues = []) => {
+	const normalizedNext = normalizeOptionValues(nextValues, OPPORTUNITY_TYPE_OPTIONS);
+	const normalizedPrevious = normalizeOptionValues(previousValues, OPPORTUNITY_TYPE_OPTIONS);
+	const hadTender = normalizedPrevious.includes('CALLS_FOR_TENDER');
+	const hasTender = normalizedNext.includes('CALLS_FOR_TENDER');
+
+	if (!hasTender) return normalizedNext;
+	if (!hadTender) return ['CALLS_FOR_TENDER'];
+
+	const nonTenderValues = normalizedNext.filter((value) => value !== 'CALLS_FOR_TENDER');
+	return nonTenderValues.length ? nonTenderValues : ['CALLS_FOR_TENDER'];
+};
+
 export const TENDER_CATEGORY_OPTIONS = [
 	{
 		value: 'Biens',
@@ -394,9 +407,8 @@ export const normalizeLocations = (value) => {
 };
 
 export const normalizeProfilePreferenceData = (data = {}) => ({
-	opportunity_types: normalizeOptionValues(
-		data.opportunity_types,
-		OPPORTUNITY_TYPE_OPTIONS
+	opportunity_types: normalizeExclusiveOpportunityTypes(
+		normalizeOptionValues(data.opportunity_types, OPPORTUNITY_TYPE_OPTIONS)
 	),
 	preferred_locations: normalizeLocations(data.preferred_locations),
 	work_mode_preferences: normalizeOptionValues(

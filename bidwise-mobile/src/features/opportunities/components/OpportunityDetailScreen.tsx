@@ -39,7 +39,7 @@ interface FactRowProps {
 
 function FactRow({
   borderColor,
-  icon,
+  icon: _icon,
   label,
   mutedColor,
   textColor,
@@ -49,10 +49,7 @@ function FactRow({
 
   return (
     <View style={[styles.factRow, { borderColor }]}>
-      <Text style={[styles.factLabel, { color: mutedColor }]}>
-        {icon && icon !== label ? `${icon} ` : ''}
-        {label}
-      </Text>
+      <Text style={[styles.factLabel, { color: mutedColor }]}>{label}</Text>
       <Text style={[styles.factValue, { color: textColor }]}>{value}</Text>
     </View>
   );
@@ -309,6 +306,7 @@ export default function OpportunityDetailScreen() {
               <View style={styles.headerRow}>
                 <OpportunityLogo
                   logoUrl={String(item.company_logo || '').trim()}
+                  sourceName={sourceLabel || (isProject ? 'MarchesPublics' : '')}
                   borderColor={borderColor}
                   cardColor={cardColor}
                   size={52}

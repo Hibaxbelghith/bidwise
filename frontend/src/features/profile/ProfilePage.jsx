@@ -40,6 +40,7 @@ import {
 	normalizeBusinessFamilyValues,
 	normalizeLocations,
 	normalizeOptionValues,
+	normalizeExclusiveOpportunityTypes,
 	normalizeProfilePreferenceData,
 	normalizeSkillList,
 	normalizeTextList,
@@ -343,7 +344,7 @@ const Profile = () => {
 	};
 
 	const handleOpportunityTypesChange = (values) => {
-		const normalizedValues = normalizeOptionValues(values, OPPORTUNITY_TYPE_OPTIONS);
+		const normalizedValues = normalizeExclusiveOpportunityTypes(values, opportunityTypes);
 		setOpportunityTypes(normalizedValues);
 		const allowedEmploymentTypes = new Set(
 			getEmploymentTypeOptionsForOpportunityTypes(normalizedValues).map((option) => option.value)

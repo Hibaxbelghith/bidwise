@@ -48,6 +48,15 @@ export default function ForYouOpportunityCard({
   const location = String(item.ville || item.location || '').trim();
   const publishedAt = item.date_publication ? formatDate(item.date_publication) : '';
   const typeLabel = formatTypeLabel(item.type_opportunite);
+  const sourceLabel = String(item.source?.nom || '').trim();
+  const isTender = String(item.type_opportunite || item.type || '').trim().toUpperCase() === 'PROJET';
+  const primaryBadgeLabel = isTender
+    ? isStrong
+      ? 'Strong priority'
+      : 'Watch closely'
+    : isStrong
+      ? 'Strong match'
+      : 'Review';
 
   return (
     <Pressable
@@ -79,7 +88,7 @@ export default function ForYouOpportunityCard({
             color={isStrong ? tintColor : mutedColor}
           />
           <Text style={[styles.recommendationBadgeText, { color: isStrong ? tintColor : mutedColor }]}>
-            {isStrong ? 'Strong match' : 'Review'}
+            {primaryBadgeLabel}
           </Text>
         </View>
 
@@ -95,12 +104,18 @@ export default function ForYouOpportunityCard({
           <Text style={[styles.scoreValue, { color: tintColor }]}>
             {scorePercent !== null ? `${scorePercent}%` : '--'}
           </Text>
-          <Text style={[styles.scoreCaption, { color: mutedColor }]}>Match</Text>
+          <Text style={[styles.scoreCaption, { color: mutedColor }]}>
+            {isTender ? 'Priority' : 'Match'}
+          </Text>
         </View>
       </View>
 
       <View style={styles.headerRow}>
-        <OpportunityLogo logoUrl={getCompanyLogoUrl(item)} size={50} />
+        <OpportunityLogo
+          logoUrl={getCompanyLogoUrl(item)}
+          sourceName={sourceLabel || (isTender ? 'MarchesPublics' : '')}
+          size={50}
+        />
 
         <View style={styles.headerTextWrap}>
           <Text numberOfLines={2} style={[styles.title, { color: textColor }]}>

@@ -2,6 +2,7 @@ import api from '@/src/shared/services/api';
 
 const OPPORTUNITIES_ENDPOINT = '/opportunities/';
 const RECOMMENDATIONS_ENDPOINT = '/recommendations/';
+const TENDER_RECOMMENDATIONS_ENDPOINT = '/opportunities/tenders/recommendations/';
 
 export interface OpportunitySource {
   id: number;
@@ -39,6 +40,14 @@ export interface OpportunityEvidenceSummary {
   semantic_strength?: string | null;
   llm_family_match?: boolean | null;
   llm_family_mismatch?: boolean | null;
+}
+
+export interface TenderRecommendationMeta {
+  score?: number | null;
+  priority?: string | null;
+  raw_priority?: string | null;
+  reasons?: string[];
+  components?: Record<string, unknown> | null;
 }
 
 export interface OpportunityExtraData {
@@ -121,6 +130,7 @@ export interface Opportunity {
   recommendation_bucket?: string | null;
   recommendation_bucket_reason?: string | null;
   evidence_summary?: OpportunityEvidenceSummary | null;
+  tender_recommendation?: TenderRecommendationMeta | null;
   recommendation?: Recommendation | null;
   accepts_direct_applications?: boolean;
   my_application?: OpportunityMyApplication | null;
@@ -341,6 +351,75 @@ export async function listOpportunityRecommendations({
   return Array.isArray(response.data)
     ? response.data.map((item) => normalizeRecommendation(item as Recommendation))
     : [];
+}
+
+function normalizeTenderPriorityBucket(priority: unknown, score: number | null): string {
+  const normalized = String(priority || '').trim().toUpperCase();
+  if (normalized === 'STRONG_PRIORITY' || normalized === 'STRONG_MATCH') return 'STRONG_MATCH';
+  if (normalized === 'MONITOR' || normalized === 'RELATED_REVIEW') return 'RELATED_REVIEW';
+  return score !== null && score >= 0.6 ? 'STRONG_MATCH' : 'RELATED_REVIEW';
+}
+
+function normalizeTenderRecommendationItem(item: unknown): Recommendation | null {
+  if (!item || typeof item !== 'object') return null;
+
+  const payload = item as {
+    opportunity?: Opportunity;
+    score?: number | string | null;
+    priority?: string | null;
+    reasons?: unknown;
+    components?: Record<string, unknown> | null;
+  };
+  const opportunity = payload.opportunity;
+  if (!opportunity?.id) return null;
+
+  const parsedScore = Number(payload.score);
+  const score = Number.isFinite(parsedScore) ? Math.max(0, Math.min(parsedScore, 1)) : null;
+  const reasons = normalizeStringArray(payload.reasons);
+  const bucket = normalizeTenderPriorityBucket(payload.priority, score);
+  const primaryReason = reasons[0] || 'Tender priority calculated';
+
+  return normalizeRecommendation({
+    ...opportunity,
+    score,
+    match_score: score,
+    score_label: bucket === 'STRONG_MATCH' ? 'Strong priority' : 'Watch closely',
+    score_level: bucket === 'STRONG_MATCH' ? 'HIGH' : 'MEDIUM',
+    reasons,
+    reason: reasons,
+    recommendation_confidence: score !== null && score >= 0.6 ? 'HIGH' : 'MEDIUM',
+    recommendation_mode: 'TENDER',
+    recommendation_bucket: bucket,
+    recommendation_bucket_reason: primaryReason,
+    tender_recommendation: {
+      score,
+      priority: bucket === 'STRONG_MATCH' ? 'Strong priority' : 'Watch closely',
+      raw_priority: payload.priority || null,
+      reasons,
+      components: payload.components || null,
+    },
+  } as Recommendation);
+}
+
+export async function listTenderRecommendations({
+  limit = 50,
+}: {
+  limit?: number;
+} = {}): Promise<Recommendation[]> {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 50));
+  const response = await api.get(TENDER_RECOMMENDATIONS_ENDPOINT, {
+    params: { limit: safeLimit },
+  });
+
+  const rawResults = Array.isArray(response.data?.results)
+    ? response.data.results
+    : Array.isArray(response.data)
+      ? response.data
+      : [];
+
+  return rawResults
+    .map((item) => normalizeTenderRecommendationItem(item))
+    .filter((item): item is Recommendation => Boolean(item?.id));
 }
 
 export async function getOpportunityById(id: number | string): Promise<Opportunity> {

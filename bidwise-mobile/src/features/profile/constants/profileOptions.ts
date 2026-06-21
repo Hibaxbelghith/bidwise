@@ -29,6 +29,94 @@ export const ONBOARDING_OPPORTUNITY_TYPE_OPTIONS = [
   },
 ];
 
+export function normalizeExclusiveOpportunityTypes(
+  nextValues: string[] = [],
+  previousValues: string[] = [],
+): string[] {
+  const allowedValues = new Set(OPPORTUNITY_TYPE_OPTIONS.map((option) => option.value));
+  const normalizedNext = Array.from(
+    new Set(nextValues.map((value) => String(value || '').trim()).filter((value) => allowedValues.has(value))),
+  );
+  const normalizedPrevious = Array.from(
+    new Set(previousValues.map((value) => String(value || '').trim()).filter((value) => allowedValues.has(value))),
+  );
+  const hadTender = normalizedPrevious.includes('CALLS_FOR_TENDER');
+  const hasTender = normalizedNext.includes('CALLS_FOR_TENDER');
+
+  if (!hasTender) return normalizedNext;
+  if (!hadTender) return ['CALLS_FOR_TENDER'];
+
+  const nonTenderValues = normalizedNext.filter((value) => value !== 'CALLS_FOR_TENDER');
+  return nonTenderValues.length ? nonTenderValues : ['CALLS_FOR_TENDER'];
+}
+
+export const TENDER_CATEGORY_OPTIONS = [
+  {
+    value: 'Biens',
+    label: 'Goods',
+    subcategories: [
+      { value: 'Autres Fournitures', label: 'Other Supplies' },
+      { value: 'Autres types de mat\u00e9riels', label: 'Other Equipment' },
+      { value: 'Equipements informatiques', label: 'IT Equipment' },
+      { value: 'Fournitures', label: 'Supplies' },
+      { value: 'Fournitures de bureau', label: 'Office Supplies' },
+      { value: 'Habillement', label: 'Clothing' },
+      { value: 'Mat\u00e9riel', label: 'Equipment' },
+      { value: 'Mat\u00e9riel M\u00e9dical', label: 'Medical Equipment' },
+      { value: 'Mat\u00e9riel agricole', label: 'Agricultural Equipment' },
+      { value: 'Mat\u00e9riels de Bureau', label: 'Office Equipment' },
+      { value: 'Mat\u00e9riels de reprographie', label: 'Reprography Equipment' },
+      { value: 'Mat\u00e9riels \u00e9lectriques', label: 'Electrical Equipment' },
+      { value: 'Mat\u00e9riels \u00e9lectroniques', label: 'Electronic Equipment' },
+      { value: 'Mat\u00e9riels informatiques', label: 'IT Hardware' },
+      { value: 'Mat\u00e9riels roulants', label: 'Vehicles' },
+      { value: 'Mat\u00e9riels scientifiques', label: 'Scientific Equipment' },
+      { value: 'Mobilier', label: 'Furniture' },
+      { value: 'Nourriture', label: 'Food Supplies' },
+      { value: "Produits d'entretien", label: 'Cleaning Products' },
+      { value: 'Produits pharmaceutiques', label: 'Pharmaceutical Products' },
+    ],
+  },
+  {
+    value: 'Travaux',
+    label: 'Works',
+    subcategories: [
+      { value: 'Ascenseur', label: 'Elevator' },
+      { value: 'Autres travaux', label: 'Other Works' },
+      { value: 'Charpente m\u00e9tallique', label: 'Metal Structure' },
+      { value: 'Climatisation', label: 'Air Conditioning' },
+      { value: 'Electricit\u00e9', label: 'Electricity' },
+      { value: 'G\u00e9nie Civil', label: 'Civil Engineering' },
+      { value: 'Routes', label: 'Roads' },
+      { value: 'Travaux de Rehabilitation', label: 'Rehabilitation Works' },
+      { value: 'VRD', label: 'Roads and Utilities' },
+    ],
+  },
+  {
+    value: 'Services',
+    label: 'Services',
+    subcategories: [
+      { value: 'Autres services', label: 'Other Services' },
+      { value: 'Maintenance', label: 'Maintenance' },
+      { value: 'Maintenance technique', label: 'Technical Maintenance' },
+      { value: 'Nettoyage', label: 'Cleaning' },
+      { value: 'Services', label: 'Services' },
+    ],
+  },
+  {
+    value: 'Etudes',
+    label: 'Studies',
+    subcategories: [
+      { value: 'Activit\u00e9 litt\u00e9raire et artistique', label: 'Literary and Artistic Activity' },
+      { value: 'Autres \u00e9tudes', label: 'Other Studies' },
+      { value: 'Etudes', label: 'Studies' },
+      { value: "Etudes d'impact", label: 'Impact Studies' },
+      { value: 'Formation', label: 'Training' },
+    ],
+  },
+  { value: 'Autre', label: 'Other', subcategories: [] },
+];
+
 export const BUSINESS_FAMILY_OPTIONS = [
   { value: 'software_web', label: 'Software Web', group: 'Technology' },
   { value: 'backend', label: 'Backend Engineering', group: 'Technology' },

@@ -6,6 +6,7 @@ import {
   BUSINESS_FAMILY_OPTIONS,
   getEmploymentTypeOptionsForOpportunityTypes,
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
+  TENDER_CATEGORY_OPTIONS,
   TUNISIAN_LOCATION_OPTIONS,
   WORK_MODE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
@@ -83,6 +84,8 @@ function LocationStep({
   | 'colors'
 >) {
   const { tint, border, text, muted, card } = colors;
+  const tenderOnly =
+    data.opportunity_types.length === 1 && data.opportunity_types[0] === 'CALLS_FOR_TENDER';
   const requiresLocation = data.work_mode_preferences.some(
     (mode) => mode === 'ON_SITE' || mode === 'HYBRID',
   );
@@ -97,7 +100,9 @@ function LocationStep({
   return (
     <View style={styles.stepBody}>
       <View style={styles.inputGroup}>
-        <Text style={[styles.label, { color: text }]}>Preferred locations</Text>
+        <Text style={[styles.label, { color: text }]}>
+          {tenderOnly ? 'Tender regions' : 'Preferred locations'}
+        </Text>
         <View style={styles.inputRow}>
           <TextInput
             value={locationInput}
@@ -121,7 +126,9 @@ function LocationStep({
       </View>
 
       <Text style={[styles.helperText, { color: muted }]}>
-        {requiresLocation
+        {tenderOnly
+          ? 'Choose the regions where you want to monitor public tenders.'
+          : requiresLocation
           ? 'Location is required for on-site or hybrid work.'
           : 'Location is optional when you are open to remote work.'}
       </Text>
@@ -154,14 +161,106 @@ function LocationStep({
         </View>
       ) : null}
 
+      {!tenderOnly ? (
+        <View style={styles.inputGroup}>
+          <Text style={[styles.label, { color: text }]}>Work modes</Text>
+          <PreferenceChipGroup
+            options={WORK_MODE_OPTIONS}
+            value={data.work_mode_preferences}
+            onChange={(value) => onUpdateField('work_mode_preferences', value)}
+            colors={colors}
+            compact
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TenderPreferencesStep({
+  data,
+  onUpdateField,
+  colors,
+}: Pick<OnboardingStepContentProps, 'data' | 'onUpdateField' | 'colors'>) {
+  const { tint, border, text, muted, card } = colors;
+  const selected = data.tender_preferences.categories[0] || { category: '', subcategory: '' };
+  const selectedCategory = TENDER_CATEGORY_OPTIONS.find((option) => option.value === selected.category);
+  const subcategories = selectedCategory?.subcategories || [];
+  const updateTenderPreferences = (nextCategory: { category: string; subcategory: string }) => {
+    onUpdateField('tender_preferences', {
+      categories: nextCategory.category ? [nextCategory] : [],
+      max_budget: data.tender_preferences.max_budget,
+    });
+  };
+
+  return (
+    <View style={styles.stepBody}>
       <View style={styles.inputGroup}>
-        <Text style={[styles.label, { color: text }]}>Work modes</Text>
-        <PreferenceChipGroup
-          options={WORK_MODE_OPTIONS}
-          value={data.work_mode_preferences}
-          onChange={(value) => onUpdateField('work_mode_preferences', value)}
-          colors={colors}
-          compact
+        <Text style={[styles.label, { color: text }]}>Tender category</Text>
+        <View style={styles.quickWrap}>
+          {TENDER_CATEGORY_OPTIONS.map((option) => {
+            const active = option.value === selected.category;
+            return (
+              <TouchableOpacity
+                key={option.value}
+                activeOpacity={0.75}
+                onPress={() => updateTenderPreferences({ category: option.value, subcategory: '' })}
+                style={[
+                  styles.quickChip,
+                  {
+                    borderColor: active ? tint : border,
+                    backgroundColor: active ? `${tint}18` : card,
+                  },
+                ]}
+              >
+                <Text style={[styles.quickText, { color: active ? tint : text }]}>{option.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      {selected.category && selected.category !== 'Autre' ? (
+        <View style={styles.inputGroup}>
+          <Text style={[styles.label, { color: text }]}>Subcategory</Text>
+          <View style={styles.quickWrap}>
+            {subcategories.map((option) => {
+              const active = option.value === selected.subcategory;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  activeOpacity={0.75}
+                  onPress={() => updateTenderPreferences({ category: selected.category, subcategory: option.value })}
+                  style={[
+                    styles.quickChip,
+                    {
+                      borderColor: active ? tint : border,
+                      backgroundColor: active ? `${tint}18` : card,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.quickText, { color: active ? tint : text }]}>{option.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.inputGroup}>
+        <Text style={[styles.label, { color: text }]}>Maximum caution budget</Text>
+        <TextInput
+          value={String(data.tender_preferences.max_budget ?? '')}
+          onChangeText={(value) =>
+            onUpdateField('tender_preferences', {
+              categories: selected.category ? [selected] : [],
+              max_budget: value === '' ? null : value,
+            })
+          }
+          placeholder="Optional, TND"
+          placeholderTextColor={muted}
+          keyboardType="number-pad"
+          style={[styles.input, { backgroundColor: card, borderColor: border, color: text }]}
         />
       </View>
     </View>
@@ -268,6 +367,8 @@ export default function OnboardingStepContent({
           colors={colors}
         />
       );
+    case 'tender_preferences':
+      return <TenderPreferencesStep data={data} onUpdateField={onUpdateField} colors={colors} />;
     case 'skills':
       return (
         <ProfileAutocompleteInput

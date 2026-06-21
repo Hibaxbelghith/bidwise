@@ -9,7 +9,10 @@ type ApiErrorLike = {
 };
 
 const PROFILE_FIELD_MESSAGES: Record<string, string> = {
+  nom: 'Please review your last name.',
+  prenom: 'Please review your first name.',
   preferred_locations: 'You can choose up to 10 preferred locations.',
+  tender_preferences: 'Please review your tender category preferences.',
   work_mode_preferences: 'Select valid work mode preferences.',
   opportunity_types: 'Select at least one valid opportunity type.',
   domaines_interet: 'Choose up to 5 valid sectors.',
@@ -47,7 +50,10 @@ export function getProfileUpdateErrorMessage(error: unknown, fallback: string): 
   }
 
   const prioritizedFields = [
+    'prenom',
+    'nom',
     'preferred_locations',
+    'tender_preferences',
     'work_mode_preferences',
     'opportunity_types',
     'domaines_interet',

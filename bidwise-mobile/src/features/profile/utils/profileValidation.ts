@@ -3,6 +3,8 @@ import {
   DEFAULT_COMPENSATION_PERIOD,
   ALL_EMPLOYMENT_TYPE_OPTIONS,
   OPPORTUNITY_TYPE_OPTIONS,
+  normalizeExclusiveOpportunityTypes,
+  TENDER_CATEGORY_OPTIONS,
   WORK_MODE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
 
@@ -248,8 +250,44 @@ export const normalizeLocations = (value: unknown) => {
     });
 };
 
+export const normalizeTenderPreferences = (value: unknown) => {
+  const raw = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const validCategories = new Map(
+    TENDER_CATEGORY_OPTIONS.map((option) => [
+      option.value,
+      new Set(option.subcategories.map((subcategory) => subcategory.value)),
+    ]),
+  );
+  const categories = Array.isArray(raw.categories)
+    ? raw.categories
+        .map((item) => {
+          const record = item && typeof item === 'object' && !Array.isArray(item)
+            ? item as Record<string, unknown>
+            : {};
+          const category = normalizeTextLabel(record.category);
+          const subcategory = normalizeTextLabel(record.subcategory);
+          const subcategories = validCategories.get(category);
+          if (!subcategories) return null;
+          if (category !== 'Autre' && !subcategories.has(subcategory)) return null;
+          return { category, subcategory };
+        })
+        .filter((item): item is { category: string; subcategory: string } => Boolean(item))
+    : [];
+  const budget = raw.max_budget;
+
+  return {
+    categories: categories.slice(0, 1),
+    max_budget: budget === '' || budget === undefined ? null : budget as string | number | null,
+  };
+};
+
 export const normalizeProfilePreferenceData = (data: Record<string, unknown>) => ({
-  opportunity_types: normalizeOptionValues(data.opportunity_types, OPPORTUNITY_TYPE_OPTIONS),
+  opportunity_types: normalizeExclusiveOpportunityTypes(
+    normalizeOptionValues(data.opportunity_types, OPPORTUNITY_TYPE_OPTIONS),
+  ),
+  tender_preferences: normalizeTenderPreferences(data.tender_preferences),
   preferred_locations: normalizeLocations(data.preferred_locations),
   work_mode_preferences: normalizeOptionValues(data.work_mode_preferences, WORK_MODE_OPTIONS),
   compensation_expectation:

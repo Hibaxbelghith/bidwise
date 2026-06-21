@@ -7,6 +7,7 @@ import {
   WORK_MODE_OPTIONS,
   normalizeBusinessFamilyValues,
   normalizeLocations,
+  normalizeExclusiveOpportunityTypes,
   normalizeOptionValues,
   normalizeProfilePreferenceData,
   normalizeTextList,
@@ -26,9 +27,8 @@ export const buildProfileEditorState = ({
     : [];
   const onboardingPreferences = normalizeProfilePreferenceData(onboarding);
 
-  const backendOpportunityTypes = normalizeOptionValues(
-    profile?.opportunity_types,
-    OPPORTUNITY_TYPE_OPTIONS,
+  const backendOpportunityTypes = normalizeExclusiveOpportunityTypes(
+    normalizeOptionValues(profile?.opportunity_types, OPPORTUNITY_TYPE_OPTIONS),
   );
   const backendLocations = normalizeLocations(profile?.preferred_locations);
   const backendWorkModes = normalizeOptionValues(
@@ -70,7 +70,7 @@ export const buildProfileEditorState = ({
     targetRoles: backendTargetRoles.length ? backendTargetRoles : onboardingTargetRoles,
     opportunityTypes: backendOpportunityTypes.length
       ? backendOpportunityTypes
-      : onboardingPreferences.opportunity_types,
+      : normalizeExclusiveOpportunityTypes(onboardingPreferences.opportunity_types),
     preferredLocations: backendLocations.length
       ? backendLocations
       : onboardingPreferences.preferred_locations,

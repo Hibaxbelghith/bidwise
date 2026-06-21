@@ -1,5 +1,8 @@
 import { Briefcase, GraduationCap, Rocket } from 'lucide-react';
-import { ONBOARDING_OPPORTUNITY_TYPE_OPTIONS } from '../../profile/profilePreferences.js';
+import {
+	ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
+	normalizeExclusiveOpportunityTypes,
+} from '../../profile/profilePreferences.js';
 
 const OPTION_META = {
 	JOB: { icon: Briefcase },
@@ -19,13 +22,14 @@ const StepOpportunityIntent = ({ data, onChange, error = '' }) => {
 		option.values.every((value) => selected.includes(value));
 
 	const toggle = (option) => {
+		const nextValues = isOptionSelected(option)
+			? selected.filter((value) => !option.values.includes(value))
+			: Array.from(new Set([...selected, ...option.values]));
+
 		if (isOptionSelected(option)) {
-			onChange(
-				'opportunity_types',
-				selected.filter((value) => !option.values.includes(value))
-			);
+			onChange('opportunity_types', normalizeExclusiveOpportunityTypes(nextValues, selected));
 		} else {
-			onChange('opportunity_types', Array.from(new Set([...selected, ...option.values])));
+			onChange('opportunity_types', normalizeExclusiveOpportunityTypes(nextValues, selected));
 		}
 	};
 

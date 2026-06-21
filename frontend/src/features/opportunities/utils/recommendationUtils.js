@@ -208,7 +208,7 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
   const isSparseProfile =
     normalizeText(recommendation.recommendation_mode).toUpperCase() === 'SPARSE_PROFILE' ||
     normalizeText(recommendation.profile_strength).toUpperCase() === 'LOW';
-  const confidenceLabel = isSparseProfile
+  const baseConfidenceLabel = isSparseProfile
     ? 'Limited profile data'
     : CONFIDENCE_LABELS[confidenceKey] || 'Confidence improving';
   const bucket = normalizeText(recommendation.recommendation_bucket).toUpperCase();
@@ -221,21 +221,33 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     options.reasonLimit || 4,
   );
   const gaps = normalizeArray(recommendation.gaps).map(formatGapLabel).filter(Boolean);
+  const tenderScoreLabel = ['Strong priority', 'Watch closely', 'Low priority', 'General watch'].includes(scoreLabel)
+    ? scoreLabel
+    : '';
   const fitLabel = isTenderRecommendation
-    ? scorePercent >= 65
-      ? 'Strong priority'
-      : scorePercent >= 40
-        ? 'Watch closely'
-        : scorePercent > 0
-          ? 'Low priority'
-          : scoreLabel
+    ? tenderScoreLabel || (
+      scorePercent >= 60
+        ? 'Strong priority'
+        : scorePercent >= 40
+          ? 'Watch closely'
+          : scorePercent > 0
+            ? 'Low priority'
+            : scoreLabel
+    )
     : scorePercent >= 80
       ? 'Strong match'
       : scorePercent >= 60
         ? 'Good fit'
-        : scorePercent > 0
+      : scorePercent > 0
           ? 'Worth a look'
           : scoreLabel;
+  const confidenceLabel = isTenderRecommendation
+    ? fitLabel === 'Strong priority'
+      ? 'High confidence'
+      : fitLabel === 'Watch closely'
+        ? 'Confidence improving'
+        : baseConfidenceLabel
+    : baseConfidenceLabel;
   const scoreText =
     scorePercent && scorePercent > 0
       ? isTenderRecommendation

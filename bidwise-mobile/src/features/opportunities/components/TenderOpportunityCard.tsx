@@ -146,6 +146,7 @@ export default function TenderOpportunityCard({
       <View style={styles.headerRow}>
         <OpportunityLogo
           logoUrl={getCompanyLogoUrl(item)}
+          sourceName={sourceLabel || 'MarchesPublics'}
           borderColor={borderColor}
           cardColor={cardColor}
           size={52}

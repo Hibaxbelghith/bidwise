@@ -26,11 +26,6 @@ const TAB_ROUTES: Record<AppTabKey, '/explore' | '/for-you' | '/dashboard' | '/p
   profile: '/profile',
 };
 
-function isCallsForTenderOnlyProfile(profile?: { opportunity_types?: string[] } | null) {
-  const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
-  return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
-}
-
 export default function AppShell({
   children,
   title,
@@ -61,21 +56,13 @@ export default function AppShell({
     return String(user?.email || user?.username || '').trim();
   }, [user?.email, user?.username]);
 
-  const tenderOnly = isCallsForTenderOnlyProfile(user?.profil);
   const isGuestRestrictedTab = !user && Boolean(currentTab) && currentTab !== 'explore';
-  const isTenderRestrictedTab = tenderOnly && currentTab === 'for-you';
 
   useEffect(() => {
     if (isGuestRestrictedTab) {
       router.replace('/explore');
     }
   }, [isGuestRestrictedTab, router]);
-
-  useEffect(() => {
-    if (isTenderRestrictedTab) {
-      router.replace('/explore');
-    }
-  }, [isTenderRestrictedTab, router]);
 
   useEffect(() => {
     if (!user && drawerOpen) {
@@ -117,7 +104,7 @@ export default function AppShell({
     ];
   }, [logout, router]);
 
-  if (isGuestRestrictedTab || isTenderRestrictedTab) {
+  if (isGuestRestrictedTab) {
     return <View style={[styles.screen, { backgroundColor }]} />;
   }
 
@@ -153,7 +140,7 @@ export default function AppShell({
             router.replace(TAB_ROUTES[tab]);
           }}
           isAuthenticated={Boolean(user)}
-          hideForYou={tenderOnly}
+          hideForYou={false}
           backgroundColor={backgroundColor}
           borderColor={borderColor}
           cardColor={cardColor}

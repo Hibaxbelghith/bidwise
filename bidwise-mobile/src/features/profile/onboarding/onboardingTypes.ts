@@ -1,6 +1,7 @@
 export type StepKey =
   | 'opportunity_intent'
   | 'location'
+  | 'tender_preferences'
   | 'skills'
   | 'sectors_interests'
   | 'salary'
@@ -16,6 +17,13 @@ export type StepDefinition = {
 
 export type OnboardingData = {
   opportunity_types: string[];
+  tender_preferences: {
+    categories: {
+      category: string;
+      subcategory: string;
+    }[];
+    max_budget: string | number | null;
+  };
   preferred_locations: string[];
   work_mode_preferences: string[];
   compensation_expectation: string;

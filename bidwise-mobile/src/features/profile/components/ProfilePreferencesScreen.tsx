@@ -7,7 +7,9 @@ import ProfileSection from '@/src/features/profile/components/ProfileSection';
 import SalaryExpectationField from '@/src/features/profile/components/SalaryExpectationField';
 import {
   getEmploymentTypeOptionsForOpportunityTypes,
+  normalizeExclusiveOpportunityTypes,
   ONBOARDING_OPPORTUNITY_TYPE_OPTIONS,
+  TENDER_CATEGORY_OPTIONS,
   TUNISIAN_LOCATION_OPTIONS,
   WORK_MODE_OPTIONS,
 } from '@/src/features/profile/constants/profileOptions';
@@ -69,17 +71,41 @@ export default function ProfilePreferencesScreen() {
     visibleEmploymentTypeValues.has(value),
   );
   const tenderOnly = isCallsForTenderOnly(editorState.opportunityTypes);
+  const selectedTenderCategory = editorState.tenderPreferences.categories[0] || {
+    category: '',
+    subcategory: '',
+  };
+  const selectedTenderCategoryOption = TENDER_CATEGORY_OPTIONS.find(
+    (option) => option.value === selectedTenderCategory.category,
+  );
+  const selectedTenderSubcategories = selectedTenderCategoryOption?.subcategories || [];
   const setOpportunityTypes = (values: string[]) => {
-    const allowedEmploymentTypes = new Set(
-      getEmploymentTypeOptionsForOpportunityTypes(values).map((option) => option.value),
+    const normalizedValues = normalizeExclusiveOpportunityTypes(
+      values,
+      editorState.opportunityTypes,
     );
-    setStateField('opportunityTypes', values);
+    const allowedEmploymentTypes = new Set(
+      getEmploymentTypeOptionsForOpportunityTypes(normalizedValues).map((option) => option.value),
+    );
+    setStateField('opportunityTypes', normalizedValues);
     setStateField(
       'employmentTypes',
-      isCallsForTenderOnly(values)
+      isCallsForTenderOnly(normalizedValues)
         ? []
         : editorState.employmentTypes.filter((value) => allowedEmploymentTypes.has(value)),
     );
+  };
+  const updateTenderPreferences = (nextCategory: { category: string; subcategory: string }) => {
+    setStateField('tenderPreferences', {
+      categories: nextCategory.category ? [nextCategory] : [],
+      max_budget: editorState.tenderPreferences.max_budget,
+    });
+  };
+  const updateTenderBudget = (value: string) => {
+    setStateField('tenderPreferences', {
+      categories: selectedTenderCategory.category ? [selectedTenderCategory] : [],
+      max_budget: value === '' ? null : value.replace(/[^\d]/g, ''),
+    });
   };
 
   return (
@@ -214,6 +240,94 @@ export default function ProfilePreferencesScreen() {
           placeholder="Optional max"
           keyboardType="number-pad"
           error={fieldErrors.salaryRange}
+          textColor={textColor}
+          mutedColor={mutedColor}
+          borderColor={borderColor}
+          cardColor={cardColor}
+        />
+      </ProfileSection>
+      ) : null}
+
+      {tenderOnly ? (
+      <ProfileSection
+        title="Tender categories"
+        description="These categories power your public tender priorities."
+        defaultOpen
+        colors={{ card: cardColor, border: borderColor, text: textColor, muted: mutedColor }}
+      >
+        <View style={styles.fieldBlock}>
+          <Text style={[styles.fieldLabel, { color: textColor }]}>Tender category</Text>
+          <View style={styles.quickWrap}>
+            {TENDER_CATEGORY_OPTIONS.map((option) => {
+              const active = option.value === selectedTenderCategory.category;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => updateTenderPreferences({ category: option.value, subcategory: '' })}
+                  style={[
+                    styles.quickChip,
+                    {
+                      backgroundColor: active ? `${tintColor}18` : cardColor,
+                      borderColor: active ? tintColor : borderColor,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.quickChipText, { color: active ? tintColor : textColor }]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {selectedTenderCategory.category && selectedTenderCategory.category !== 'Autre' ? (
+        <View style={styles.fieldBlock}>
+          <Text style={[styles.fieldLabel, { color: textColor }]}>Subcategory</Text>
+          <View style={styles.quickWrap}>
+            {selectedTenderSubcategories.map((option) => {
+              const active = option.value === selectedTenderCategory.subcategory;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() =>
+                    updateTenderPreferences({
+                      category: selectedTenderCategory.category,
+                      subcategory: option.value,
+                    })
+                  }
+                  style={[
+                    styles.quickChip,
+                    {
+                      backgroundColor: active ? `${tintColor}18` : cardColor,
+                      borderColor: active ? tintColor : borderColor,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.quickChipText, { color: active ? tintColor : textColor }]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+        ) : null}
+
+        {fieldErrors.tenderPreferences ? (
+          <Text style={styles.fieldError}>{fieldErrors.tenderPreferences}</Text>
+        ) : null}
+
+        <ProfileFormField
+          label="Maximum caution budget"
+          value={String(editorState.tenderPreferences.max_budget ?? '')}
+          onChangeText={updateTenderBudget}
+          placeholder="Optional, TND"
+          keyboardType="number-pad"
           textColor={textColor}
           mutedColor={mutedColor}
           borderColor={borderColor}
