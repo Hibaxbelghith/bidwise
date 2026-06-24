@@ -22,13 +22,19 @@ export const normalizeTunisiaPhone = (value) => String(value || '').trim().repla
 export const normalizePublicUrl = (value) => {
   const text = String(value || '').trim();
   if (!text) return '';
+  if (text.startsWith('/')) return text;
   if (/^https?:\/\//i.test(text)) return text;
   return `https://${text}`;
 };
 
 const isValidPublicUrl = (value) => {
+  const normalizedValue = normalizePublicUrl(value);
+  if (normalizedValue.startsWith('/logos_sites_sources/') || normalizedValue.startsWith('/media/')) {
+    return true;
+  }
+
   try {
-    const url = new URL(normalizePublicUrl(value));
+    const url = new URL(normalizedValue);
     return ['http:', 'https:'].includes(url.protocol);
   } catch {
     return false;

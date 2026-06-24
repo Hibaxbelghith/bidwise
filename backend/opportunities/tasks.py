@@ -61,6 +61,7 @@ MATERIALIZATION_BATCH_SIZE = 100
 MATERIALIZATION_RETRIGGER_COUNTDOWN_SECONDS = 2
 EMBEDDING_RETRIGGER_COUNTDOWN_SECONDS = 10
 DECISION_EMAIL_PROCESSING_STALE_SECONDS = 15 * 60
+STATUS_REFRESH_LOCK_SECONDS = 60 * 60
 
 
 def _is_recent_processing_notification(notification):
@@ -466,6 +467,50 @@ def expire_due_opportunities_task():
         result["filters"],
     )
     return result
+
+
+def _run_status_refresh_command(*, source, command_name, limit):
+    lock_key = get_pipeline_lock_key(source)
+    lock_token = f"{source}:{uuid.uuid4()}"
+    client = opportunity_pipeline_redis_client()
+
+    if not acquire_pipeline_lock(
+        client,
+        lock_key,
+        lock_token,
+        timeout=STATUS_REFRESH_LOCK_SECONDS,
+    ):
+        logger.info("Opportunity status refresh skipped source=%s reason=locked", source)
+        return {"status": "skipped", "reason": "locked", "source": source}
+
+    try:
+        logger.info("Opportunity status refresh started source=%s limit=%s", source, limit)
+        call_command(command_name, apply=True, limit=int(limit))
+        logger.info("Opportunity status refresh completed source=%s limit=%s", source, limit)
+        return {"status": "completed", "source": source, "limit": int(limit)}
+    finally:
+        released = release_pipeline_lock(client, lock_key, lock_token)
+        if not released:
+            logger.warning("Opportunity status refresh lock was not released source=%s", source)
+        close_old_connections()
+
+
+@shared_task(name="opportunities.refresh_keejob_status")
+def refresh_keejob_status_task():
+    return _run_status_refresh_command(
+        source="keejob",
+        command_name="backfill_keejob_details",
+        limit=getattr(settings, "KEEJOB_STATUS_REFRESH_LIMIT", 300),
+    )
+
+
+@shared_task(name="opportunities.refresh_linkedin_status")
+def refresh_linkedin_status_task():
+    return _run_status_refresh_command(
+        source="linkedin",
+        command_name="backfill_linkedin_status",
+        limit=getattr(settings, "LINKEDIN_STATUS_REFRESH_LIMIT", 150),
+    )
 
 
 def _cleanup_stale_running_runs(source, *, finished_at):

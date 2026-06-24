@@ -8,6 +8,7 @@ const AdminOpportunitiesContent = ({
   sources,
   searchDraft,
   source,
+  ordering,
   page,
   count,
   hasNext,
@@ -30,6 +31,7 @@ const AdminOpportunitiesContent = ({
   setSelectedOpportunity,
   handleSearchSubmit,
   handleSourceChange,
+  handleToggleOrdering,
   handleDelete,
   handleApprove,
   handleReject,
@@ -60,7 +62,9 @@ const AdminOpportunitiesContent = ({
         isLoading={isLoading}
         isInitialLoading={isInitialLoading}
         isRefreshing={isRefreshing}
+        ordering={ordering}
         deletingId={deletingId}
+        onToggleOrdering={handleToggleOrdering}
         onViewOpportunity={setSelectedOpportunity}
         onDeleteOpportunity={handleDelete}
       />

@@ -20,6 +20,10 @@ REJECTED_IMAGE_URL_TOKENS = (
     "placehold.it",
 )
 
+ALLOWED_PUBLIC_IMAGE_PATH_PREFIXES = (
+    "/logos_sites_sources/",
+)
+
 ANONYMOUS_ORGANIZATION_TOKENS = {
     "entreprise anonyme",
     "anonymous company",
@@ -45,6 +49,9 @@ def is_valid_image_url(value) -> bool:
     lowered = text.lower()
     if any(token in lowered for token in REJECTED_IMAGE_URL_TOKENS):
         return False
+
+    if text.startswith(ALLOWED_PUBLIC_IMAGE_PATH_PREFIXES):
+        return True
 
     try:
         parsed = urlparse(text)

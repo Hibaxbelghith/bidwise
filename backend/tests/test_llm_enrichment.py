@@ -244,6 +244,7 @@ class LLMEnrichmentTests(SimpleTestCase):
         GEMINI_TIMEOUT_SECONDS=3.0,
         GEMINI_TEMPERATURE=0.0,
         GEMINI_MAX_OUTPUT_TOKENS=200,
+        OLLAMA_FALLBACK_ENABLED=False,
     )
     def test_gemini_provider_parses_json_response(self):
         response = Mock()
@@ -270,6 +271,7 @@ class LLMEnrichmentTests(SimpleTestCase):
         GEMINI_MODEL="gemini-test",
         GEMINI_FALLBACK_MODELS="",
         GEMINI_API_BASE_URL="https://example.test/v1beta",
+        OLLAMA_FALLBACK_ENABLED=False,
     )
     def test_gemini_provider_raises_rate_limit_error_on_429(self):
         response = Mock()
@@ -288,6 +290,7 @@ class LLMEnrichmentTests(SimpleTestCase):
         GEMINI_MODEL="gemini-test",
         GEMINI_FALLBACK_MODELS="",
         GEMINI_API_BASE_URL="https://example.test/v1beta",
+        OLLAMA_FALLBACK_ENABLED=False,
     )
     def test_gemini_provider_raises_transient_error_on_503(self):
         response = Mock()

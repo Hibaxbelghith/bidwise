@@ -1,4 +1,4 @@
-import { Eye, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, Trash2 } from 'lucide-react';
 
 import { Badge } from '../../../../components/ui/badge.jsx';
 import { Button } from '../../../../components/ui/button.jsx';
@@ -20,6 +20,35 @@ import {
   typeLabel,
 } from './opportunity.Utils.js';
 
+const ariaSortFor = (ordering, field) => {
+  if (ordering === field) return 'ascending';
+  if (ordering === `-${field}`) return 'descending';
+  return 'none';
+};
+
+const sortIconFor = (ordering, field) => {
+  if (ordering === field) return ArrowUp;
+  if (ordering === `-${field}`) return ArrowDown;
+  return ArrowUpDown;
+};
+
+const SortableHeader = ({ children, field, ordering, onToggleOrdering, className = '' }) => {
+  const Icon = sortIconFor(ordering, field);
+
+  return (
+    <TableHead className={className} aria-sort={ariaSortFor(ordering, field)}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 text-sm font-medium text-neutral-700 hover:text-neutral-950"
+        onClick={() => onToggleOrdering(field)}
+      >
+        {children}
+        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </TableHead>
+  );
+};
+
 const SkeletonRow = () => (
   <TableRow>
     <TableCell className="px-4 py-4">
@@ -33,6 +62,9 @@ const SkeletonRow = () => (
     </TableCell>
     <TableCell className="px-4 py-4">
       <div className="h-4 w-20 rounded bg-neutral-100 animate-pulse" />
+    </TableCell>
+    <TableCell className="px-4 py-4">
+      <div className="h-6 w-20 rounded-full bg-neutral-100 animate-pulse" />
     </TableCell>
     <TableCell className="px-4 py-4">
       <div className="h-6 w-20 rounded-full bg-neutral-100 animate-pulse" />
@@ -53,7 +85,9 @@ const OpportunitiesTable = ({
   isLoading,
   isInitialLoading,
   isRefreshing,
+  ordering,
   deletingId,
+  onToggleOrdering,
   onViewOpportunity,
   onDeleteOpportunity,
 }) => (
@@ -69,11 +103,46 @@ const OpportunitiesTable = ({
       <Table>
         <TableHeader>
           <TableRow className="bg-neutral-50">
-            <TableHead className="px-4 py-3">Title</TableHead>
-            <TableHead className="px-4 py-3">Type</TableHead>
-            <TableHead className="px-4 py-3">Origin</TableHead>
-            <TableHead className="px-4 py-3">Published</TableHead>
-            <TableHead className="px-4 py-3">Status</TableHead>
+            <SortableHeader
+              field="title"
+              ordering={ordering}
+              onToggleOrdering={onToggleOrdering}
+              className="px-4 py-3"
+            >
+              Title
+            </SortableHeader>
+            <SortableHeader
+              field="type"
+              ordering={ordering}
+              onToggleOrdering={onToggleOrdering}
+              className="px-4 py-3"
+            >
+              Type
+            </SortableHeader>
+            <SortableHeader
+              field="source"
+              ordering={ordering}
+              onToggleOrdering={onToggleOrdering}
+              className="px-4 py-3"
+            >
+              Origin
+            </SortableHeader>
+            <SortableHeader
+              field="published_at"
+              ordering={ordering}
+              onToggleOrdering={onToggleOrdering}
+              className="px-4 py-3"
+            >
+              Published
+            </SortableHeader>
+            <SortableHeader
+              field="status"
+              ordering={ordering}
+              onToggleOrdering={onToggleOrdering}
+              className="px-4 py-3"
+            >
+              Status
+            </SortableHeader>
             <TableHead className="px-4 py-3 text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -89,7 +158,7 @@ const OpportunitiesTable = ({
             Array.from({ length: 6 }).map((_, index) => <SkeletonRow key={index} />)
           ) : opportunities.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="px-4 py-10 text-center text-neutral-500">
+              <TableCell colSpan={6} className="px-4 py-10 text-center text-neutral-500">
                 No opportunities found.
               </TableCell>
             </TableRow>

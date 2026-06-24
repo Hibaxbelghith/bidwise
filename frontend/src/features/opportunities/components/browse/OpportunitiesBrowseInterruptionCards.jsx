@@ -38,7 +38,7 @@ export const buildBrowseInterruptionCards = ({ isUserAuthenticated, user, onShow
       {
         key: 'guest',
         icon: Sparkles,
-        color: 'blue',
+        color: 'blue', // All cards now use 'blue'
         title: 'Find opportunities that actually match you.',
         description:
           'Create a free profile to unlock AI-powered recommendations and personalized opportunity matching.',
@@ -59,7 +59,7 @@ export const buildBrowseInterruptionCards = ({ isUserAuthenticated, user, onShow
     cards.push({
       key: 'resume',
       icon: FileText,
-      color: 'emerald',
+      color: 'blue', // Changed from 'emerald' to 'blue'
       title: 'Upload your resume to improve recommendation accuracy.',
       description:
         'BidWise AI can analyze your resume and deliver stronger personalized matches.',
@@ -76,7 +76,7 @@ export const buildBrowseInterruptionCards = ({ isUserAuthenticated, user, onShow
     cards.push({
       key: 'profile',
       icon: UserCheck,
-      color: 'amber',
+      color: 'blue', // Changed from 'amber' to 'blue'
       title: 'Your profile needs more recommendation signals.',
       description: missingParts.length
         ? `Add ${missingParts.join(' and ')} to unlock more relevant opportunities.`
@@ -101,6 +101,7 @@ export const buildBrowseInterruptionCards = ({ isUserAuthenticated, user, onShow
   return cards;
 };
 
+// Simplified card styles - only blue now
 const cardStyles = {
   blue: {
     gradient: 'from-blue-600 to-indigo-500',
@@ -109,25 +110,11 @@ const cardStyles = {
     glow: 'bg-blue-500/5 group-hover:bg-blue-500/10',
     shadow: 'shadow-blue-500/20 hover:shadow-blue-500/30',
   },
-  emerald: {
-    gradient: 'from-emerald-600 to-teal-500',
-    soft: 'from-emerald-50 to-teal-100',
-    icon: 'text-emerald-600',
-    glow: 'bg-emerald-500/5 group-hover:bg-emerald-500/10',
-    shadow: 'shadow-emerald-500/20 hover:shadow-emerald-500/30',
-  },
-  amber: {
-    gradient: 'from-amber-600 to-orange-500',
-    soft: 'from-amber-50 to-orange-100',
-    icon: 'text-amber-600',
-    glow: 'bg-amber-500/5 group-hover:bg-amber-500/10',
-    shadow: 'shadow-amber-500/20 hover:shadow-amber-500/30',
-  },
 };
 
 const OpportunitiesBrowseInterruptionCard = ({ card }) => {
   const Icon = card.icon;
-  const styles = cardStyles[card.color] || cardStyles.blue;
+  const styles = cardStyles.blue; // Always use blue styles
   const ctaClassName = [
     'group relative overflow-hidden rounded-xl bg-gradient-to-r px-6 py-2.5 text-sm font-medium text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98] sm:w-auto',
     styles.gradient,

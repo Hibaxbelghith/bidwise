@@ -344,12 +344,16 @@ const Home = () => (
 				</p>
 
 				<div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-					<Button size="lg" className="min-w-[200px] bg-white text-blue-600 hover:bg-neutral-100" asChild>
-						<Link to="/opportunities">
-							Explore Opportunities
-							<ArrowRight className="ml-2 h-5 w-5" />
-						</Link>
-					</Button>
+					<Button
+  size="lg"
+  className="min-w-[200px] bg-blue-600 text-white hover:bg-blue-700"
+  asChild
+>
+  <Link to="/opportunities">
+    Explore Opportunities
+    <ArrowRight className="ml-2 h-5 w-5" />
+  </Link>
+</Button>
 
 					<Button
 						size="lg"

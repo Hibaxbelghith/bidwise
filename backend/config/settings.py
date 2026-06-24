@@ -512,6 +512,14 @@ RECOMMENDATION_DIGEST_MIN_NEW_ITEMS = int(os.getenv("RECOMMENDATION_DIGEST_MIN_N
 RECOMMENDATION_DIGEST_MAX_ITEMS = int(os.getenv("RECOMMENDATION_DIGEST_MAX_ITEMS", "5"))
 RECOMMENDATION_DIGEST_CANDIDATE_LIMIT = int(os.getenv("RECOMMENDATION_DIGEST_CANDIDATE_LIMIT", "20"))
 RECOMMENDATION_DIGEST_MIN_PROFILE_SCORE = int(os.getenv("RECOMMENDATION_DIGEST_MIN_PROFILE_SCORE", "60"))
+EXTERNAL_STATUS_REFRESH_ENABLED = os.getenv("EXTERNAL_STATUS_REFRESH_ENABLED", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+KEEJOB_STATUS_REFRESH_LIMIT = int(os.getenv("KEEJOB_STATUS_REFRESH_LIMIT", "300"))
+LINKEDIN_STATUS_REFRESH_LIMIT = int(os.getenv("LINKEDIN_STATUS_REFRESH_LIMIT", "150"))
 CELERY_BEAT_SCHEDULER = os.getenv(
     "CELERY_BEAT_SCHEDULER",
     "celery.beat:PersistentScheduler",
@@ -546,6 +554,15 @@ if OPPORTUNITY_LLM_BACKFILL_ENABLED:
     CELERY_BEAT_SCHEDULE["enrich-opportunity-llm-backfill"] = {
         "task": "ai.enrich_opportunity_llm_backfill",
         "schedule": crontab(minute=OPPORTUNITY_LLM_BACKFILL_CRON_MINUTE),
+    }
+if EXTERNAL_STATUS_REFRESH_ENABLED:
+    CELERY_BEAT_SCHEDULE["refresh-keejob-status-every-12-hours"] = {
+        "task": "opportunities.refresh_keejob_status",
+        "schedule": crontab(minute=20, hour="2,14"),
+    }
+    CELERY_BEAT_SCHEDULE["refresh-linkedin-status-every-12-hours"] = {
+        "task": "opportunities.refresh_linkedin_status",
+        "schedule": crontab(minute=20, hour="3,15"),
     }
 
 OPPORTUNITY_SCHEDULER_BEAT_INTERVAL_SECONDS = int(

@@ -31,6 +31,21 @@ const initialValues = {
   how_did_you_hear_about_us: '',
 };
 
+const API_BASE_URL = String(import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+
+const resolveLogoPreviewSrc = (value) => {
+  const logo = String(value || '').trim();
+  if (!logo) return '';
+  if (logo.startsWith('/media/')) {
+    try {
+      return `${new URL(API_BASE_URL, window.location.origin).origin}${logo}`;
+    } catch {
+      return logo;
+    }
+  }
+  return logo;
+};
+
 const FieldError = ({ id, message }) => {
   if (!message) return null;
   return (
@@ -150,6 +165,7 @@ const CreateOrganizationAccountPage = () => {
   };
 
   const trimmedLogo = String(values.logo || '').trim();
+  const logoPreviewSrc = resolveLogoPreviewSrc(trimmedLogo);
   const showLogoPreview = Boolean(trimmedLogo) && !errors.logo;
 
   return (
@@ -339,7 +355,7 @@ const CreateOrganizationAccountPage = () => {
                   <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-white">
                     {showLogoPreview ? (
                       <img
-                        src={trimmedLogo}
+                        src={logoPreviewSrc}
                         alt="Organization logo preview"
                         className="h-full w-full object-contain"
                         loading="lazy"

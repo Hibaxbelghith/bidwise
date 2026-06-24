@@ -20,10 +20,25 @@ import {
 
 const PROFILE_VISITED_KEY = 'bidwise:profile-visited:v1';
 const LOGOUT_REDIRECT_DELAY_MS = 160;
+const API_BASE_URL = String(import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 
 const isCallsForTenderOnlyProfile = (profile) => {
   const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
   return types.length === 1 && types[0] === 'CALLS_FOR_TENDER';
+};
+
+const resolveOrganizationLogoSrc = (value) => {
+  const logo = String(value || '').trim();
+  if (!logo) return '';
+  if (logo.startsWith('/media/')) {
+    try {
+      return `${new URL(API_BASE_URL, window.location.origin).origin}${logo}`;
+    } catch {
+      return logo;
+    }
+  }
+  if (logo.startsWith('/')) return logo;
+  return logo;
 };
 
 const animationStyles = `
@@ -71,6 +86,7 @@ const AppLayout = () => {
   const dashboardPath = isOrganizationAccount ? '/organization/dashboard' : '/dashboard';
   const dashboardLabel = isOrganizationAccount ? 'Organization Dashboard' : 'My Dashboard';
   const organizationLogo = user?.organization_profile?.logo || '';
+  const organizationLogoSrc = resolveOrganizationLogoSrc(organizationLogo);
   const organizationName = user?.organization_profile?.organization_name || 'Organization';
   const profileCompletionScore = getProfileCompletionScore(user);
   const isProfileComplete = profileCompletionScore >= 60;
@@ -234,11 +250,11 @@ const AppLayout = () => {
                             className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
                           >
                             {isOrganizationAccount ? (
-                              organizationLogo ? (
+                              organizationLogoSrc ? (
                                 <img
-                                  src={organizationLogo}
+                                  src={organizationLogoSrc}
                                   alt={`${organizationName} logo`}
-                                  className="h-4 w-4 rounded-sm object-contain"
+                                  className="h-6 w-6 rounded-md object-contain"
                                   loading="lazy"
                                   onError={(event) => {
                                     event.currentTarget.style.display = 'none';
@@ -300,11 +316,11 @@ const AppLayout = () => {
                                   className="inline-flex h-9 items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-800 hover:bg-neutral-50"
                                   onClick={() => setIsOrganizationAccountMenuOpen((previous) => !previous)}
                                 >
-                                  {organizationLogo ? (
+                                  {organizationLogoSrc ? (
                                     <img
-                                      src={organizationLogo}
+                                      src={organizationLogoSrc}
                                       alt={`${organizationName} logo`}
-                                      className="h-4 w-4 rounded-sm object-contain"
+                                      className="h-7 w-7 rounded-md border border-neutral-200 bg-white object-contain p-0.5"
                                       loading="lazy"
                                       onError={(event) => {
                                         event.currentTarget.style.display = 'none';

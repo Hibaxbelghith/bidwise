@@ -16,6 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 from rest_framework_simplejwt.views import TokenRefreshView
 from users.views import csrf_token, request_otp, verify_otp, logout_view
 from users.google_auth import google_authenticate
@@ -36,3 +38,6 @@ urlpatterns = [
     path('api/', include('opportunities.urls')),
     path('api/', include('applications.urls')),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

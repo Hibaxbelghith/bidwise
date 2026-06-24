@@ -2,6 +2,7 @@ import hashlib
 import logging
 from datetime import date
 
+from bs4 import BeautifulSoup
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 from django.utils import timezone
@@ -19,6 +20,25 @@ def _build_external_id(source_item_url):
     if not url:
         return ""
     return hashlib.sha1(url.encode("utf-8")).hexdigest()
+
+
+def _fetch_detail_soup_with_status(scraper, url):
+    try:
+        scraper._rate_limit_delay()
+        response = scraper.session.get(url, timeout=scraper.timeout)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Request failed for %s: %s", url, exc)
+        return None, None
+
+    if response.status_code == 403:
+        scraper.blocked = True
+        logger.warning("[keejob] blocked (403), stopping")
+        return None, response.status_code
+    if response.status_code != 200:
+        logger.warning("Request failed for %s status=%s", url, response.status_code)
+        return None, response.status_code
+
+    return BeautifulSoup(response.text, "html.parser"), response.status_code
 
 
 class Command(BaseCommand):
@@ -92,6 +112,7 @@ class Command(BaseCommand):
             "updated": 0,
             "no_change": 0,
             "fetch_error": 0,
+            "source_404_expired": 0,
             "save_error": 0,
         }
 
@@ -105,8 +126,38 @@ class Command(BaseCommand):
             source_item_url = canonicalize_source_item_url(opportunity.source_item_url)
 
             try:
-                detail_soup = scraper._safe_get_soup(source_item_url)
+                detail_soup, status_code = _fetch_detail_soup_with_status(scraper, source_item_url)
                 if detail_soup is None:
+                    if status_code == 404:
+                        update_fields = []
+                        extra_data = dict(opportunity.extra_data or {})
+                        expiration = dict(extra_data.get("expiration") or {})
+                        next_expiration = {
+                            **expiration,
+                            "reason": "source_404",
+                            "expired_on": timezone.localdate().isoformat(),
+                            "automatic": True,
+                            "source": source_name,
+                        }
+                        if extra_data.get("expiration") != next_expiration:
+                            extra_data["expiration"] = next_expiration
+                            opportunity.extra_data = extra_data
+                            update_fields.append("extra_data")
+                        if opportunity.statut != StatutOpportunite.EXPIREE:
+                            opportunity.statut = StatutOpportunite.EXPIREE
+                            update_fields.append("statut")
+
+                        if update_fields:
+                            if apply_changes:
+                                opportunity.date_modification = timezone.now()
+                                update_fields.append("date_modification")
+                                opportunity.save(update_fields=update_fields)
+                            stats["updated"] += 1
+                            stats["source_404_expired"] += 1
+                        else:
+                            stats["no_change"] += 1
+                        continue
+
                     stats["fetch_error"] += 1
                     continue
 
@@ -203,6 +254,7 @@ class Command(BaseCommand):
                 "Backfill finished "
                 f"(inspected={stats['inspected']}, updated={stats['updated']}, "
                 f"no_change={stats['no_change']}, fetch_error={stats['fetch_error']}, "
+                f"source_404_expired={stats['source_404_expired']}, "
                 f"save_error={stats['save_error']})"
             )
         )

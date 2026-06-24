@@ -320,15 +320,23 @@ class AdminOpportunityViewSet(
 ):
     serializer_class = AdminOpportunitySerializer
     permission_classes = [IsAdminUser]
+    ordering_map = {
+        "title": "titre",
+        "type": "type_opportunite",
+        "source": "source__nom",
+        "published_at": "date_publication",
+        "status": "statut",
+        "created_at": "date_creation",
+    }
 
     def get_queryset(self):
         queryset = (
             Opportunite.objects.select_related("source")
             .exclude(removed_source_q("source__nom"))
-            .order_by("-date_creation", "-id")
         )
         search = (self.request.query_params.get("search") or "").strip()
         source = (self.request.query_params.get("source") or "").strip()
+        ordering = (self.request.query_params.get("ordering") or "").strip()
 
         if search:
             queryset = queryset.filter(titre__icontains=search)
@@ -336,7 +344,16 @@ class AdminOpportunityViewSet(
         if source:
             queryset = queryset.filter(source_id=source)
 
-        return queryset
+        descending = ordering.startswith("-")
+        ordering_key = ordering[1:] if descending else ordering
+        ordering_field = self.ordering_map.get(ordering_key)
+
+        if ordering_field:
+            if descending:
+                ordering_field = f"-{ordering_field}"
+            return queryset.order_by(ordering_field, "-id")
+
+        return queryset.order_by("-date_creation", "-id")
 
 
 class AdminPendingOrganizationOpportunitiesView(APIView):
