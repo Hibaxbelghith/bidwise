@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { Spinner } from '../../components/ui/spinner.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useLanguage } from '../../i18n/LanguageContext.jsx';
 import LocationMultiSelect from './components/LocationMultiSelect.jsx';
 import BusinessFamilySelect from './components/BusinessFamilySelect.jsx';
 import ProfileAutocompleteInput from './components/ProfileAutocompleteInput.jsx';
@@ -53,18 +54,18 @@ import {
 	validateYearsOfExperience,
 } from './profileValidation.js';
 
-const EXPERIENCE_OPTIONS = [
-	{ value: 'DEBUTANT', label: 'Beginner (0-1 year)' },
-	{ value: 'JUNIOR', label: 'Junior (1-3 years)' },
-	{ value: 'CONFIRME', label: 'Intermediate (3-5 years)' },
-	{ value: 'SENIOR', label: 'Senior (5+ years)' },
+const buildExperienceOptions = (t) => [
+	{ value: 'DEBUTANT', label: t('profile.beginner') },
+	{ value: 'JUNIOR', label: t('profile.junior') },
+	{ value: 'CONFIRME', label: t('profile.intermediate') },
+	{ value: 'SENIOR', label: t('profile.senior') },
 ];
 const NAV_ITEMS = [
-	{ id: 'personal', label: 'Personal Information', icon: User },
-	{ id: 'work', label: 'Job Preferences', icon: Briefcase },
-	{ id: 'resume', label: 'Resume & CV', icon: FileText },
-	{ id: 'career', label: 'Career Signals', icon: Heart },
-	{ id: 'settings', label: 'Account Settings', icon: Settings },
+	{ id: 'personal', labelKey: 'profile.personalInformation', icon: User },
+	{ id: 'work', labelKey: 'profile.jobPreferences', icon: Briefcase },
+	{ id: 'resume', labelKey: 'profile.resumeCv', icon: FileText },
+	{ id: 'career', labelKey: 'profile.careerSignals', icon: Heart },
+	{ id: 'settings', labelKey: 'profile.accountSettings', icon: Settings },
 ];
 
 const FIELD_SECTION_BY_ERROR_KEY = {
@@ -77,30 +78,30 @@ const FIELD_SECTION_BY_ERROR_KEY = {
 	tenderPreferences: 'work',
 };
 
-const FIELD_ERROR_LABELS = {
-	firstName: 'First name',
-	lastName: 'Last name',
-	yearsOfExperience: 'Years of experience',
-	preferredLocations: 'Desired work locations',
-	salaryExpectation: 'Expected salary range',
-	interests: 'Sectors',
-	tenderPreferences: 'Tender preferences',
-};
+const getFieldErrorLabels = (t) => ({
+	firstName: t('profile.firstName'),
+	lastName: t('profile.lastName'),
+	yearsOfExperience: t('profile.yearsExperience'),
+	preferredLocations: t('profile.desiredWorkLocations'),
+	salaryExpectation: t('profile.expectedSalaryRange'),
+	interests: t('profile.sectors'),
+	tenderPreferences: t('profile.tenderPreferences'),
+});
 
-const getProfileNavLabel = (item, tenderOnly) => {
-	if (!tenderOnly || item.id !== 'work') return item.label;
-	return 'Tender Preferences';
+const getProfileNavLabel = (item, tenderOnly, t) => {
+	if (tenderOnly && item.id === 'work') return t('profile.tenderPreferences');
+	return t(item.labelKey);
 };
 
 const MAX_PREFERRED_LOCATIONS = 10;
 
 const PROFILE_COMPLETION_SUGGESTIONS = [
-	{ key: 'first_name', label: 'Add your first name', weight: 30 },
-	{ key: 'last_name', label: 'Add your last name', weight: 30 },
-	{ key: 'resume', label: 'Upload your resume (+15%)', weight: 15 },
-	{ key: 'skills', label: 'Add at least one skill', weight: 10 },
-	{ key: 'target_roles', label: 'Add a target role', weight: 10 },
-	{ key: 'interests', label: 'Choose at least one sector', weight: 10 },
+	{ key: 'first_name', labelKey: 'profile.addFirstName', weight: 30 },
+	{ key: 'last_name', labelKey: 'profile.addLastName', weight: 30 },
+	{ key: 'resume', labelKey: 'profile.uploadResumeBoost', weight: 15 },
+	{ key: 'skills', labelKey: 'profile.addSkill', weight: 10 },
+	{ key: 'target_roles', labelKey: 'profile.addTargetRole', weight: 10 },
+	{ key: 'interests', labelKey: 'profile.chooseSector', weight: 10 },
 ];
 
 const getFirstErrorKey = (errors) =>
@@ -143,6 +144,7 @@ const parseBackendProfileError = (message = '') => {
 
 const Profile = () => {
 	const { user, updateUserProfile, refreshUser } = useAuth();
+	const { t } = useLanguage();
 	const profile = user?.profil;
 	const accountEmail = user?.email || user?.username || '';
 	const profileCompletion = profile?.profile_completion || { score: 0, missing: [] };
@@ -221,34 +223,36 @@ const Profile = () => {
 	const locationRequired =
 		!isTenderOnlyProfile &&
 		workModePreferencesPayload.some((mode) => mode === 'ON_SITE' || mode === 'HYBRID');
+	const experienceOptions = useMemo(() => buildExperienceOptions(t), [t]);
+	const fieldErrorLabels = useMemo(() => getFieldErrorLabels(t), [t]);
 	const profileStrengthHelpText = isTenderOnlyProfile
-		? 'Complete the basics to filter public tenders faster'
-		: 'Complete your profile to get better recommendations';
-	const profileStrengthTitle = isTenderOnlyProfile ? 'Profile setup' : 'Profile strength';
-	const personalTitle = isTenderOnlyProfile ? 'Account Information' : 'Personal Information';
+		? t('profile.profileSetupHelp')
+		: t('profile.profileStrengthHelp');
+	const profileStrengthTitle = isTenderOnlyProfile ? t('profile.profileSetup') : t('profile.profileStrength');
+	const personalTitle = isTenderOnlyProfile ? t('profile.accountInformation') : t('profile.personalInformation');
 	const personalSubtitle = isTenderOnlyProfile
-		? 'Your identity and contact details'
-		: 'Your identity and professional background';
-	const preferencesTitle = isTenderOnlyProfile ? 'Tender Preferences' : 'Job Preferences';
+		? t('profile.identityContact')
+		: t('profile.identityProfessional');
+	const preferencesTitle = isTenderOnlyProfile ? t('profile.tenderPreferences') : t('profile.jobPreferences');
 	const preferencesSubtitle = isTenderOnlyProfile
-		? 'Choose how BidWise should open public tenders for you'
-		: "Tell us what you're looking for";
-	const locationLabel = isTenderOnlyProfile ? 'Preferred tender regions' : 'Desired work locations';
+		? t('profile.tenderPrefsDesc')
+		: t('profile.jobPrefsDesc');
+	const locationLabel = isTenderOnlyProfile ? t('profile.preferredTenderRegions') : t('profile.desiredWorkLocations');
 	const locationPlaceholder = isTenderOnlyProfile
-		? 'Optional: add a region'
+		? t('profile.optionalRegion')
 		: locationRequired
-			? 'Add a location'
-			: 'Optional for remote roles';
+			? t('profile.addLocation')
+			: t('profile.optionalRemote');
 	const locationHelperText = isTenderOnlyProfile
-		? 'Optional. If empty, all tender regions remain visible.'
+		? t('profile.allTenderRegions')
 		: locationRequired
-			? 'Location is required for on-site or hybrid work.'
-			: 'Location is optional when you are open to remote work.';
+			? t('profile.locationRequired')
+			: t('profile.locationOptional');
 	const fieldErrorLabel = (key) => {
 		if (isTenderOnlyProfile && key === 'preferredLocations') {
-			return 'Preferred tender regions';
+			return t('profile.preferredTenderRegions');
 		}
-		return FIELD_ERROR_LABELS[key];
+		return fieldErrorLabels[key];
 	};
 
 	const handleInterestsChange = (values) => {
@@ -415,7 +419,7 @@ const Profile = () => {
 			salaryExpectation: isTenderOnlyProfile ? '' : salaryValidation.error,
 			interests:
 				!isTenderOnlyProfile && interestsPayload.length === 0
-					? 'Choose at least one sector.'
+					? t('profile.chooseSector')
 					: '',
 			preferredLocations:
 				preferredLocationsPayload.length > MAX_PREFERRED_LOCATIONS
@@ -442,7 +446,7 @@ const Profile = () => {
 
 		if (hasFieldErrors) {
 			setFieldErrors(nextFieldErrors);
-			setValidationSummary('Please fix the highlighted fields before saving.');
+			setValidationSummary(t('profile.fixHighlighted'));
 			return;
 		}
 
@@ -513,7 +517,7 @@ const Profile = () => {
 			const backendFieldErrors = parseBackendProfileError(result.error);
 			if (Object.values(backendFieldErrors).some(Boolean)) {
 				setFieldErrors(backendFieldErrors);
-				setValidationSummary('Please fix the highlighted fields before saving.');
+				setValidationSummary(t('profile.fixHighlighted'));
 			} else {
 				setFormError(result.error);
 			}
@@ -574,7 +578,7 @@ const Profile = () => {
 										{profileCompletionSuggestions.map((suggestion) => (
 											<li key={suggestion.key} className="flex items-center gap-1.5 text-xs text-neutral-600">
 												<Plus className="h-3 w-3 shrink-0 text-blue-600" aria-hidden="true" />
-												<span>{suggestion.label}</span>
+												<span>{t(suggestion.labelKey)}</span>
 											</li>
 										))}
 									</ul>
@@ -583,7 +587,7 @@ const Profile = () => {
 
 							{/* Navigation */}
 							<nav className="space-y-0.5">
-								{visibleNavItems.map(({ id, label, icon: Icon }) => (
+								{visibleNavItems.map(({ id, labelKey, icon: Icon }) => (
 									<button
 										key={id}
 										onClick={() => scrollToSection(id)}
@@ -595,7 +599,7 @@ const Profile = () => {
 									>
 										<span className="flex items-center gap-2">
 											<Icon className="h-4 w-4" />
-											{getProfileNavLabel({ id, label }, isTenderOnlyProfile)}
+											{getProfileNavLabel({ id, labelKey }, isTenderOnlyProfile, t)}
 										</span>
 										<ChevronRight className={`h-3.5 w-3.5 ${activeSection === id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
 									</button>
@@ -612,7 +616,7 @@ const Profile = () => {
 		<div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 shadow-lg">
 			<CheckCircle2 className="h-5 w-5 text-green-600" />
 			<p className="text-sm font-medium text-green-800">
-				Profile updated successfully!
+				{t('profile.updated')}
 			</p>
 		</div>
 	</div>
@@ -640,7 +644,7 @@ const Profile = () => {
 												<div className="mt-1 flex items-center gap-3">
 													<Mail className="h-4 w-4 text-neutral-400" aria-hidden="true" />
 													<p className="break-all text-sm font-medium text-neutral-900">
-														{accountEmail || 'Email unavailable'}
+														{accountEmail || t('profile.unavailableEmail')}
 													</p>
 												</div>
 											</div>
@@ -654,7 +658,7 @@ const Profile = () => {
 											}}
 											className="space-y-1"
 										>
-											<Label htmlFor="firstName" className="text-sm font-medium text-neutral-700">First name</Label>
+											<Label htmlFor="firstName" className="text-sm font-medium text-neutral-700">{t('profile.firstName')}</Label>
 											<Input
 												id="firstName"
 												type="text"
@@ -679,7 +683,7 @@ const Profile = () => {
 											}}
 											className="space-y-1"
 										>
-											<Label htmlFor="lastName" className="text-sm font-medium text-neutral-700">Last name</Label>
+											<Label htmlFor="lastName" className="text-sm font-medium text-neutral-700">{t('profile.lastName')}</Label>
 											<Input
 												id="lastName"
 												type="text"
@@ -700,16 +704,16 @@ const Profile = () => {
 
 										{!isTenderOnlyProfile ? (
 										<div className="space-y-1">
-											<Label htmlFor="experienceLevel" className="text-sm font-medium text-neutral-700">Experience level</Label>
+											<Label htmlFor="experienceLevel" className="text-sm font-medium text-neutral-700">{t('profile.experienceLevel')}</Label>
 											<Select
 												value={formData.experienceLevel}
 												onValueChange={(value) => handleChange('experienceLevel', value)}
 											>
 												<SelectTrigger id="experienceLevel" className="border-neutral-200 bg-white">
-													<SelectValue placeholder="Select level" />
+													<SelectValue placeholder={t('profile.selectLevel')} />
 												</SelectTrigger>
 												<SelectContent>
-													{EXPERIENCE_OPTIONS.map((option) => (
+													{experienceOptions.map((option) => (
 														<SelectItem key={option.value} value={option.value}>
 															{option.label}
 														</SelectItem>
@@ -726,7 +730,7 @@ const Profile = () => {
 											}}
 											className="space-y-1"
 										>
-											<Label htmlFor="yearsOfExperience" className="text-sm font-medium text-neutral-700">Years of experience</Label>
+											<Label htmlFor="yearsOfExperience" className="text-sm font-medium text-neutral-700">{t('profile.yearsExperience')}</Label>
 											<Input
 												id="yearsOfExperience"
 												type="number"
@@ -762,12 +766,12 @@ const Profile = () => {
 									<div>
 										<ProfileAutocompleteInput
 											id="targetRole"
-											label="Desired job titles"
+											label={t('profile.desiredJobTitles')}
 											termType="role"
 											value={targetRoles}
 											onChange={setTargetRoles}
 											maxItems={5}
-											placeholder="Add a job title"
+											placeholder={t('profile.addJobTitle')}
 										/>
 									</div>
 									) : null}
@@ -801,16 +805,16 @@ const Profile = () => {
 											fieldRefs.current.salaryExpectation = node;
 										}}
 									>
-										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Expected salary range</Label>
+										<Label className="text-sm font-medium text-neutral-700 mb-2 block">{t('profile.expectedSalaryRange')}</Label>
 										<div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
 											<Input
 												type="number"
 												inputMode="numeric"
 												min="0"
-												placeholder="Min"
+												placeholder={t('profile.min')}
 												value={formData.salaryMinExpectation}
 												onChange={(event) => handleChange('salaryMinExpectation', event.target.value)}
-												aria-label="Minimum expected salary"
+												aria-label={t('profile.minSalary')}
 												className="border-neutral-200 bg-white"
 											/>
 											<span className="text-sm text-neutral-400">-</span>
@@ -818,14 +822,14 @@ const Profile = () => {
 												type="number"
 												inputMode="numeric"
 												min="0"
-												placeholder="Max"
+												placeholder={t('profile.max')}
 												value={formData.salaryMaxExpectation}
 												onChange={(event) => handleChange('salaryMaxExpectation', event.target.value)}
-												aria-label="Maximum expected salary"
+												aria-label={t('profile.maxSalary')}
 												className="border-neutral-200 bg-white"
 											/>
 										</div>
-										<p className="mt-2 text-sm text-neutral-500">TND/month. Optional.</p>
+										<p className="mt-2 text-sm text-neutral-500">{t('profile.tndMonthOptional')}</p>
 										{fieldErrors.salaryExpectation || salaryValidation.error ? (
 											<p className="mt-2 text-sm text-red-600" role="alert">
 												{fieldErrors.salaryExpectation || salaryValidation.error}
@@ -836,7 +840,7 @@ const Profile = () => {
 
 									{!isTenderOnlyProfile ? (
 									<div>
-										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Remote work preferences</Label>
+										<Label className="text-sm font-medium text-neutral-700 mb-2 block">{t('profile.remoteWorkPreferences')}</Label>
 										<PreferenceChipGroup
 											options={WORK_MODE_OPTIONS}
 											value={workModePreferences}
@@ -846,7 +850,7 @@ const Profile = () => {
 									) : null}
 
 									<div>
-										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Opportunity types</Label>
+										<Label className="text-sm font-medium text-neutral-700 mb-2 block">{t('profile.opportunityTypes')}</Label>
 										<PreferenceChipGroup
 											options={OPPORTUNITY_TYPE_OPTIONS}
 											value={opportunityTypes}
@@ -871,7 +875,7 @@ const Profile = () => {
 
 									{!isTenderOnlyProfile ? (
 									<div>
-										<Label className="text-sm font-medium text-neutral-700 mb-2 block">Contract types</Label>
+										<Label className="text-sm font-medium text-neutral-700 mb-2 block">{t('profile.contractTypes')}</Label>
 										<PreferenceChipGroup
 											options={employmentTypeOptions}
 											value={employmentTypes}
@@ -886,8 +890,8 @@ const Profile = () => {
 							{!isTenderOnlyProfile ? (
 							<section id="resume" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
-									<h2 className="text-lg font-semibold text-neutral-900">Resume & CV</h2>
-									<p className="text-sm text-neutral-500">Upload your resume</p>
+									<h2 className="text-lg font-semibold text-neutral-900">{t('profile.resumeCv')}</h2>
+									<p className="text-sm text-neutral-500">{t('profile.uploadResume')}</p>
 								</div>
 
 								<ResumeSection
@@ -902,8 +906,8 @@ const Profile = () => {
 							{!isTenderOnlyProfile ? (
 							<section id="career" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
-									<h2 className="text-lg font-semibold text-neutral-900">Career Signals</h2>
-									<p className="text-sm text-neutral-500">Skills and professional domains used to improve opportunity matching</p>
+									<h2 className="text-lg font-semibold text-neutral-900">{t('profile.careerSignals')}</h2>
+									<p className="text-sm text-neutral-500">{t('profile.careerSignalsDesc')}</p>
 								</div>
 
 								<div className="space-y-5">
@@ -911,11 +915,11 @@ const Profile = () => {
 									<div>
 										<ProfileAutocompleteInput
 											id="skills"
-											label="Skills"
+											label={t('profile.skills')}
 											termType="skill"
 											value={skills}
 											onChange={setSkills}
-											placeholder="Add a skill"
+											placeholder={t('profile.addSkillPlaceholder')}
 										/>
 									</div>
 									) : null}
@@ -927,7 +931,7 @@ const Profile = () => {
 									>
 										<BusinessFamilySelect
 											id="interests"
-											label="Sectors"
+											label={t('profile.sectors')}
 											value={interests}
 											onChange={handleInterestsChange}
 											maxItems={5}
@@ -946,8 +950,8 @@ const Profile = () => {
 							{!isTenderOnlyProfile ? (
 							<section id="settings" className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
 								<div className="border-b border-neutral-200 pb-3 mb-5">
-									<h2 className="text-lg font-semibold text-neutral-900">Account Settings</h2>
-									<p className="text-sm text-neutral-500">Manage your profile visibility</p>
+									<h2 className="text-lg font-semibold text-neutral-900">{t('profile.accountSettings')}</h2>
+									<p className="text-sm text-neutral-500">{t('profile.visibilityDesc')}</p>
 								</div>
 
 								<div className="space-y-4">
@@ -959,8 +963,8 @@ const Profile = () => {
 											className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500"
 										/>
 										<span className="text-sm text-neutral-700">
-											<span className="font-medium">Hiring employers can find you</span>
-											<span className="block text-xs text-neutral-500">Make your profile visible to recruiters searching for candidates</span>
+											<span className="font-medium">{t('profile.employersCanFind')}</span>
+											<span className="block text-xs text-neutral-500">{t('profile.visibilityHelp')}</span>
 										</span>
 									</label>
 
@@ -975,7 +979,7 @@ const Profile = () => {
 										<div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">
 											{validationSummary}
 											{getFirstErrorKey(fieldErrors)
-												? ` ${fieldErrorLabel(getFirstErrorKey(fieldErrors))} needs attention.`
+												? ` ${t('profile.needsAttention', { field: fieldErrorLabel(getFirstErrorKey(fieldErrors)) })}`
 												: ''}
 										</div>
 									) : (
@@ -983,7 +987,7 @@ const Profile = () => {
 									)}
 									<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
 									<Button type="button" variant="outline" onClick={() => window.history.back()}>
-										Cancel
+										{t('profile.cancel')}
 									</Button>
 									<Button
 											type="submit"
@@ -993,10 +997,10 @@ const Profile = () => {
 											{isLoading ? (
 												<>
 													<Spinner size={18} className="mr-2" />
-													Saving...
+													{t('profile.saving')}
 												</>
 											) : (
-												'Save changes'
+												t('profile.saveChanges')
 											)}
 									</Button>
 									</div>

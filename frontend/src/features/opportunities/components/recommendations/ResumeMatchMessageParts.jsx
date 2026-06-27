@@ -1,12 +1,13 @@
-import { Check, Copy, Sparkles } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
+
 const ANALYSIS_STEPS = [
-  { icon: "📄", text: "Reading resume" },
-  { icon: "", text: "Comparing with job description" },
-  { icon: "", text: "Checking keyword matches" },
-  { icon: "", text: "Evaluating experience fit" },
-  { icon: "", text: "Preparing insights" },
+  'Reading resume signals',
+  'Comparing job requirements',
+  'Checking ATS keywords',
+  'Preparing recommendations',
 ];
 
 const escapeHtml = (value) =>
@@ -120,84 +121,83 @@ export const StreamingMarkdownMessage = ({ markdown, stream = true }) => {
   );
 };
 
-// Professional loading indicator - Simple dot animation
-export const SimpleLoader = ({ text = "Thinking" }) => {
+export const AssistantRobotLoader = ({ size = 'md' }) => (
+  <span
+    className={[
+      'bidwise-robot-shell relative inline-flex shrink-0 items-center justify-center rounded-2xl bg-blue-50 ring-1 ring-blue-100',
+      size === 'sm' ? 'h-12 w-12' : 'h-16 w-16',
+    ].join(' ')}
+    aria-hidden="true"
+  >
+    <img
+      src="/Robot-Bot%203D.svg"
+      alt=""
+      className={[
+        'bidwise-robot-loader object-contain',
+        size === 'sm' ? 'h-11 w-11' : 'h-15 w-15',
+      ].join(' ')}
+      loading="eager"
+    />
+  </span>
+);
+
+export const SimpleLoader = ({ text = null }) => {
+  const { t } = useLanguage();
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm text-gray-500">{text}</span>
-      <span className="flex gap-1">
-        <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '0ms' }} />
-        <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '150ms' }} />
-        <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '300ms' }} />
-      </span>
+    <div className="flex items-center gap-2.5">
+      <AssistantRobotLoader size="sm" />
+      <span className="text-sm text-gray-600">{text || t('opportunities.detail.aiWorking')}</span>
     </div>
   );
 };
 
-// Professional job analysis loader
-export const JobAnalysisLoader = ({ step = "Analyzing resume" }) => {
+export const JobAnalysisLoader = ({ step = null, steps = null }) => {
+  const visibleSteps = Array.isArray(steps) && steps.length ? steps : ANALYSIS_STEPS;
   const [currentStep, setCurrentStep] = useState(0);
-  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    const stepInterval = setInterval(() => {
-      setCurrentStep((prev) => (prev + 1) % ANALYSIS_STEPS.length);
+    const stepInterval = window.setInterval(() => {
+      setCurrentStep((prev) => (prev + 1) % visibleSteps.length);
     }, 1800);
-    
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) return 100;
-        return Math.min(prev + 2, 100);
-      });
-    }, 100);
 
     return () => {
-      clearInterval(stepInterval);
-      clearInterval(progressInterval);
+      window.clearInterval(stepInterval);
     };
-  }, []);
+  }, [visibleSteps.length]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-gray-500">{ANALYSIS_STEPS[currentStep].icon}</span>
-        <span className="text-gray-700">{ANALYSIS_STEPS[currentStep].text}</span>
-        <div className="flex gap-0.5">
-          <span className="h-1 w-1 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="h-1 w-1 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="h-1 w-1 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+    <div className="rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-blue-100">
+      <div className="flex items-center gap-3">
+        <AssistantRobotLoader />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-800">{step || visibleSteps[currentStep]}</p>
+          <div className="mt-1.5 h-1 w-44 max-w-full overflow-hidden rounded-full bg-gray-100">
+            <div className="bidwise-thinking-bar h-full rounded-full bg-gradient-to-r from-blue-600 via-emerald-500 to-sky-500" />
+          </div>
         </div>
       </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-gray-100">
-        <div 
-          className="h-full rounded-full bg-blue-400 transition-all duration-300 ease-out"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
     </div>
   );
 };
 
-// Minimal thinking loader
 export const MinimalThinkingLoader = () => {
+  const { t } = useLanguage();
+
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="flex gap-1">
-        <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-        <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-        <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-      </div>
-      <span className="text-xs text-gray-400">AI is thinking</span>
+    <div className="flex items-center gap-2">
+      <AssistantRobotLoader size="sm" />
+      <span className="text-xs text-gray-500">{t('opportunities.detail.aiWorking')}</span>
     </div>
   );
 };
 
-// Keep ThinkingLoader for backward compatibility but make it cleaner
-export const ThinkingLoader = ({ label = "Analyzing", steps: customSteps }) => {
-  return <JobAnalysisLoader step={label} />;
-};
+export const ThinkingLoader = ({ label = null, steps: customSteps }) => (
+  <JobAnalysisLoader step={label} steps={customSteps} />
+);
 
-export const CopyMessageButton = ({ markdown, label = 'Copy message' }) => {
+export const CopyMessageButton = ({ markdown, label = null }) => {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -216,8 +216,8 @@ export const CopyMessageButton = ({ markdown, label = 'Copy message' }) => {
       type="button"
       onClick={handleCopy}
       className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-      aria-label={copied ? 'Copied' : label}
-      title={copied ? 'Copied' : label}
+      aria-label={copied ? t('common.copied') : label || t('common.copyMessage')}
+      title={copied ? t('common.copied') : label || t('common.copyMessage')}
     >
       {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
     </button>

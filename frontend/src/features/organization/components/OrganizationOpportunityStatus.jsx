@@ -6,6 +6,8 @@ import {
   ORGANIZATION_OPPORTUNITY_STATUS_DOT_CLASSES,
   ORGANIZATION_OPPORTUNITY_STATUS_LABELS,
 } from '../utils/organizationOpportunityFormatters.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
+import { getOrganizationOpportunityStatusLabel } from '../utils/organizationLabelUtils.js';
 
 const STATUS_TARGET_ACTIONS = {
   ACTIVE: { SUSPENDUE: 'suspend', FERMEE: 'close' },
@@ -47,21 +49,29 @@ export const statusFallbackForAction = (opportunity, action) => {
   return 'ACTIVE';
 };
 
-export const OrganizationOpportunityStatusLabel = ({ status }) => (
-  <span className="flex min-w-0 items-center gap-2">
-    <span
-      className={`h-2 w-2 shrink-0 rounded-full ${
-        ORGANIZATION_OPPORTUNITY_STATUS_DOT_CLASSES[status] || 'bg-red-700'
-      }`}
-      aria-hidden="true"
-    />
-    <span className="truncate">
-      {ORGANIZATION_OPPORTUNITY_STATUS_LABELS[status] || status}
+export const OrganizationOpportunityStatusLabel = ({ status }) => {
+  const { t } = useLanguage();
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span
+        className={`h-2 w-2 shrink-0 rounded-full ${
+          ORGANIZATION_OPPORTUNITY_STATUS_DOT_CLASSES[status] || 'bg-red-700'
+        }`}
+        aria-hidden="true"
+      />
+      <span className="truncate">
+        {getOrganizationOpportunityStatusLabel(
+          status,
+          t,
+          ORGANIZATION_OPPORTUNITY_STATUS_LABELS[status] || status,
+        )}
+      </span>
     </span>
-  </span>
-);
+  );
+};
 
 export const OrganizationOpportunityStatusSelect = ({ opportunity, disabled, onAction }) => {
+  const { t } = useLanguage();
   const transitions = STATUS_TARGET_ACTIONS[opportunity.status] || {};
   const options = STATUS_MENU_OPTIONS[opportunity.status] || [opportunity.status];
   const [isOpen, setIsOpen] = useState(false);
@@ -96,7 +106,7 @@ export const OrganizationOpportunityStatusSelect = ({ opportunity, disabled, onA
       <button
         type="button"
         className="flex h-11 w-full items-center justify-between gap-3 rounded-lg border border-neutral-300 bg-white px-3 text-left text-sm font-medium text-neutral-900 shadow-sm transition hover:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
-        aria-label={`Change status for ${opportunity.title}`}
+        aria-label={t('organization.changeStatusFor', { title: opportunity.title })}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         disabled={disabled || options.length === 1}
@@ -113,7 +123,7 @@ export const OrganizationOpportunityStatusSelect = ({ opportunity, disabled, onA
         <div
           className="absolute left-0 top-full z-30 mt-1.5 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white p-1.5 shadow-xl"
           role="listbox"
-          aria-label="Opportunity status"
+          aria-label={t('organization.opportunityStatus')}
         >
           {options.map((status) => {
             const isCurrent = status === opportunity.status;
@@ -149,6 +159,7 @@ export const OrganizationOpportunityStatusDialog = ({
   onConfirm,
   isSubmitting,
 }) => {
+  const { t } = useLanguage();
   if (!pendingAction) return null;
   const { action, opportunity } = pendingAction;
   const isClose = action === 'close';
@@ -158,22 +169,21 @@ export const OrganizationOpportunityStatusDialog = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/50 px-4 py-6">
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" role="dialog" aria-modal="true">
         <h2 className="text-lg font-semibold text-neutral-950">
-          {isClose ? 'Close this opportunity?' : 'Suspend this opportunity?'}
+          {isClose ? t('organization.closeOpportunityQuestion') : t('organization.suspendOpportunityQuestion')}
         </h2>
         <p className="mt-3 break-words text-sm leading-6 text-neutral-700">
           &quot;{opportunity.title}&quot; {isClose
-            ? 'will be removed from publication. You can activate or suspend it later from your dashboard. Applications and audit history will be preserved.'
-            : 'will no longer be visible to candidates. You can activate it again at any time from your dashboard.'}
+            ? t('organization.closeOpportunityWarning')
+            : t('organization.suspendOpportunityWarning')}
         </p>
         {isClose && applicationsCount > 0 ? (
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            This opportunity has {applicationsCount} application{applicationsCount === 1 ? '' : 's'}.
-            They will be preserved but no new applications will be accepted.
+            {t('organization.closeApplicationsWarning', { count: applicationsCount })}
           </p>
         ) : null}
         <div className="mt-6 flex justify-end gap-3">
           <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
@@ -183,11 +193,10 @@ export const OrganizationOpportunityStatusDialog = ({
             onClick={onConfirm}
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Saving...' : isClose ? 'Close opportunity' : 'Suspend opportunity'}
+            {isSubmitting ? t('profile.saving') : isClose ? t('organization.closeOpportunity') : t('organization.suspendOpportunity')}
           </Button>
         </div>
       </div>
     </div>
   );
 };
-

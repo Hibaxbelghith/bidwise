@@ -20,92 +20,128 @@ import {
 } from '../../../components/ui/table.jsx';
 import { formatDateTime } from '../components/dashboard/dashboard.Utils.js';
 import { AUDIT_ACTION_OPTIONS, useAdminAuditLogs } from '../hooks/useAdminAuditLogs.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const ACTION_META = {
   SUSPEND: {
-    label: 'Suspension',
+    labelKey: 'admin.actionSuspension',
     icon: UserX,
     className: 'bg-red-50 text-red-700 border-red-200',
   },
   REACTIVATE: {
-    label: 'Reactivation',
+    labelKey: 'admin.actionReactivation',
     icon: UserCheck,
     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   },
   TOGGLE_ADMIN: {
-    label: 'Role change',
+    labelKey: 'admin.actionRoleChange',
     icon: ShieldCheck,
     className: 'bg-blue-50 text-blue-700 border-blue-200',
   },
   TOGGLE_ACTIVE: {
-    label: 'Status change',
+    labelKey: 'admin.actionStatusChange',
     icon: UserCog,
     className: 'bg-amber-50 text-amber-700 border-amber-200',
   },
   APPROVE_ORG_OPPORTUNITY: {
-    label: 'Opportunity approved',
+    labelKey: 'admin.actionOpportunityApproved',
     icon: CheckCircle2,
     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   },
   REJECT_ORG_OPPORTUNITY: {
-    label: 'Opportunity rejected',
+    labelKey: 'admin.actionOpportunityRejected',
     icon: ShieldX,
     className: 'bg-red-50 text-red-700 border-red-200',
   },
   UPDATE_ORG_OPPORTUNITY: {
-    label: 'Opportunity updated',
+    labelKey: 'admin.actionOpportunityUpdated',
     icon: RotateCcw,
     className: 'bg-blue-50 text-blue-700 border-blue-200',
   },
   SUSPEND_ORG_OPPORTUNITY: {
-    label: 'Opportunity suspended',
+    labelKey: 'admin.actionOpportunitySuspended',
     icon: RotateCcw,
     className: 'bg-amber-50 text-amber-700 border-amber-200',
   },
   ACTIVATE_ORG_OPPORTUNITY: {
-    label: 'Opportunity activated',
+    labelKey: 'admin.actionOpportunityActivated',
     icon: CheckCircle2,
     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   },
   CLOSE_ORG_OPPORTUNITY: {
-    label: 'Opportunity closed',
+    labelKey: 'admin.actionOpportunityClosed',
     icon: ShieldX,
     className: 'bg-red-50 text-red-700 border-red-200',
   },
 };
 
+const ACTION_OPTION_KEYS = {
+  all: 'admin.allActions',
+  SUSPEND: 'admin.suspensions',
+  REACTIVATE: 'admin.reactivations',
+  TOGGLE_ADMIN: 'admin.roleChanges',
+  TOGGLE_ACTIVE: 'admin.activeStatusChanges',
+  APPROVE_ORG_OPPORTUNITY: 'admin.opportunityApprovals',
+  REJECT_ORG_OPPORTUNITY: 'admin.opportunityRejections',
+  UPDATE_ORG_OPPORTUNITY: 'admin.opportunityUpdates',
+  SUSPEND_ORG_OPPORTUNITY: 'admin.opportunitySuspensions',
+  ACTIVATE_ORG_OPPORTUNITY: 'admin.opportunityActivations',
+  CLOSE_ORG_OPPORTUNITY: 'admin.opportunityClosures',
+};
+
+const AUDIT_DETAIL_KEYS = {
+  'User reactivated; refresh tokens revoked.': 'admin.auditUserReactivated',
+  'Admin role changed; refresh tokens revoked.': 'admin.auditAdminRoleChanged',
+  'Organization opportunity approved for publication.': 'admin.auditOpportunityApproved',
+  'Organization opportunity rejected.': 'admin.auditOpportunityRejected',
+  'Organization opportunity updated and re-moderated.': 'admin.auditOpportunityUpdated',
+  'Organization opportunity activated.': 'admin.auditOpportunityActivated',
+  'Organization opportunity closed.': 'admin.auditOpportunityClosed',
+  'Organization opportunity suspended.': 'admin.auditOpportunitySuspended',
+};
+
 const PAGE_SIZE = 25;
 
-const statusLabel = (status) => {
+const actionLabel = (action, t) => {
+  const meta = ACTION_META[action];
+  return meta?.labelKey ? t(meta.labelKey) : action;
+};
+
+const translateAuditDetail = (detail, t) => {
+  const key = AUDIT_DETAIL_KEYS[detail];
+  return key ? t(key) : detail;
+};
+
+const statusLabel = (status, t = null) => {
   const value = String(status || '').toUpperCase();
-  if (value === 'ACTIVE') return 'Active';
-  if (value === 'PENDING_REVIEW') return 'Pending review';
-  if (value === 'REJECTED') return 'Rejected';
-  if (value === 'SUSPENDUE') return 'Suspended';
-  if (value === 'FERMEE') return 'Closed';
-  if (value === 'ARCHIVEE' || value === 'ARCHIVED') return 'Archived';
-  if (value === 'EXPIREE' || value === 'EXPIRED') return 'Expired';
+  if (value === 'ACTIVE') return t ? t('admin.statusActive') : 'Active';
+  if (value === 'PENDING_REVIEW') return t ? t('admin.pendingReview') : 'Pending review';
+  if (value === 'REJECTED') return t ? t('admin.rejected') : 'Rejected';
+  if (value === 'SUSPENDUE') return t ? t('admin.statusSuspended') : 'Suspended';
+  if (value === 'FERMEE') return t ? t('admin.actionOpportunityClosed') : 'Closed';
+  if (value === 'ARCHIVEE' || value === 'ARCHIVED') return t ? t('admin.archived') : 'Archived';
+  if (value === 'EXPIREE' || value === 'EXPIRED') return t ? t('admin.expired') : 'Expired';
   return status || '-';
 };
 
-const decisionLabel = (decision) => {
+const decisionLabel = (decision, t = null) => {
   const value = String(decision || '').toLowerCase();
-  if (value === 'approved') return 'Approved';
-  if (value === 'rejected') return 'Rejected';
-  if (value === 'pending_review') return 'Pending review';
-  if (value === 'needs_changes') return 'Needs changes';
+  if (value === 'approved') return t ? t('admin.approved') : 'Approved';
+  if (value === 'rejected') return t ? t('admin.rejected') : 'Rejected';
+  if (value === 'pending_review') return t ? t('admin.pendingReview') : 'Pending review';
+  if (value === 'needs_changes') return t ? t('admin.needsChanges') : 'Needs changes';
   return decision || '-';
 };
 
-const categoryLabel = (category) => {
+const categoryLabel = (category, t = null) => {
   const labels = {
-    legitimate_opportunity: 'Legitimate opportunity',
-    scam: 'Scam',
-    mlm_or_pyramid: 'MLM or pyramid scheme',
-    advertisement: 'Advertisement',
-    inappropriate_content: 'Inappropriate content',
-    irrelevant: 'Irrelevant content',
-    unclear: 'Unclear',
+    legitimate_opportunity: t ? t('admin.legitimateOpportunity') : 'Legitimate opportunity',
+    scam: t ? t('admin.scamRisk') : 'Scam',
+    mlm_or_pyramid: t ? t('admin.mlmRisk') : 'MLM or pyramid scheme',
+    advertisement: t ? t('admin.advertisement') : 'Advertisement',
+    inappropriate_content: t ? t('admin.inappropriateContent') : 'Inappropriate content',
+    irrelevant: t ? t('admin.irrelevantContent') : 'Irrelevant content',
+    unclear: t ? t('admin.unclear') : 'Unclear',
   };
   return labels[String(category || '').toLowerCase()] || category || '-';
 };
@@ -124,14 +160,15 @@ const DetailItem = ({ label, value, wide = false }) => (
 );
 
 const AuditDetailModal = ({ entry, onClose }) => {
+  const { t } = useLanguage();
   if (!entry) return null;
 
   const metadata = entry.metadata || {};
   const actionMeta = ACTION_META[entry.action] || {
-    label: entry.action,
     icon: RotateCcw,
     className: 'bg-neutral-50 text-neutral-700 border-neutral-200',
   };
+  const actionText = actionLabel(entry.action, t);
   const Icon = actionMeta.icon;
   const isOpportunityAction = Boolean(metadata.opportunity_id || metadata.opportunity_title);
   const hasAiContext = Boolean(
@@ -150,28 +187,28 @@ const AuditDetailModal = ({ entry, onClose }) => {
               <Icon className="h-4 w-4" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <h3 className="break-words text-lg font-semibold text-neutral-900">{actionMeta.label}</h3>
+              <h3 className="break-words text-lg font-semibold text-neutral-900">{actionText}</h3>
               <p className="mt-1 text-sm text-neutral-500">{formatDateTime(entry.created_at)}</p>
             </div>
           </div>
-          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close details">
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label={t('common.close')}>
             <X className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
 
         <div className="space-y-5 overflow-y-auto p-5 text-sm">
           <section className="rounded-lg border border-neutral-200 p-4">
-            <h4 className="text-sm font-semibold text-neutral-900">Action summary</h4>
+            <h4 className="text-sm font-semibold text-neutral-900">{t('admin.actionSummary')}</h4>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <DetailItem label="Decision" value={decisionLabel(metadata.decision)} />
-              <DetailItem label="Result" value={entry.detail || metadata.message} />
-              <DetailItem label="Admin" value={entry.actor_email || 'Unknown admin'} />
-              <DetailItem label="Target account" value={entry.target_email || 'Deleted user'} />
+              <DetailItem label={t('admin.decision')} value={decisionLabel(metadata.decision, t)} />
+              <DetailItem label={t('admin.result')} value={translateAuditDetail(entry.detail || metadata.message, t)} />
+              <DetailItem label={t('admin.admin')} value={entry.actor_email || t('admin.unknownAdmin')} />
+              <DetailItem label={t('admin.targetAccount')} value={entry.target_email || t('admin.deletedUser')} />
               {isOpportunityAction ? (
                 <>
-                  <DetailItem label="Opportunity ID" value={metadata.opportunity_id ? `#${metadata.opportunity_id}` : '-'} />
-                  <DetailItem label="Organization email" value={metadata.organization_email} />
-                  <DetailItem label="Opportunity title" value={metadata.opportunity_title} wide />
+                  <DetailItem label={t('admin.opportunityId')} value={metadata.opportunity_id ? `#${metadata.opportunity_id}` : '-'} />
+                  <DetailItem label={t('admin.organizationEmail')} value={metadata.organization_email} />
+                  <DetailItem label={t('admin.opportunityTitle')} value={metadata.opportunity_title} wide />
                 </>
               ) : null}
             </div>
@@ -179,52 +216,52 @@ const AuditDetailModal = ({ entry, onClose }) => {
 
           {isOpportunityAction ? (
             <section className="rounded-lg border border-neutral-200 p-4">
-              <h4 className="text-sm font-semibold text-neutral-900">Organization details</h4>
+              <h4 className="text-sm font-semibold text-neutral-900">{t('admin.organizationDetails')}</h4>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <DetailItem label="Organization name" value={metadata.organization_name} />
-                <DetailItem label="Organization email" value={metadata.organization_email} />
-                <DetailItem label="Phone" value={metadata.organization_phone} />
-                <DetailItem label="Type" value={metadata.organization_type} />
-                <DetailItem label="Contact person" value={metadata.organization_contact_name} />
-                <DetailItem label="Website" value={metadata.organization_website} />
+                <DetailItem label={t('admin.organizationName')} value={metadata.organization_name} />
+                <DetailItem label={t('admin.organizationEmail')} value={metadata.organization_email} />
+                <DetailItem label={t('admin.phone')} value={metadata.organization_phone} />
+                <DetailItem label={t('admin.type')} value={metadata.organization_type} />
+                <DetailItem label={t('admin.contactPerson')} value={metadata.organization_contact_name} />
+                <DetailItem label={t('admin.website')} value={metadata.organization_website} />
               </div>
             </section>
           ) : null}
 
           {isOpportunityAction ? (
             <section className="rounded-lg border border-neutral-200 p-4">
-              <h4 className="text-sm font-semibold text-neutral-900">Publication status</h4>
+              <h4 className="text-sm font-semibold text-neutral-900">{t('admin.publicationStatus')}</h4>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <DetailItem label="Before" value={statusLabel(metadata.before_status)} />
-                <DetailItem label="After" value={statusLabel(metadata.after_status)} />
+                <DetailItem label={t('admin.before')} value={statusLabel(metadata.before_status, t)} />
+                <DetailItem label={t('admin.after')} value={statusLabel(metadata.after_status, t)} />
                 {Array.isArray(metadata.changed_fields) && metadata.changed_fields.length ? (
-                  <DetailItem label="Updated fields" value={metadata.changed_fields.join(', ')} wide />
+                  <DetailItem label={t('admin.updatedFields')} value={metadata.changed_fields.join(', ')} wide />
                 ) : null}
-                <DetailItem label="Admin note" value={metadata.note || 'No note provided'} wide />
+                <DetailItem label={t('admin.adminNote')} value={metadata.note || t('admin.noNoteProvided')} wide />
               </div>
             </section>
           ) : null}
 
           {isOpportunityAction && hasAiContext ? (
             <section className="rounded-lg border border-blue-200 bg-blue-50/40 p-4">
-              <h4 className="text-sm font-semibold text-neutral-900">AI moderation context</h4>
+              <h4 className="text-sm font-semibold text-neutral-900">{t('admin.aiModerationContext')}</h4>
               <p className="mt-1 text-xs text-neutral-600">
-                Initial automated assessment available to the administrator before the final decision.
+                {t('admin.aiModerationContextHelp')}
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <DetailItem label="Detected category" value={categoryLabel(metadata.ai_category)} />
-                <DetailItem label="AI recommendation" value={decisionLabel(metadata.ai_decision)} />
-                <DetailItem label="AI confidence" value={confidenceLabel(metadata.ai_confidence)} />
-                <DetailItem label="AI explanation" value={metadata.ai_explanation} wide />
+                <DetailItem label={t('admin.detectedCategory')} value={categoryLabel(metadata.ai_category, t)} />
+                <DetailItem label={t('admin.aiRecommendation')} value={decisionLabel(metadata.ai_decision, t)} />
+                <DetailItem label={t('admin.aiConfidence')} value={confidenceLabel(metadata.ai_confidence)} />
+                <DetailItem label={t('admin.aiExplanation')} value={metadata.ai_explanation} wide />
               </div>
             </section>
           ) : null}
 
           <section className="rounded-lg border border-neutral-200 p-4">
-            <h4 className="text-sm font-semibold text-neutral-900">Request context</h4>
+            <h4 className="text-sm font-semibold text-neutral-900">{t('admin.requestContext')}</h4>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <DetailItem label="Audit action" value={actionMeta.label} />
-              <DetailItem label="Audit ID" value={entry.id ? `#${entry.id}` : '-'} />
+              <DetailItem label={t('admin.auditAction')} value={actionText} />
+              <DetailItem label={t('admin.auditId')} value={entry.id ? `#${entry.id}` : '-'} />
             </div>
           </section>
         </div>
@@ -234,6 +271,7 @@ const AuditDetailModal = ({ entry, onClose }) => {
 };
 
 const AdminAuditLogTab = () => {
+  const { t } = useLanguage();
   const [action, setAction] = useState('');
   const [page, setPage] = useState(1);
   const [selectedEntry, setSelectedEntry] = useState(null);
@@ -260,31 +298,31 @@ const AdminAuditLogTab = () => {
       <Card>
         <CardHeader className="flex flex-col gap-3 border-b border-neutral-200 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle className="text-base">Audit log</CardTitle>
+            <CardTitle className="text-base">{t('admin.actionHistory')}</CardTitle>
             <p className="mt-1 text-sm text-neutral-500">
-              Immutable chronological trail of sensitive admin actions.
+              {t('admin.actionHistoryHelp')}
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Select value={action || 'all'} onValueChange={handleActionChange}>
               <SelectTrigger className="h-9 w-full border-neutral-200 bg-white sm:w-56">
-                <SelectValue placeholder="Filter action" />
+                <SelectValue placeholder={t('admin.filterAction')} />
               </SelectTrigger>
               <SelectContent>
                 {AUDIT_ACTION_OPTIONS.map((option) => (
                   <SelectItem key={option.value || 'all'} value={option.value || 'all'}>
-                    {option.label}
+                    {t(ACTION_OPTION_KEYS[option.value || 'all'])}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Button type="button" variant="outline" size="sm" onClick={exportCsv}>
               <Download className="h-4 w-4" aria-hidden="true" />
-              Export CSV
+              {t('admin.exportCsv')}
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={exportPdf}>
               <FileText className="h-4 w-4" aria-hidden="true" />
-              Export PDF
+              {t('admin.exportPdf')}
             </Button>
           </div>
         </CardHeader>
@@ -297,12 +335,12 @@ const AdminAuditLogTab = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-neutral-50">
-                <TableHead className="px-4 py-3">Action</TableHead>
-                <TableHead className="px-4 py-3">User email</TableHead>
-                <TableHead className="px-4 py-3">Admin email</TableHead>
-                <TableHead className="px-4 py-3">Details</TableHead>
-                <TableHead className="px-4 py-3">Date</TableHead>
-                <TableHead className="px-4 py-3 text-right">Details</TableHead>
+                <TableHead className="px-4 py-3">{t('admin.actions')}</TableHead>
+                <TableHead className="px-4 py-3">{t('admin.userEmail')}</TableHead>
+                <TableHead className="px-4 py-3">{t('admin.adminEmail')}</TableHead>
+                <TableHead className="px-4 py-3">{t('admin.details')}</TableHead>
+                <TableHead className="px-4 py-3">{t('admin.date')}</TableHead>
+                <TableHead className="px-4 py-3 text-right">{t('admin.details')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody aria-busy={isLoading}>
@@ -311,40 +349,40 @@ const AdminAuditLogTab = () => {
                   <TableCell colSpan={6} className="px-4 py-10 text-center text-neutral-500">
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      Loading audit log...
+                      {t('admin.loadingAuditLog')}
                     </span>
                   </TableCell>
                 </TableRow>
               ) : logs.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="px-4 py-10 text-center text-neutral-500">
-                    No audit events found.
+                    {t('admin.noAuditEvents')}
                   </TableCell>
                 </TableRow>
               ) : (
                 logs.map((entry) => {
                   const meta = ACTION_META[entry.action] || {
-                    label: entry.action,
                     icon: RotateCcw,
                     className: 'bg-neutral-50 text-neutral-700 border-neutral-200',
                   };
                   const Icon = meta.icon;
+                  const actionText = actionLabel(entry.action, t);
                   return (
                     <TableRow key={entry.id} className="hover:bg-neutral-50/60">
                       <TableCell className="px-4 py-3">
                         <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${meta.className}`}>
                           <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                          {meta.label}
+                          {actionText}
                         </span>
                       </TableCell>
                       <TableCell className="px-4 py-3 text-sm text-neutral-800">
-                        {entry.target_email || 'Deleted user'}
+                        {entry.target_email || t('admin.deletedUser')}
                       </TableCell>
                       <TableCell className="px-4 py-3 text-sm text-neutral-600">
-                        {entry.actor_email || 'Unknown admin'}
+                        {entry.actor_email || t('admin.unknownAdmin')}
                       </TableCell>
                       <TableCell className="max-w-[320px] px-4 py-3 text-sm text-neutral-600">
-                        <span className="line-clamp-2">{entry.detail || '-'}</span>
+                        <span className="line-clamp-2">{translateAuditDetail(entry.detail, t) || '-'}</span>
                       </TableCell>
                       <TableCell className="px-4 py-3 text-sm text-neutral-600">
                         {formatDateTime(entry.created_at)}
@@ -352,7 +390,7 @@ const AdminAuditLogTab = () => {
                       <TableCell className="px-4 py-3 text-right">
                         <Button type="button" variant="outline" size="sm" onClick={() => setSelectedEntry(entry)}>
                           <Eye className="h-4 w-4" aria-hidden="true" />
-                          View
+                          {t('admin.viewDetails')}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -366,7 +404,7 @@ const AdminAuditLogTab = () => {
 
       <div className="flex items-center justify-between text-sm text-neutral-600">
         <span>
-          Page {page} of {totalPages} - {count} events
+          {t('admin.pageOfEvents', { page, totalPages, count })}
         </span>
         <div className="flex gap-2">
           <Button
@@ -376,7 +414,7 @@ const AdminAuditLogTab = () => {
             disabled={!hasPrevious || isLoading}
             onClick={() => setPage((value) => Math.max(value - 1, 1))}
           >
-            Previous
+            {t('admin.previous')}
           </Button>
           <Button
             type="button"
@@ -385,7 +423,7 @@ const AdminAuditLogTab = () => {
             disabled={!hasNext || isLoading}
             onClick={() => setPage((value) => value + 1)}
           >
-            Next
+            {t('admin.next')}
           </Button>
         </div>
       </div>

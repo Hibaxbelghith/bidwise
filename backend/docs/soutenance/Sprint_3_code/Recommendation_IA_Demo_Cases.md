@@ -7,7 +7,7 @@ L'objectif est de montrer deux comportements importants:
 - `Strong matches`: offres fortement alignees avec le profil, le CV et les preferences.
 - `Related opportunities`: offres proches mais avec une preuve incomplete ou une incertitude qui necessite une verification humaine.
 
-## Profil de demo Comptable Junior
+## Profil de demo Comptable
 
 Compte utilise:
 
@@ -17,12 +17,49 @@ hibabelg7@gmail.com
 
 Profil candidat:
 
-- Role cible: `Comptable Junior`.
+- Role cible principal: `Comptable`.
 - Experience: `JUNIOR`, 2 ans.
 - Localisations: Tunis, Sousse, Sfax.
-- Contrats: CDI, CDD, SIVP.
-- Secteur: `Comptabilite / Gestion / Audit`.
-- Competences profil/CV: comptabilite generale, saisie comptable, rapprochements bancaires, declarations fiscales, Excel, Sage Comptabilite, Ciel Compta, ERP.
+- Contrats: CDI, CDD.
+- Secteur: `Accounting / Audit`.
+- Competences profil/CV:
+  `Sage`, `Sage Comptabilite`, `Ciel Compta`, `ERP`, `Microsoft Excel`,
+  `Microsoft Word`, `PowerPoint`, `Comptabilite generale`, `Saisie comptable`,
+  `Declarations fiscales`, `Gestion des pieces comptables`, `Facturation`,
+  `Suivi des paiements`, `Relances clients`, `Preparation de cloture mensuelle`,
+  `Reporting comptable`, `Classement et archivage`, `Lettrage des comptes`,
+  `Rapprochements bancaires`.
+
+Contenu CV de demo:
+
+- Identite / titre: `Hiba Belghith - Comptable Junior`
+- Resume:
+  comptable junior avec 2 ans d'experience en saisie comptable,
+  comptabilite generale, rapprochements bancaires, facturation, suivi des
+  paiements et declarations fiscales.
+- Postes recherches:
+  `Comptable Junior`, `Assistant Comptable`, `Aide Comptable`,
+  `Comptable Fournisseurs`, `Comptable Clients`
+- Experience principale:
+  `Assistante Comptable Junior` chez `Cabinet Expertise & Finance - Tunis`
+  de janvier 2024 a mai 2026, avec saisie des operations, controle des
+  factures, rapprochements bancaires, relances clients, TVA et cloture
+  mensuelle.
+- Experience precedente:
+  `Stage Comptable` chez `Societe Distribution Plus - Ariana`
+  de juin 2023 a decembre 2023.
+- Langues:
+  arabe langue maternelle, francais professionnel, anglais intermediaire.
+- Preferences mentionnees dans le CV:
+  CDI, CDD, SIVP, Tunis, Ariana, Ben Arous, Sfax, sur site et hybride.
+
+Note importante pour la demo:
+
+> Le CV mentionne un perimetre de preferences plus large (dont `SIVP`,
+> `Ariana`, `Ben Arous`, `sur site`, `hybride`), mais le profil candidat
+> charge dans l'application pour la demonstration a ete volontairement
+> resserre sur `Comptable`, `CDI`, `CDD`, `Tunis`, `Sousse`, `Sfax` afin
+> de coller aux recommandations actuellement observees.
 
 Ce profil est utile pour la soutenance parce qu'il permet de montrer:
 
@@ -210,9 +247,10 @@ Experience: 1-2 ans
 Pourquoi c'est le meilleur cas:
 
 - titre exact `Comptable`;
-- role extrait `Comptable Junior`;
+- role extrait `Comptable Junior`, compatible avec le role cible `Comptable`;
 - experience `1-2 ans` parfaitement alignee avec le profil;
-- contrat `SIVP` coherent avec un profil junior;
+- contrat `SIVP`: signal moins aligne avec le profil charge, mais l'offre
+  reste forte grace au role exact, a l'experience et aux competences coeur;
 - secteur `comptabilite / gestion / audit`;
 - skills comptables coeur metier: `Saisie comptable`, `Controle comptable`, `Declarations fiscales`, `Declarations sociales`, `Bilans`, `Etats financiers`, `Excel`.
 
@@ -348,7 +386,7 @@ Tests techniques utiles a citer:
 
 ### Script oral conseille pour le profil comptable
 
-> Pour ce profil Comptable Junior, BidWise combine le role cible, les competences du CV, les preferences de localisation et les types de contrat. Ensuite, JobBERT compare le sens metier global des offres et le scoring hybride ajoute les signaux explicables: role, skills, famille metier, experience et qualite de la source. Les offres INTERNATIONAL et CMR AUDIT ressortent comme strong matches car elles sont comptables directes, juniors et bien structurees. A l'inverse, Vneuron reste en related car l'experience est au-dessus du profil, et HAMADI controle de gestion reste en related pour montrer que le systeme distingue domaine proche et metier exact.
+> Pour ce profil Comptable, BidWise combine le role cible principal, les competences du CV, les preferences de localisation et les types de contrat. Ensuite, JobBERT compare le sens metier global des offres et le scoring hybride ajoute les signaux explicables: role, skills, famille metier, experience et qualite de la source. Les offres INTERNATIONAL et CMR AUDIT ressortent comme strong matches car elles restent comptables directes, juniors et bien structurees. A l'inverse, Vneuron reste en related car l'experience est au-dessus du profil, et HAMADI controle de gestion reste en related pour montrer que le systeme distingue domaine proche et metier exact.
 
 ## Profil de demo Technicien Maintenance
 

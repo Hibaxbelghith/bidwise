@@ -50,6 +50,15 @@ export const getPendingExternalApplicationForOpportunity = (opportunityId) => {
   return readRecords().find((record) => record.opportunityId === normalizedId) || null;
 };
 
+export const getNextPendingExternalApplication = () => {
+  const records = readRecords();
+  if (records.length === 0) return null;
+
+  return [...records].sort(
+    (left, right) => (left.remindAfter || 0) - (right.remindAfter || 0),
+  )[0];
+};
+
 export const upsertPendingExternalApplication = (record) => {
   const normalized = normalizeRecord(record);
   if (!normalized) return null;

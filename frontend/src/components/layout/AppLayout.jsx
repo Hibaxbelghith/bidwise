@@ -2,11 +2,9 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.jsx';
 import {
-  Bell,
   Building2,
   ChevronDown,
   LogOut,
-  Mail,
   MessageCircle,
   Search,
   Settings,
@@ -14,6 +12,8 @@ import {
   User,
 } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext.jsx';
+import { useLanguage } from '../../i18n/LanguageContext.jsx';
+import LanguageToggle from './LanguageToggle.jsx';
 import {
   getProfileCompletionScore,
 } from '../../features/opportunities/utils/recommendationUtils.js';
@@ -65,6 +65,7 @@ const AppLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, loading: authLoading, user, logout } = useAuth();
+  const { t } = useLanguage();
   const [showProfileTooltip, setShowProfileTooltip] = useState(false);
   const [hasUserVisitedProfile, setHasUserVisitedProfile] = useState(false);
   const [isLogoutPending, setIsLogoutPending] = useState(false);
@@ -84,7 +85,7 @@ const AppLayout = () => {
   const authPendingWithoutUser = authLoading && !user;
   const isOrganizationWorkspace = isOrganizationSurface && isOrganizationAccount;
   const dashboardPath = isOrganizationAccount ? '/organization/dashboard' : '/dashboard';
-  const dashboardLabel = isOrganizationAccount ? 'Organization Dashboard' : 'My Dashboard';
+  const dashboardLabel = isOrganizationAccount ? t('common.organizationDashboard') : t('common.myDashboard');
   const organizationLogo = user?.organization_profile?.logo || '';
   const organizationLogoSrc = resolveOrganizationLogoSrc(organizationLogo);
   const organizationName = user?.organization_profile?.organization_name || 'Organization';
@@ -222,7 +223,7 @@ const AppLayout = () => {
       <style dangerouslySetInnerHTML={{ __html: animationStyles }} />
       <div className="min-h-screen bg-neutral-50">
         <a href="#main-content" className="skip-link">
-          Skip to main content
+          {t('common.skipToMain')}
         </a>
 
         {!isOrganizationLanding ? (
@@ -240,7 +241,7 @@ const AppLayout = () => {
                       className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
                     >
                       <Search className="h-4 w-4" />
-                      Browse Opportunities
+                      {t('common.browseOpportunities')}
                     </Link>
                     {!authPendingWithoutUser && isAuthenticated && (
                       <>
@@ -275,7 +276,7 @@ const AppLayout = () => {
                             className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900"
                           >
                             <ShieldCheck className="h-4 w-4" />
-                            Admin Panel
+                            {t('common.adminPanel')}
                           </Link>
                         ) : null}
                       </>
@@ -284,6 +285,7 @@ const AppLayout = () => {
                 )}
 
                 <div className="flex items-center gap-3">
+                  <LanguageToggle />
                   {isHome ? (
                     <Button
                       asChild
@@ -291,8 +293,8 @@ const AppLayout = () => {
                     >
                       <Link to="/organizations">
                         <Building2 className="h-4 w-4" aria-hidden="true" />
-                        <span className="hidden sm:inline">For Organizations</span>
-                        <span className="sm:hidden">Organizations</span>
+                        <span className="hidden sm:inline">{t('common.forOrganizations')}</span>
+                        <span className="sm:hidden">{t('common.organizations')}</span>
                       </Link>
                     </Button>
                   ) : (
@@ -306,10 +308,6 @@ const AppLayout = () => {
                         <>
                           {isOrganizationWorkspace ? (
                             <>
-                              <Button variant="ghost" size="icon" className="relative" aria-label="Messages">
-                                <Mail className="h-5 w-5" aria-hidden="true" />
-                                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
-                              </Button>
                               <div className="relative" ref={organizationAccountMenuRef}>
                                 <button
                                   type="button"
@@ -338,7 +336,7 @@ const AppLayout = () => {
                                   <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-neutral-200 bg-white py-2 shadow-lg shadow-neutral-950/10">
                                     <div className="border-b border-neutral-100 px-4 py-3">
                                       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                                        Organization account
+                                        {t('layout.organizationAccount')}
                                       </p>
                                       <p className="mt-1 truncate text-sm font-medium text-neutral-950">{organizationName}</p>
                                       <p className="mt-1 truncate text-xs text-neutral-500">{user?.email}</p>
@@ -349,7 +347,7 @@ const AppLayout = () => {
                                       onClick={() => setIsOrganizationAccountMenuOpen(false)}
                                     >
                                       <Settings className="h-4 w-4" aria-hidden="true" />
-                                      Account settings
+                                      {t('layout.accountSettings')}
                                     </Link>
                                     <Link
                                       to="/organizations"
@@ -357,7 +355,7 @@ const AppLayout = () => {
                                       onClick={() => setIsOrganizationAccountMenuOpen(false)}
                                     >
                                       <MessageCircle className="h-4 w-4" aria-hidden="true" />
-                                      Contact us
+                                      {t('layout.contactUs')}
                                     </Link>
                                     <button
                                       type="button"
@@ -366,7 +364,7 @@ const AppLayout = () => {
                                       disabled={isLogoutPending}
                                     >
                                       <LogOut className="h-4 w-4" aria-hidden="true" />
-                                      Logout
+                                      {t('common.logout')}
                                     </button>
                                   </div>
                                 ) : null}
@@ -374,14 +372,10 @@ const AppLayout = () => {
                             </>
                           ) : (
                             <>
-                              <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-                                <Bell className="h-5 w-5" aria-hidden="true" />
-                                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-600" />
-                              </Button>
                               {isAdminRoute ? (
                             <span className="hidden items-center gap-2 rounded-md border border-neutral-200 px-3 py-1.5 text-sm font-medium text-neutral-700 lg:inline-flex">
                               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                              Admin Panel
+                              {t('common.adminPanel')}
                             </span>
                               ) : (
                             <div className="relative">
@@ -423,16 +417,16 @@ const AppLayout = () => {
                                   
                                   <div className="flex items-start gap-3">
                                     <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-semibold text-neutral-950">Is your profile right?</p>
+                                      <p className="text-sm font-semibold text-neutral-950">{t('layout.profileNudgeTitle')}</p>
                                       <p className="mt-1 text-sm leading-6 text-neutral-600">
-                                        Your latest profile info is powering BidWise AI recommendations. Take a moment to double check.
+                                        {t('layout.profileNudgeBody')}
                                       </p>
                                       <div className="mt-3 flex items-center justify-between gap-3">
                                         <span className="text-xs font-semibold text-blue-700">
-                                          {profileCompletionScore}% complete
+                                          {t('layout.profileComplete', { score: profileCompletionScore })}
                                         </span>
                                         <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={handleGoToProfile}>
-                                          Go to profile
+                                          {t('layout.profileNudgeCta')}
                                         </Button>
                                       </div>
                                     </div>
@@ -448,14 +442,14 @@ const AppLayout = () => {
                                 disabled={isLogoutPending}
                               >
                                 <LogOut className="mr-2 h-4 w-4" />
-                                Logout
+                                {t('common.logout')}
                               </Button>
                             </>
                           )}
                         </>
                       ) : (
                         <Button variant="outline" asChild>
-                          <Link to="/login" className='cursor-pointer' >Sign In</Link>
+                          <Link to="/login" className='cursor-pointer' >{t('common.signIn')}</Link>
                         </Button>
                       )}
                     </>
@@ -479,15 +473,15 @@ const AppLayout = () => {
                     <img src="/BidWise Logo.png" alt="BidWise Logo" className="h-16 w-auto object-contain" />
                   </div>
                   <p className="text-sm text-neutral-600">
-                    Discover and track professional opportunities with ease.
+                    {t('layout.discover')}
                   </p>
                 </div>
                 <div>
-                  <h3 className="mb-3 font-medium text-neutral-900">Platform</h3>
+                  <h3 className="mb-3 font-medium text-neutral-900">{t('common.platform')}</h3>
                   <ul className="space-y-2 text-sm text-neutral-600">
                     <li>
                       <Link to="/opportunities" className="hover:text-neutral-900">
-                        Browse Opportunities
+                        {t('common.browseOpportunities')}
                       </Link>
                     </li>
                     <li>
@@ -497,27 +491,27 @@ const AppLayout = () => {
                     </li>
                     <li>
                       <Link to="/profile" className="cursor-pointer hover:text-neutral-900">
-                        My Profile
+                        {t('common.myProfile')}
                       </Link>
                     </li>
                   </ul>
                 </div>
                 <div>
-                  <h3 className="mb-3 font-medium text-neutral-900">Company</h3>
+                  <h3 className="mb-3 font-medium text-neutral-900">{t('common.company')}</h3>
                   <ul className="space-y-2 text-sm text-neutral-600">
                     <li>
                       <a href="#" className="hover:text-neutral-900">
-                        About
+                        {t('common.about')}
                       </a>
                     </li>
                     <li>
                       <a href="#" className="hover:text-neutral-900">
-                        Contact
+                        {t('common.contact')}
                       </a>
                     </li>
                     <li>
                       <a href="#" className="hover:text-neutral-900">
-                        Privacy
+                        {t('common.privacy')}
                       </a>
                     </li>
                   </ul>

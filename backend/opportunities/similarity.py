@@ -8,6 +8,8 @@ from functools import lru_cache
 
 from django.conf import settings
 
+from ai.business_families import families_are_compatible, normalize_family_set
+
 try:
     from pgvector.django import CosineDistance
 except Exception:  # pragma: no cover - optional dependency at runtime
@@ -25,6 +27,13 @@ MIN_SIMILARITY = 0.60
 MAX_SIMILAR_PER_SOURCE_RATIO = 0.6
 MIN_SIMILAR_PER_SOURCE = 2
 STAGE_KEEJOB_BIAS = 0.03
+BROAD_SIMILARITY_FAMILIES = {
+    "administration",
+    "hr_administration",
+    "customer_support",
+    "other",
+}
+MIN_STRUCTURED_TERM_OVERLAP = 2
 
 
 def _to_float_vector(vector):
@@ -104,7 +113,6 @@ def _opportunity_similarity_terms(opportunity):
         *_as_list(enrichment.get("target_roles")),
         *_as_list(enrichment.get("skills")),
         *_as_list(enrichment.get("tools")),
-        *_as_list(enrichment.get("domains")),
     ]
     terms = set()
     for value in values:
@@ -112,17 +120,57 @@ def _opportunity_similarity_terms(opportunity):
     return terms - _opportunity_location_terms(opportunity)
 
 
+def _opportunity_title_terms(opportunity):
+    return _semantic_terms(getattr(opportunity, "titre", "")) - _opportunity_location_terms(opportunity)
+
+
+def _opportunity_skill_terms(opportunity):
+    enrichment = _llm_enrichment(opportunity)
+    values = [
+        *_as_list(getattr(opportunity, "skills", [])),
+        *_as_list(enrichment.get("skills")),
+        *_as_list(enrichment.get("tools")),
+    ]
+    terms = set()
+    for value in values:
+        terms.update(_semantic_terms(value))
+    return terms - _opportunity_location_terms(opportunity)
+
+
+def _opportunity_skill_token_sets(opportunity):
+    enrichment = _llm_enrichment(opportunity)
+    values = [
+        *_as_list(getattr(opportunity, "skills", [])),
+        *_as_list(enrichment.get("skills")),
+        *_as_list(enrichment.get("tools")),
+    ]
+    location_terms = _opportunity_location_terms(opportunity)
+    token_sets = []
+    for value in values:
+        terms = _semantic_terms(value) - location_terms
+        if terms:
+            token_sets.append(terms)
+    return token_sets
+
+
+def _has_structured_skill_phrase_support(anchor, candidate):
+    for anchor_terms in _opportunity_skill_token_sets(anchor):
+        for candidate_terms in _opportunity_skill_token_sets(candidate):
+            if len(anchor_terms.intersection(candidate_terms)) >= MIN_STRUCTURED_TERM_OVERLAP:
+                return True
+    return False
+
+
 def _opportunity_location_terms(opportunity):
     return _semantic_terms(getattr(opportunity, "ville", ""))
 
 
 def _opportunity_business_families(opportunity):
-    families = set()
-    for family in _as_list(_llm_enrichment(opportunity).get("business_families")):
-        key = str(family or "").strip()
-        if key and key != "other":
-            families.add(key)
-    return families
+    return normalize_family_set(_llm_enrichment(opportunity).get("business_families")) - {"other"}
+
+
+def _specialized_families(families):
+    return set(families or set()) - BROAD_SIMILARITY_FAMILIES
 
 
 def _has_structured_similarity_signals(opportunity):
@@ -142,12 +190,41 @@ def _passes_similarity_business_guard(anchor, candidate):
 
     anchor_terms = _opportunity_similarity_terms(anchor)
     candidate_terms = _opportunity_similarity_terms(candidate)
-    if anchor_terms and candidate_terms and anchor_terms.intersection(candidate_terms):
-        return True
+    anchor_skill_terms = _opportunity_skill_terms(anchor)
+    candidate_skill_terms = _opportunity_skill_terms(candidate)
+    skill_phrase_support = _has_structured_skill_phrase_support(anchor, candidate)
+    title_title_support = len(
+        _opportunity_title_terms(anchor).intersection(_opportunity_title_terms(candidate))
+    ) >= MIN_STRUCTURED_TERM_OVERLAP
+    candidate_title_skill_support = bool(
+        _opportunity_title_terms(candidate).intersection(anchor_skill_terms)
+    )
+    structured_support = skill_phrase_support or candidate_title_skill_support or title_title_support
 
     anchor_families = _opportunity_business_families(anchor)
     candidate_families = _opportunity_business_families(candidate)
-    if anchor_families and candidate_families and anchor_families.intersection(candidate_families):
+    if anchor_families and candidate_families:
+        anchor_specialized = _specialized_families(anchor_families)
+        candidate_specialized = _specialized_families(candidate_families)
+
+        # If the anchor has a precise business family, do not let broad support
+        # families (administration, customer support) dominate the result.
+        if anchor_specialized:
+            family_supported = families_are_compatible(
+                anchor_specialized,
+                candidate_specialized or candidate_families,
+            )
+            return family_supported and structured_support
+        if candidate_specialized:
+            family_supported = families_are_compatible(anchor_families, candidate_specialized)
+            return family_supported and structured_support
+        return families_are_compatible(anchor_families, candidate_families) and structured_support
+
+    if (
+        anchor_terms
+        and candidate_terms
+        and structured_support
+    ):
         return True
 
     return False

@@ -1,4 +1,5 @@
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import OpportunitiesBrowseSkeleton, {
   FetchingSkeletonBanner,
 } from './OpportunitiesBrowseSkeleton.jsx';
@@ -29,6 +30,7 @@ const OpportunitiesBrowseResults = ({
   onRetry,
   onShowMatches,
 }) => {
+  const { t } = useLanguage();
   const interruptionCards = buildBrowseInterruptionCards({
     isUserAuthenticated,
     user,
@@ -40,7 +42,7 @@ const OpportunitiesBrowseResults = ({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium text-neutral-700">{countLabel}</p>
         <p className="text-sm text-neutral-600">
-          Page {page} of {totalPages}
+          {t('opportunities.results.pageOf', { page, totalPages })}
         </p>
       </div>
 
@@ -52,7 +54,7 @@ const OpportunitiesBrowseResults = ({
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
           <p className="mb-3">{error}</p>
           <Button variant="outline" onClick={onRetry}>
-            Retry
+            {t('opportunities.retry')}
           </Button>
         </div>
       ) : null}
@@ -65,11 +67,11 @@ const OpportunitiesBrowseResults = ({
 
       {!loading && !error && opportunities.length === 0 ? (
         <div className="rounded-xl border border-neutral-200 bg-white p-8 text-center shadow-sm">
-          <h2 className="mb-2 text-lg font-semibold text-neutral-900">No opportunities found</h2>
-          <p className="text-neutral-600">Try adjusting search terms or filters.</p>
+          <h2 className="mb-2 text-lg font-semibold text-neutral-900">{t('opportunities.results.noOpportunitiesFound')}</h2>
+          <p className="text-neutral-600">{t('opportunities.results.adjustSearch')}</p>
           <div className="mt-4">
             <Button variant="outline" onClick={onResetFilters}>
-              Reset filters
+              {t('opportunities.results.resetFilters')}
             </Button>
           </div>
         </div>
@@ -102,7 +104,7 @@ const OpportunitiesBrowseResults = ({
           onClick={onPreviousPage}
           disabled={!hasPrevious || loading || isFetching}
         >
-          Previous
+          {t('opportunities.results.previous')}
         </Button>
         {visiblePageNumbers[0] > 1 ? (
           <>
@@ -160,7 +162,7 @@ const OpportunitiesBrowseResults = ({
           onClick={onNextPage}
           disabled={!hasNext || loading || isFetching}
         >
-          Next
+          {t('opportunities.results.next')}
         </Button>
       </div>
     </section>

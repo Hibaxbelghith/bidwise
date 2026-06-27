@@ -63,6 +63,7 @@ export const useOpportunities = () => {
   const [sources, setSources] = useState([]);
   const [searchDraft, setSearchDraft] = useState('');
   const [source, setSource] = useState('');
+  const [status, setStatus] = useState('');
   const [ordering, setOrdering] = useState('-created_at');
   const [page, setPage] = useState(1);
   const [count, setCount] = useState(0);
@@ -91,7 +92,7 @@ export const useOpportunities = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, ordering, source]);
+  }, [debouncedSearch, ordering, source, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -111,6 +112,7 @@ export const useOpportunities = () => {
           page,
           search: debouncedSearch,
           source,
+          status,
           ordering,
           signal: controller.signal,
         });
@@ -158,7 +160,7 @@ export const useOpportunities = () => {
     loadOpportunities();
 
     return () => controller.abort();
-  }, [debouncedSearch, ordering, page, reloadKey, source]);
+  }, [debouncedSearch, ordering, page, reloadKey, source, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -204,6 +206,11 @@ export const useOpportunities = () => {
   const handleSourceChange = (value) => {
     setPage(1);
     setSource(value);
+  };
+
+  const handleStatusChange = (value) => {
+    setPage(1);
+    setStatus(value);
   };
 
   const handleToggleOrdering = (field) => {
@@ -285,6 +292,7 @@ export const useOpportunities = () => {
     sources,
     searchDraft,
     source,
+    status,
     ordering,
     page,
     count,
@@ -308,6 +316,7 @@ export const useOpportunities = () => {
     setSelectedOpportunity,
     handleSearchSubmit,
     handleSourceChange,
+    handleStatusChange,
     handleToggleOrdering,
     handleDelete,
     handleApprove,

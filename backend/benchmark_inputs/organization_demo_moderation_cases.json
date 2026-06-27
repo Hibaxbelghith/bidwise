@@ -1,0 +1,53 @@
+{
+  "opportunities": [
+    {
+      "title": "Operateur de saisie a distance - frais obligatoires",
+      "type": "EMPLOI",
+      "location": "Tunis",
+      "description": "Nous recrutons des operateurs de saisie pour travailler a distance sans experience. Pour valider la candidature et recevoir les acces, chaque candidat doit payer 40 TND de frais d'inscription avant le debut du travail. Un revenu de 3000 TND par mois est garanti apres le paiement.",
+      "contract": "CDD",
+      "availability": "Remote",
+      "experience_min": 0,
+      "experience_max": 1,
+      "education_level": "Bac",
+      "salary": "3000 TND garantis",
+      "skills": [
+        "Saisie de donnees",
+        "Communication"
+      ]
+    },
+    {
+      "title": "Assistante administrative - condition discriminatoire",
+      "type": "EMPLOI",
+      "location": "Sousse",
+      "description": "Une societe recherche une assistante administrative pour classer les dossiers, repondre aux appels et preparer les documents internes. Les personnes originaires de certaines regions ne sont pas acceptees et doivent s'abstenir de postuler. Ce critere est obligatoire pour la selection.",
+      "contract": "CDI",
+      "availability": "Temps plein",
+      "experience_min": 1,
+      "experience_max": 2,
+      "education_level": "Bac + 2",
+      "salary": "1200 TND",
+      "skills": [
+        "Gestion administrative",
+        "Microsoft Office",
+        "Accueil telephonique"
+      ]
+    },
+    {
+      "title": "Solution RH Premium - demandez une demonstration",
+      "type": "EMPLOI",
+      "location": "Ariana",
+      "description": "Decouvrez notre logiciel RH Premium pour publier vos annonces, gerer les candidatures et automatiser vos recrutements. Cette publication ne correspond pas a un poste a pourvoir. Contactez notre equipe commerciale pour demander une demonstration et acheter un abonnement annuel.",
+      "contract": "CDI",
+      "availability": "Temps plein",
+      "experience_min": 0,
+      "experience_max": 1,
+      "education_level": "Bac + 3",
+      "salary": "0 TND",
+      "skills": [
+        "Logiciel RH",
+        "Gestion des candidatures"
+      ]
+    }
+  ]
+}

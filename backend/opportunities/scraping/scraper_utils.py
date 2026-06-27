@@ -195,9 +195,15 @@ _CLOSED_KEYWORDS = {
     "termine",
     "terminee",
     "expired",
-    "close",
     "closed",
 }
+
+_CLOSED_KEYWORDS_RE = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(token) for token in sorted(_CLOSED_KEYWORDS, key=len, reverse=True))
+    + r")\b",
+    flags=re.IGNORECASE,
+)
 
 _TRACKING_QUERY_KEYS = {
     "_hsenc",
@@ -478,4 +484,4 @@ def looks_closed_opportunity(*texts):
     if not normalized_blob:
         return False
 
-    return any(token in normalized_blob for token in _CLOSED_KEYWORDS)
+    return bool(_CLOSED_KEYWORDS_RE.search(normalized_blob))

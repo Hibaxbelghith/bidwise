@@ -336,6 +336,7 @@ class AdminOpportunityViewSet(
         )
         search = (self.request.query_params.get("search") or "").strip()
         source = (self.request.query_params.get("source") or "").strip()
+        status_param = (self.request.query_params.get("status") or "").strip()
         ordering = (self.request.query_params.get("ordering") or "").strip()
 
         if search:
@@ -343,6 +344,9 @@ class AdminOpportunityViewSet(
 
         if source:
             queryset = queryset.filter(source_id=source)
+
+        if status_param:
+            queryset = queryset.filter(statut=status_param)
 
         descending = ordering.startswith("-")
         ordering_key = ordering[1:] if descending else ordering

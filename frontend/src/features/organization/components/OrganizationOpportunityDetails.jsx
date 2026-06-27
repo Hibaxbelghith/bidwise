@@ -1,19 +1,24 @@
 import { BriefcaseBusiness, CalendarDays, FileText, MapPin, Users } from 'lucide-react';
 
 import { Badge } from '../../../components/ui/badge.jsx';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import {
   ORGANIZATION_OPPORTUNITY_STATUS_LABELS,
   ORGANIZATION_OPPORTUNITY_TYPE_LABELS,
   formatOrganizationOpportunityDate,
   formatOrganizationOpportunityFieldLabel,
-  formatOrganizationOpportunityValue,
 } from '../utils/organizationOpportunityFormatters.js';
+import {
+  getOrganizationOpportunityStatusLabel,
+  getOrganizationOpportunityTypeLabel,
+  getOrganizationOpportunityValueLabel,
+} from '../utils/organizationLabelUtils.js';
 
-const DetailItem = ({ label, value }) => (
+const DetailItem = ({ label, value, t }) => (
   <div className="min-w-0 border-b border-neutral-100 py-3">
     <dt className="text-xs font-semibold uppercase text-neutral-500">{label}</dt>
     <dd className="mt-1 break-words text-sm text-neutral-900">
-      {formatOrganizationOpportunityValue(value)}
+      {getOrganizationOpportunityValueLabel(value, t)}
     </dd>
   </div>
 );
@@ -29,7 +34,7 @@ const DetailSection = ({ title, children }) => (
   </section>
 );
 
-const GenericDetails = ({ details, excludedKeys = [] }) => {
+const GenericDetails = ({ details, excludedKeys = [], t }) => {
   const entries = Object.entries(details || {}).filter(([key, value]) => (
     !excludedKeys.includes(key)
     && !key.toLowerCase().endsWith('_url')
@@ -49,19 +54,20 @@ const GenericDetails = ({ details, excludedKeys = [] }) => {
           key={key}
           label={formatOrganizationOpportunityFieldLabel(key)}
           value={value}
+          t={t}
         />
       ))}
     </DetailGrid>
   );
 };
 
-const TenderDetails = ({ details }) => {
+const TenderDetails = ({ details, t }) => {
   const lots = Array.isArray(details?.lots) ? details.lots : [];
   const documents = Array.isArray(details?.documents) ? details.documents : [];
 
   return (
-    <DetailSection title="Tender details">
-      <GenericDetails details={details} excludedKeys={['lots', 'documents']} />
+    <DetailSection title={t('organization.tenderDetails')}>
+      <GenericDetails details={details} excludedKeys={['lots', 'documents']} t={t} />
 
       {lots.length ? (
         <div className="mt-7">
@@ -97,7 +103,7 @@ const TenderDetails = ({ details }) => {
                     {document.label || document.name || `Document ${index + 1}`}
                   </p>
                   <p className="mt-1 text-xs text-neutral-500">
-                    {formatOrganizationOpportunityValue(document.type)}
+                    {getOrganizationOpportunityValueLabel(document.type, t)}
                   </p>
                 </div>
                 {document.url ? (
@@ -107,7 +113,7 @@ const TenderDetails = ({ details }) => {
                     rel="noreferrer"
                     className="text-sm font-semibold text-blue-700 hover:text-blue-800"
                   >
-                    Open document
+                    {t('organization.openDocument')}
                   </a>
                 ) : null}
               </div>
@@ -120,9 +126,13 @@ const TenderDetails = ({ details }) => {
 };
 
 const OrganizationOpportunityDetails = ({ opportunity }) => {
+  const { language, t } = useLanguage();
   const experience = opportunity.experience_min !== null || opportunity.experience_max !== null
-    ? `${opportunity.experience_min ?? 0} - ${opportunity.experience_max ?? 'Not set'} years`
-    : 'Not set';
+    ? t('organization.experienceYearsRange', {
+      min: opportunity.experience_min ?? 0,
+      max: opportunity.experience_max ?? t('organization.notSet'),
+    })
+    : t('organization.notSet');
 
   return (
     <main className="px-5 py-6 sm:px-8">
@@ -132,53 +142,64 @@ const OrganizationOpportunityDetails = ({ opportunity }) => {
           <p className="mt-3 text-2xl font-semibold text-neutral-950">
             {opportunity.applications_count || 0}
           </p>
-          <p className="mt-1 text-sm text-neutral-500">Applications received</p>
+          <p className="mt-1 text-sm text-neutral-500">{t('organization.applicationsReceived')}</p>
         </div>
         <div className="rounded-lg border border-neutral-200 bg-white p-4">
           <BriefcaseBusiness className="h-5 w-5 text-blue-700" aria-hidden="true" />
           <p className="mt-3 text-base font-semibold text-neutral-950">
-            {ORGANIZATION_OPPORTUNITY_STATUS_LABELS[opportunity.status] || opportunity.status}
+            {getOrganizationOpportunityStatusLabel(
+              opportunity.status,
+              t,
+              ORGANIZATION_OPPORTUNITY_STATUS_LABELS[opportunity.status] || opportunity.status,
+            )}
           </p>
-          <p className="mt-1 text-sm text-neutral-500">Publication status</p>
+          <p className="mt-1 text-sm text-neutral-500">{t('organization.publicationStatus')}</p>
         </div>
         <div className="rounded-lg border border-neutral-200 bg-white p-4">
           <CalendarDays className="h-5 w-5 text-blue-700" aria-hidden="true" />
           <p className="mt-3 text-base font-semibold text-neutral-950">
-            {formatOrganizationOpportunityDate(opportunity.deadline)}
+            {formatOrganizationOpportunityDate(opportunity.deadline, {}, language)}
           </p>
-          <p className="mt-1 text-sm text-neutral-500">Application deadline</p>
+          <p className="mt-1 text-sm text-neutral-500">{t('organization.applicationDeadline')}</p>
         </div>
       </div>
 
       <div className="mt-6 bg-white px-5 sm:px-7">
-        <DetailSection title="Opportunity summary">
+        <DetailSection title={t('organization.opportunitySummary')}>
           <DetailGrid>
             <DetailItem
-              label="Type"
-              value={ORGANIZATION_OPPORTUNITY_TYPE_LABELS[opportunity.type] || opportunity.type}
+              label={t('organization.type')}
+              value={getOrganizationOpportunityTypeLabel(
+                opportunity.type,
+                t,
+                ORGANIZATION_OPPORTUNITY_TYPE_LABELS[opportunity.type] || opportunity.type,
+              )}
+              t={t}
             />
-            <DetailItem label="Location" value={opportunity.location} />
+            <DetailItem label={t('organization.location')} value={opportunity.location} t={t} />
             <DetailItem
-              label="Published"
-              value={formatOrganizationOpportunityDate(opportunity.published_at)}
+              label={t('admin.published')}
+              value={formatOrganizationOpportunityDate(opportunity.published_at, {}, language)}
+              t={t}
             />
             <DetailItem
-              label="Last updated"
+              label={t('organization.lastUpdated')}
               value={formatOrganizationOpportunityDate(opportunity.updated_at, {
                 hour: '2-digit',
                 minute: '2-digit',
-              })}
+              }, language)}
+              t={t}
             />
-            <DetailItem label="Contract" value={opportunity.contract} />
-            <DetailItem label="Work arrangement" value={opportunity.availability} />
-            <DetailItem label="Experience" value={experience} />
-            <DetailItem label="Education level" value={opportunity.education_level} />
-            <DetailItem label="Salary" value={opportunity.salary} />
+            <DetailItem label={t('organization.contract')} value={opportunity.contract} t={t} />
+            <DetailItem label={t('organization.workArrangement')} value={opportunity.availability} t={t} />
+            <DetailItem label={t('organization.experience')} value={experience} t={t} />
+            <DetailItem label={t('organization.educationLevel')} value={opportunity.education_level} t={t} />
+            <DetailItem label={t('organization.salary')} value={opportunity.salary} t={t} />
           </DetailGrid>
         </DetailSection>
 
         {opportunity.skills?.length ? (
-          <DetailSection title="Skills">
+          <DetailSection title={t('profile.skills')}>
             <div className="flex flex-wrap gap-2">
               {opportunity.skills.map((skill) => (
                 <Badge key={skill} variant="secondary">{skill}</Badge>
@@ -187,34 +208,34 @@ const OrganizationOpportunityDetails = ({ opportunity }) => {
           </DetailSection>
         ) : null}
 
-        <DetailSection title="Description">
+        <DetailSection title={t('organization.description')}>
           <div className="flex gap-3">
             <FileText className="mt-0.5 h-5 w-5 shrink-0 text-neutral-400" aria-hidden="true" />
             <p className="whitespace-pre-wrap break-words text-sm leading-7 text-neutral-700">
-              {opportunity.description || 'No description provided.'}
+              {opportunity.description || t('organization.noDescriptionProvided')}
             </p>
           </div>
         </DetailSection>
 
         {opportunity.type === 'STAGE' && opportunity.internship_details ? (
-          <DetailSection title="Internship details">
-            <GenericDetails details={opportunity.internship_details} />
+          <DetailSection title={t('organization.internshipDetails')}>
+            <GenericDetails details={opportunity.internship_details} t={t} />
           </DetailSection>
         ) : null}
 
         {opportunity.type === 'SAISONNIER' && opportunity.seasonal_details ? (
-          <DetailSection title="Seasonal job details">
-            <GenericDetails details={opportunity.seasonal_details} />
+          <DetailSection title={t('organization.seasonalJobDetails')}>
+            <GenericDetails details={opportunity.seasonal_details} t={t} />
           </DetailSection>
         ) : null}
 
         {opportunity.type === 'PROJET' && opportunity.project_details ? (
-          <TenderDetails details={opportunity.project_details} />
+          <TenderDetails details={opportunity.project_details} t={t} />
         ) : null}
 
         <div className="flex items-center gap-2 border-t border-neutral-200 py-6 text-sm text-neutral-500">
           <MapPin className="h-4 w-4" aria-hidden="true" />
-          {opportunity.location || 'Location not set'}
+          {opportunity.location || t('organization.locationNotSet')}
         </div>
       </div>
     </main>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Mail, Trash2, X } from 'lucide-react';
 
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import {
   Table,
   TableBody,
@@ -15,81 +16,82 @@ import { acceptApplication, deleteApplication, rejectApplication } from '../serv
 
 const PAGE_SIZE = 10;
 
-const formatDate = (dateString) => {
+const formatDate = (dateString, language = 'en') => {
   if (!dateString) return '';
   try {
     const date = new Date(dateString);
     const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return date.toLocaleDateString('en-GB', options);
+    return date.toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-GB', options);
   } catch {
     return '';
   }
 };
 
-const getTimeAgo = (dateString) => {
+const getTimeAgo = (dateString, t, language) => {
   if (!dateString) return '';
   try {
     const date = new Date(dateString);
     const now = new Date();
     const seconds = Math.floor((now - date) / 1000);
     
-    if (seconds < 60) return 'Just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-    return formatDate(dateString);
+    if (seconds < 60) return t('organization.justNow');
+    if (seconds < 3600) return t('organization.minutesAgoShort', { count: Math.floor(seconds / 60) });
+    if (seconds < 86400) return t('organization.hoursAgoShort', { count: Math.floor(seconds / 3600) });
+    if (seconds < 604800) return t('organization.daysAgoShort', { count: Math.floor(seconds / 86400) });
+    return formatDate(dateString, language);
   } catch {
     return '';
   }
 };
 
-const getActivityLines = (application) => {
+const getActivityLines = (application, t, language) => {
   const status = String(application?.statut || '').trim();
   const submittedAt = application?.submitted_at;
   const updatedAt = application?.derniere_mise_a_jour;
-  const appliedLabel = getTimeAgo(submittedAt);
-  const actionLabel = getTimeAgo(updatedAt);
+  const appliedLabel = getTimeAgo(submittedAt, t, language);
+  const actionLabel = getTimeAgo(updatedAt, t, language);
   const hasActionTimestamp =
     submittedAt &&
     updatedAt &&
     Math.abs(new Date(updatedAt).getTime() - new Date(submittedAt).getTime()) > 1000;
+  const withTime = (key, value) => (value ? t(key, { time: value }) : t(key));
 
   if (status === 'SUBMITTED') {
-    return [appliedLabel ? `Applied ${appliedLabel}` : 'Applied'];
+    return [withTime('organization.activityApplied', appliedLabel)];
   }
   if (status === 'VIEWED_BY_ORGANIZATION') {
     return hasActionTimestamp
       ? [
-          appliedLabel ? `Applied ${appliedLabel}` : 'Applied',
-          actionLabel ? `Under review ${actionLabel}` : 'Under review',
+          withTime('organization.activityApplied', appliedLabel),
+          withTime('organization.activityUnderReview', actionLabel),
         ]
-      : [appliedLabel ? `Applied ${appliedLabel}` : 'Applied'];
+      : [withTime('organization.activityApplied', appliedLabel)];
   }
   if (status === 'SHORTLISTED') {
     return hasActionTimestamp
       ? [
-          appliedLabel ? `Applied ${appliedLabel}` : 'Applied',
-          actionLabel ? `Preselected ${actionLabel}` : 'Preselected',
+          withTime('organization.activityApplied', appliedLabel),
+          withTime('organization.activityPreselected', actionLabel),
         ]
-      : [appliedLabel ? `Applied ${appliedLabel}` : 'Applied'];
+      : [withTime('organization.activityApplied', appliedLabel)];
   }
   if (status === 'REJECTED') {
     return hasActionTimestamp
       ? [
-          appliedLabel ? `Applied ${appliedLabel}` : 'Applied',
-          actionLabel ? `Rejected ${actionLabel}` : 'Rejected',
+          withTime('organization.activityApplied', appliedLabel),
+          withTime('organization.activityRejected', actionLabel),
         ]
-      : [appliedLabel ? `Applied ${appliedLabel}` : 'Applied'];
+      : [withTime('organization.activityApplied', appliedLabel)];
   }
   if (status === 'WITHDRAWN') {
     return hasActionTimestamp
       ? [
-          appliedLabel ? `Applied ${appliedLabel}` : 'Applied',
-          actionLabel ? `Withdrawn ${actionLabel}` : 'Withdrawn',
+          withTime('organization.activityApplied', appliedLabel),
+          withTime('organization.activityWithdrawn', actionLabel),
         ]
-      : [appliedLabel ? `Applied ${appliedLabel}` : 'Applied'];
+      : [withTime('organization.activityApplied', appliedLabel)];
   }
-  return [appliedLabel ? `Applied ${appliedLabel}` : 'Applied'];
+  return [withTime('organization.activityApplied', appliedLabel)];
 };
 
 const buildContactMailto = ({ email, candidateName, opportunityTitle }) => {
@@ -113,6 +115,7 @@ const buildContactMailto = ({ email, candidateName, opportunityTitle }) => {
 };
 
 const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
+  const { language, t } = useLanguage();
   const [page, setPage] = useState(1);
   const [reviewingId, setReviewingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
@@ -145,7 +148,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
       onStatusChange(applicationId, result?.status || 'SHORTLISTED');
       setSelectedAction(null);
     } catch (error) {
-      setActionError(error?.response?.data?.detail || 'Unable to update application.');
+      setActionError(error?.response?.data?.detail || t('organization.unableUpdateApplication'));
       setSelectedAction(null);
     } finally {
       setReviewingId(null);
@@ -166,7 +169,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
       onStatusChange(applicationId, result?.status || 'REJECTED');
       setSelectedAction(null);
     } catch (error) {
-      setActionError(error?.response?.data?.detail || 'Unable to reject application.');
+      setActionError(error?.response?.data?.detail || t('organization.unableRejectApplication'));
       setSelectedAction(null);
     } finally {
       setRejectingId(null);
@@ -183,7 +186,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
       onStatusChange(deleteConfirm.applicationId, '__DELETE__');
       setDeleteConfirm(null);
     } catch (error) {
-      setActionError(error?.response?.data?.detail || 'Unable to delete application.');
+      setActionError(error?.response?.data?.detail || t('organization.unableDeleteApplication'));
     } finally {
       setDeletingId(null);
     }
@@ -194,10 +197,9 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
       {deleteConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-neutral-950">Delete this application?</h3>
+            <h3 className="text-lg font-semibold text-neutral-950">{t('organization.deleteApplicationQuestion')}</h3>
             <p className="mt-2 text-sm leading-6 text-neutral-600">
-              The application from <span className="font-semibold">{deleteConfirm.candidateName}</span> will be removed from this list.
-              This action cannot be undone.
+              {t('organization.deleteApplicationWarningPrefix')} <span className="font-semibold">{deleteConfirm.candidateName}</span> {t('organization.deleteApplicationWarningSuffix')}
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -206,7 +208,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                 onClick={() => setDeleteConfirm(null)}
                 className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -214,7 +216,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                 onClick={handleDelete}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {deletingId ? 'Deleting...' : 'Delete application'}
+                {deletingId ? t('organization.deleting') : t('organization.deleteApplication')}
               </button>
             </div>
           </div>
@@ -228,14 +230,14 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
       <Table>
         <TableHeader>
           <TableRow className="bg-neutral-50">
-            <TableHead className="w-[40%] px-4">Candidate</TableHead>
-            <TableHead className="w-[35%]">Activity</TableHead>
-            <TableHead className="w-[25%] text-center">Interest</TableHead>
+            <TableHead className="w-[40%] px-4">{t('organization.candidate')}</TableHead>
+            <TableHead className="w-[35%]">{t('organization.activity')}</TableHead>
+            <TableHead className="w-[25%] text-center">{t('organization.interest')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {visibleApplications.map((application) => {
-            const statusBadge = getApplicationStatusMeta(application.statut, 'organization');
+            const statusBadge = getApplicationStatusMeta(application.statut, 'organization', t);
             const canAct = application.statut !== 'WITHDRAWN';
             const isActionBusy = reviewingId === application.id || rejectingId === application.id || deletingId === application.id;
             const canRestoreToNormal =
@@ -263,7 +265,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                       <p className="text-sm text-neutral-600">{application.contact_phone}</p>
                     )}
                     <div className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-                      Applied to: {application.opportunity_title}
+                      {t('organization.appliedTo')}: {application.opportunity_title}
                     </div>
                   </Link>
                 </TableCell>
@@ -277,7 +279,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                       </span>
                     </div>
                     <div className="space-y-1">
-                      {getActivityLines(application).map((line) => (
+                      {getActivityLines(application, t, language).map((line) => (
                         <p key={line} className="text-xs text-neutral-500">
                           {line}
                         </p>
@@ -292,7 +294,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                     {contactMailto ? (
                       <a
                         href={contactMailto}
-                        title="Contact candidate"
+                        title={t('organization.contactCandidate')}
                         className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-neutral-300 bg-white text-neutral-900 hover:bg-neutral-100 transition-colors"
                       >
                         <Mail className="h-4 w-4" />
@@ -303,8 +305,8 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                         <button
                           title={
                             application.statut === 'SHORTLISTED' && canRestoreToNormal
-                              ? 'Undo preselection'
-                              : 'Preselect candidate'
+                              ? t('organization.undoPreselection')
+                              : t('organization.preselectCandidate')
                           }
                           disabled={isActionBusy}
                           onClick={() =>
@@ -326,8 +328,8 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                         <button
                           title={
                             application.statut === 'REJECTED' && canRestoreToNormal
-                              ? 'Undo rejection'
-                              : 'Reject'
+                              ? t('organization.undoRejection')
+                              : t('organization.reject')
                           }
                           disabled={isActionBusy}
                           onClick={() =>
@@ -347,7 +349,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
                           <X className="h-5 w-5" />
                         </button>
                         <button
-                          title="Delete"
+                          title={t('organization.delete')}
                           disabled={isActionBusy}
                           onClick={() => setDeleteConfirm({
                             applicationId: application.id,
@@ -372,7 +374,7 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-neutral-200 px-4 py-3">
           <div className="text-sm text-neutral-600">
-            Page {page} of {totalPages}
+            {t('organization.pageOf', { page, totalPages })}
           </div>
           <div className="flex gap-2">
             <button
@@ -380,14 +382,14 @@ const OrganizationApplicationsTable = ({ applications, onStatusChange }) => {
               onClick={() => setPage(p => Math.max(p - 1, 1))}
               className="px-3 py-1 text-sm rounded border border-neutral-200 hover:bg-neutral-50 disabled:opacity-50"
             >
-              Previous
+              {t('admin.previous')}
             </button>
             <button
               disabled={page === totalPages}
               onClick={() => setPage(p => Math.min(p + 1, totalPages))}
               className="px-3 py-1 text-sm rounded border border-neutral-200 hover:bg-neutral-50 disabled:opacity-50"
             >
-              Next
+              {t('admin.next')}
             </button>
           </div>
         </div>

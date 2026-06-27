@@ -361,6 +361,22 @@ def test_linkedin_closed_applications_text_sets_expired_status():
     assert parsed["deadline"] is None
 
 
+def test_linkedin_work_closely_text_does_not_set_expired_status():
+    html = """
+    <section>
+      <h1>Data Operations Specialist</h1>
+      <a href="https://www.linkedin.com/company/example/">Example Inc</a>
+      <div data-testid="expandable-text-box">
+        <p>You will work closely with marketing managers and customer care teams.</p>
+      </div>
+    </section>
+    """
+
+    parsed = parse_linkedin_job_detail_html(html)
+
+    assert parsed["status"] == "ACTIVE"
+
+
 def test_linkedin_without_deadline_or_closed_signal_stays_active():
     parsed = parse_linkedin_job_detail_html(
         """

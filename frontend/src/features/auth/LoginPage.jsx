@@ -6,6 +6,8 @@ import { Label } from '../../components/ui/label.jsx';
 import { Alert, AlertDescription } from '../../components/ui/alert.jsx';
 import { ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
 import { Spinner } from '../../components/ui/spinner.jsx';
+import LanguageToggle from '../../components/layout/LanguageToggle.jsx';
+import { useLanguage } from '../../i18n/LanguageContext.jsx';
 import { useAuth } from './AuthContext.jsx';
 import { useGoogleIdentity } from './useGoogleIdentity.js';
 import TurnstileChallenge, { isTurnstileEnabled } from '../organization/components/TurnstileChallenge.jsx';
@@ -23,10 +25,13 @@ const BRAND_LOGO_SRC = '/BidWise Icon.png';
    Shown only while useAuth() checks an existing session on
    mount. Uses an indeterminate progress bar — honest, no fake %.
 ───────────────────────────────────────────────────────────── */
-const AuthLoadingState = () => (
+const AuthLoadingState = () => {
+  const { t } = useLanguage();
+
+  return (
   <section
     className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-12"
-    aria-label="Loading session"
+    aria-label={t('auth.loadingSession')}
   >
     <style>{`
       @keyframes indeterminate {
@@ -47,11 +52,12 @@ const AuthLoadingState = () => (
         className="mx-auto mb-5 h-16 w-16 object-contain"
       />
 
-      <p className="font-semibold text-neutral-900">Preparing your workspace</p>
-      <p className="mt-1 text-sm text-neutral-500">This should only take a moment.</p>
+      <p className="font-semibold text-neutral-900">{t('auth.preparing')}</p>
+      <p className="mt-1 text-sm text-neutral-500">{t('auth.takeMoment')}</p>
     </div>
   </section>
-);
+  );
+};
 
 /* ─────────────────────────────────────────────────────────────
    OTPLogin — Indeed pattern
@@ -70,6 +76,8 @@ const SecurityCheckModal = ({
   onStatusChange,
   onClose,
 }) => {
+  const { t } = useLanguage();
+
   if (!open) return null;
 
   const isSending = status === 'verified' && !error;
@@ -84,7 +92,7 @@ const SecurityCheckModal = ({
       <div className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-5 shadow-xl">
         <div className="mb-4">
           <h2 id="security-check-title" className="text-lg font-semibold text-neutral-950">
-            Quick verification
+            {t('auth.quickVerification')}
           </h2>
         </div>
 
@@ -104,7 +112,7 @@ const SecurityCheckModal = ({
         {isSending ? (
           <div className="mt-4 flex items-center justify-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
             <Spinner size={14} className="text-blue-700" />
-            Sending code...
+            {t('auth.securitySending')}
           </div>
         ) : null}
 
@@ -113,7 +121,7 @@ const SecurityCheckModal = ({
           onClick={onClose}
           className="mt-4 w-full rounded-md border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>
@@ -121,6 +129,7 @@ const SecurityCheckModal = ({
 };
 
 const OTPLogin = () => {
+  const { t } = useLanguage();
   const {
     requestOTP,
     verifyOTP,
@@ -219,9 +228,9 @@ const OTPLogin = () => {
   }, [step]);
 
   const validateEmail = () => {
-    if (!email.trim()) { setEmailError('Email is required'); return false; }
+    if (!email.trim()) { setEmailError(t('auth.emailRequired')); return false; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setEmailError('Please enter a valid email address');
+      setEmailError(t('auth.invalidEmail'));
       return false;
     }
     setEmailError('');
@@ -268,9 +277,9 @@ const OTPLogin = () => {
   };
 
   const validateOTP = () => {
-    if (!otp.trim()) { setOtpError('Code is required'); return false; }
+    if (!otp.trim()) { setOtpError(t('auth.codeRequired')); return false; }
     if (!/^\d{6}$/.test(otp.trim())) {
-      setOtpError('Please enter a valid 6-digit code');
+      setOtpError(t('auth.invalidCode'));
       return false;
     }
     setOtpError('');
@@ -329,6 +338,9 @@ const OTPLogin = () => {
       className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-12"
       aria-labelledby="login-heading"
     >
+      <div className="absolute right-4 top-4">
+        <LanguageToggle />
+      </div>
       <SecurityCheckModal
         open={securityModalOpen}
         status={securityStatus}
@@ -354,7 +366,7 @@ const OTPLogin = () => {
           <Link
             to={organizationIntent ? '/organizations' : '/'}
             className="mb-4 inline-flex items-center gap-2"
-            aria-label="BidWise home"
+            aria-label={t('auth.bidwiseHome')}
           >
             <img src={BRAND_LOGO_SRC} alt="BidWise Logo" className="h-30 w-30 object-contain" />
           </Link>
@@ -366,7 +378,7 @@ const OTPLogin = () => {
                 tabIndex={-1}
                 className="mb-2 text-2xl font-bold text-neutral-900 outline-none"
               >
-                Sign in to BidWise
+                {t('auth.signInToBidWise')}
               </h1>
               <p className="text-neutral-600">
                 {organizationIntent
@@ -382,10 +394,10 @@ const OTPLogin = () => {
                 tabIndex={-1}
                 className="mb-2 text-2xl font-bold text-neutral-900 outline-none"
               >
-                Enter your code
+                {t('auth.enterCode')}
               </h1>
               <p className="text-neutral-600">
-                We sent a 6-digit code to{' '}
+                {t('auth.weSentCode')}{' '}
                 <span className="font-medium text-neutral-900">{email}</span>
               </p>
             </>
@@ -398,23 +410,23 @@ const OTPLogin = () => {
           {/* ── Step 1: Email ── */}
           {step === 1 && (
             showGoogleOnly ? (
-              <div className="space-y-6" aria-label="Sign in with Google">
+              <div className="space-y-6" aria-label={t('auth.signInGoogle')}>
                 <div className="mb-2 text-center">
                   <h2 className="text-xl font-semibold text-neutral-900 mb-1">
-                    Nous sommes ravis de vous revoir
+                    {t('auth.googleWelcome')}
                   </h2>
                   <p className="text-neutral-700 mb-1">
-                    Votre email est géré en toute sécurité par Google.
+                    {t('auth.googleManaged')}
                   </p>
                   <p className="text-neutral-700 mb-1">
-                    Continuer en tant que <span className="font-bold">{email}</span>.
+                    {t('auth.continueAs')} <span className="font-bold">{email}</span>.
                   </p>
                   <button
                     type="button"
                     className="text-sm text-blue-600 hover:underline mb-2"
                     onClick={() => setEmail('')}
                   >
-                    (Ce n'est pas vous ?)
+                    {t('auth.switchAccount')}
                   </button>
                 </div>
 
@@ -435,7 +447,7 @@ const OTPLogin = () => {
                       />
                     ) : (
                       <div className="flex h-[44px] w-full items-center justify-center rounded border border-neutral-200 bg-white">
-                        <span className="text-sm text-neutral-400">Loading...</span>
+                        <span className="text-sm text-neutral-400">{t('auth.loading')}</span>
                       </div>
                     )}
                     {googleLoading && (
@@ -444,17 +456,14 @@ const OTPLogin = () => {
                         aria-live="polite"
                       >
                         <Spinner size={13} className="text-blue-500" />
-                        Signing you in…
+                        {t('auth.signingIn')}
                       </div>
                     )}
                   </div>
                 )}
 
                 <div className="text-xs text-neutral-500 text-left mb-2">
-                  BidWise utilisera vos informations uniquement dans le cadre décrit par sa{' '}
-                  <a href="#" className="text-blue-600 underline">politique de confidentialité</a>.
-                  Google peut vous demander l'autorisation de partager des données avec BidWise,
-                  telles que votre nom, votre photo de profil et votre adresse email.
+                  {t('auth.googlePolicy')}
                 </div>
 
                 <div className="text-center">
@@ -463,12 +472,12 @@ const OTPLogin = () => {
                     className="text-sm text-blue-600 hover:underline"
                     onClick={() => setShowGoogleOnly(false)}
                   >
-                    Se connecter avec un code
+                    {t('auth.signInCode')}
                   </button>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleRequestOTP} className="space-y-6" aria-label="Sign in with email">
+              <form onSubmit={handleRequestOTP} className="space-y-6" aria-label={t('auth.signInWithEmail')}>
                 {(formError || authError || googleError) && (
                   <div role="alert" aria-live="assertive">
                     <Alert variant="destructive">
@@ -487,7 +496,7 @@ const OTPLogin = () => {
                         />
                       ) : (
                         <div className="flex h-[44px] w-full items-center justify-center rounded border border-neutral-200 bg-white">
-                          <span className="text-sm text-neutral-400">Loading...</span>
+                          <span className="text-sm text-neutral-400">{t('auth.loading')}</span>
                         </div>
                       )}
                       {googleLoading && (
@@ -496,21 +505,21 @@ const OTPLogin = () => {
                           aria-live="polite"
                         >
                           <Spinner size={13} className="text-blue-500" />
-                          Signing you in…
+                          {t('auth.signingIn')}
                         </div>
                       )}
                     </div>
 
                     <div className="relative flex items-center">
                       <div className="flex-grow border-t border-neutral-200" />
-                      <span className="mx-3 shrink-0 text-xs text-neutral-400">or</span>
+                      <span className="mx-3 shrink-0 text-xs text-neutral-400">{t('common.or')}</span>
                       <div className="flex-grow border-t border-neutral-200" />
                     </div>
                   </>
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email address</Label>
+                  <Label htmlFor="email">{t('auth.emailAddress')}</Label>
                   <Input
                     id="email"
                     type="email"
@@ -528,7 +537,7 @@ const OTPLogin = () => {
                     disabled={isLoading || googleLoading}
                     autoComplete="email"
                     autoFocus
-                    aria-label="Email address"
+                    aria-label={t('auth.emailAddress')}
                     aria-required="true"
                     aria-invalid={emailError ? 'true' : 'false'}
                     aria-describedby={emailError ? 'email-error' : undefined}
@@ -542,12 +551,12 @@ const OTPLogin = () => {
                   {isLoading ? (
                     <>
                       <Spinner size={16} className="mr-2" />
-                      Sending code…
+                      {t('auth.sendingCode')}
                     </>
                   ) : (
                     <>
                       <Mail className="mr-2 h-4 w-4" />
-                      Send Code
+                      {t('auth.sendCode')}
                     </>
                   )}
                 </Button>
@@ -557,13 +566,13 @@ const OTPLogin = () => {
 
           {/* ── Step 2: OTP ── */}
           {step === 2 && (
-            <form onSubmit={handleVerifyOTP} className="space-y-6" aria-label="Verify OTP code">
+            <form onSubmit={handleVerifyOTP} className="space-y-6" aria-label={t('auth.verifyOtp')}>
               <div
                 className="flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-800"
                 role="status"
               >
                 <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" aria-hidden="true" />
-                Code sent to your email
+                {t('auth.codeSent')}
               </div>
 
               {(formError || authError) && (
@@ -575,7 +584,7 @@ const OTPLogin = () => {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="otp">6-digit code</Label>
+                <Label htmlFor="otp">{t('auth.sixDigitCode')}</Label>
                 <Input
                   id="otp"
                   type="text"
@@ -596,7 +605,7 @@ const OTPLogin = () => {
                   autoComplete="one-time-code"
                   autoFocus
                   className="text-center text-2xl tracking-[0.5em]"
-                  aria-label="6-digit verification code"
+                  aria-label={t('auth.sixDigitVerificationCode')}
                   aria-required="true"
                   aria-invalid={otpError ? 'true' : 'false'}
                   aria-describedby={otpError ? 'otp-error' : undefined}
@@ -610,10 +619,10 @@ const OTPLogin = () => {
                 {isLoading ? (
                   <>
                     <Spinner size={16} className="mr-2" />
-                    Verifying…
+                    {t('auth.verifying')}
                   </>
                 ) : (
-                  'Verify & Sign In'
+                  t('auth.verifySignIn')
                 )}
               </Button>
 
@@ -624,10 +633,10 @@ const OTPLogin = () => {
                   className="flex items-center gap-1 text-neutral-600 hover:text-neutral-900"
                 >
                   <ArrowLeft className="h-3 w-3" />
-                  Change email
+                  {t('auth.changeEmail')}
                 </button>
                 {cooldown > 0 ? (
-                  <span className="text-neutral-500">Resend in {cooldown}s</span>
+                  <span className="text-neutral-500">{t('auth.resendIn', { seconds: cooldown })}</span>
                 ) : (
                   <button
                     type="button"
@@ -635,7 +644,7 @@ const OTPLogin = () => {
                     disabled={isLoading}
                     className="font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
                   >
-                    Resend code
+                    {t('auth.resendCode')}
                   </button>
                 )}
               </div>

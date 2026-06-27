@@ -1,7 +1,13 @@
 import { useMemo } from 'react';
-import { Star } from 'lucide-react';
+
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
+import {
+  getOrganizationOpportunityStatusLabel,
+  getOrganizationOpportunityTypeLabel,
+} from '../utils/organizationLabelUtils.js';
 
 const MostPopularOpportunity = ({ opportunities, applicationsData }) => {
+  const { t } = useLanguage();
   const mostPopular = useMemo(() => {
     if (opportunities.length === 0) return null;
 
@@ -36,16 +42,9 @@ const MostPopularOpportunity = ({ opportunities, applicationsData }) => {
   }
 
   const { opportunity, breakdown } = mostPopular;
-  const title = opportunity.titre || opportunity.title || 'Untitled';
+  const title = opportunity.titre || opportunity.title || t('organization.untitledOpportunity');
   const type = opportunity.type_opportunite || opportunity.type || '-';
   const status = opportunity.statut || opportunity.status || '-';
-
-  const typeLabel = {
-    EMPLOI: 'Job',
-    STAGE: 'Internship',
-    SAISONNIER: 'Seasonal',
-    PROJET: 'Project',
-  }[type] || type;
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-5 lg:p-6">
@@ -56,35 +55,35 @@ const MostPopularOpportunity = ({ opportunities, applicationsData }) => {
         </h3>
         <div className="mt-2 flex flex-wrap gap-2">
           <span className="inline-flex rounded-md bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
-            {typeLabel}
+            {getOrganizationOpportunityTypeLabel(type, t)}
           </span>
           <span className="inline-flex rounded-md bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
-            {status}
+            {getOrganizationOpportunityStatusLabel(status, t)}
           </span>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-lg border border-neutral-200 bg-white p-3">
-          <p className="text-xs text-neutral-500">Total Applications</p>
+          <p className="text-xs text-neutral-500">{t('organization.totalApplications')}</p>
           <p className="mt-2 text-2xl font-semibold text-neutral-950">
             {breakdown.total}
           </p>
         </div>
         <div className="rounded-lg border border-neutral-200 bg-white p-3">
-          <p className="text-xs text-neutral-500">Pending</p>
+          <p className="text-xs text-neutral-500">{t('organization.pending')}</p>
           <p className="mt-2 text-2xl font-semibold text-neutral-950">{breakdown.pending}</p>
         </div>
         <div className="rounded-lg border border-neutral-200 bg-white p-3">
-          <p className="text-xs text-neutral-500">Reviewed</p>
+          <p className="text-xs text-neutral-500">{t('organization.reviewed')}</p>
           <p className="mt-2 text-2xl font-semibold text-neutral-950">{breakdown.reviewed}</p>
         </div>
         <div className="rounded-lg border border-neutral-200 bg-white p-3">
-          <p className="text-xs text-neutral-500">Accepted</p>
+          <p className="text-xs text-neutral-500">{t('organization.accepted')}</p>
           <p className="mt-2 text-2xl font-semibold text-neutral-950">{breakdown.accepted}</p>
         </div>
         <div className="rounded-lg border border-neutral-200 bg-white p-3">
-          <p className="text-xs text-neutral-500">Rejected</p>
+          <p className="text-xs text-neutral-500">{t('organization.rejected')}</p>
           <p className="mt-2 text-2xl font-semibold text-neutral-950">{breakdown.rejected}</p>
         </div>
       </div>

@@ -8,7 +8,9 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 
+import OpportunityAssistantSheet from '@/src/features/opportunities/components/OpportunityAssistantSheet';
 import OpportunityCard from '@/src/features/opportunities/components/OpportunityCard';
 import OpportunityCardSkeleton from '@/src/features/opportunities/components/OpportunityCardSkeleton';
 import type { OpportunityTypeFilter } from '@/src/features/opportunities/hooks/useOpportunitiesList';
@@ -81,6 +83,7 @@ export default function ExploreScreen({
   handleLoadMore,
 }: ExploreScreenProps) {
   const router = useRouter();
+  const [assistantOpportunityId, setAssistantOpportunityId] = useState<number | null>(null);
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -100,6 +103,15 @@ export default function ExploreScreen({
 
   const openLogin = () => {
     router.push('/login');
+  };
+
+  const openAssistant = (item: Opportunity) => {
+    if (!isAuthenticated) {
+      openLogin();
+      return;
+    }
+
+    setAssistantOpportunityId(item.id);
   };
 
   const listHeader = (
@@ -190,58 +202,75 @@ export default function ExploreScreen({
   }
 
   return (
-    <FlatList
-      style={[styles.screen, { backgroundColor }]}
-      contentContainerStyle={styles.listContent}
-      data={items}
-      keyExtractor={(item) => String(item.id)}
-      ListHeaderComponent={listHeader}
-      renderItem={({ item }) => (
-        <OpportunityCard
-          item={item}
-          cardColor={cardColor}
-          borderColor={borderColor}
-          textColor={textColor}
-          mutedColor={mutedColor}
-          tintColor={tintColor}
-          isUserAuthenticated={isAuthenticated}
-          onPress={() => openDetail(item)}
-          onRequireLogin={openLogin}
-        />
-      )}
-      refreshControl={(
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={tintColor}
-          colors={[tintColor]}
-        />
-      )}
-      onEndReached={handleLoadMore}
-      onEndReachedThreshold={0.3}
-      keyboardShouldPersistTaps="handled"
-      initialNumToRender={6}
-      maxToRenderPerBatch={8}
-      removeClippedSubviews
-      windowSize={7}
-      ListEmptyComponent={
-        !initialLoading && !error ? (
-          <View style={[styles.emptyState, { backgroundColor: cardColor, borderColor }]}>
-            <Text style={[styles.emptyTitle, { color: textColor }]}>No opportunities found</Text>
-            <Text style={[styles.emptySubtitle, { color: mutedColor }]}>
-              Adjust filters or search terms to widen your results.
-            </Text>
-          </View>
-        ) : null
-      }
-      ListFooterComponent={
-        loadingMore ? (
-          <View style={styles.footerLoader}>
-            <ActivityIndicator color={tintColor} />
-          </View>
-        ) : null
-      }
-    />
+    <>
+      <FlatList
+        style={[styles.screen, { backgroundColor }]}
+        contentContainerStyle={styles.listContent}
+        data={items}
+        keyExtractor={(item) => String(item.id)}
+        ListHeaderComponent={listHeader}
+        renderItem={({ item }) => (
+          <OpportunityCard
+            item={item}
+            cardColor={cardColor}
+            borderColor={borderColor}
+            textColor={textColor}
+            mutedColor={mutedColor}
+            tintColor={tintColor}
+            isUserAuthenticated={isAuthenticated}
+            onPress={() => openDetail(item)}
+            onRequireLogin={openLogin}
+            onOpenAssistant={() => openAssistant(item)}
+          />
+        )}
+        refreshControl={(
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={tintColor}
+            colors={[tintColor]}
+          />
+        )}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+        removeClippedSubviews
+        windowSize={7}
+        ListEmptyComponent={
+          !initialLoading && !error ? (
+            <View style={[styles.emptyState, { backgroundColor: cardColor, borderColor }]}>
+              <Text style={[styles.emptyTitle, { color: textColor }]}>No opportunities found</Text>
+              <Text style={[styles.emptySubtitle, { color: mutedColor }]}>
+                Adjust filters or search terms to widen your results.
+              </Text>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator color={tintColor} />
+            </View>
+          ) : null
+        }
+      />
+
+      <OpportunityAssistantSheet
+        opportunityId={assistantOpportunityId}
+        visible={Boolean(assistantOpportunityId)}
+        onClose={() => setAssistantOpportunityId(null)}
+        colors={{
+          background: backgroundColor,
+          card: cardColor,
+          border: borderColor,
+          text: textColor,
+          muted: mutedColor,
+          tint: tintColor,
+        }}
+      />
+    </>
   );
 }
 

@@ -21,10 +21,13 @@ import {
   ORGANIZATION_OPPORTUNITY_TYPE_LABELS,
   formatOrganizationOpportunityDate,
 } from '../utils/organizationOpportunityFormatters.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
+import { getOrganizationOpportunityTypeLabel } from '../utils/organizationLabelUtils.js';
 
 const PAGE_SIZE = 10;
 
 const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatusAction }) => {
+  const { language, t } = useLanguage();
   const [page, setPage] = useState(1);
   const totalPages = Math.max(Math.ceil(opportunities.length / PAGE_SIZE), 1);
   const visibleOpportunities = useMemo(() => {
@@ -41,13 +44,13 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
       <Table className="table-fixed" containerClassName="overflow-visible">
         <TableHeader>
           <TableRow className="bg-neutral-50">
-            <TableHead className="w-[36%] px-4">Opportunity</TableHead>
-            <TableHead className="hidden w-[15%] md:table-cell">Type</TableHead>
-            <TableHead className="w-[190px]">Status</TableHead>
-            <TableHead className="hidden w-[15%] lg:table-cell">Published</TableHead>
-            <TableHead className="hidden w-[190px] sm:table-cell">Applications</TableHead>
+            <TableHead className="w-[36%] px-4">{t('organization.opportunity')}</TableHead>
+            <TableHead className="hidden w-[15%] md:table-cell">{t('organization.type')}</TableHead>
+            <TableHead className="w-[190px]">{t('organization.status')}</TableHead>
+            <TableHead className="hidden w-[15%] lg:table-cell">{t('admin.published')}</TableHead>
+            <TableHead className="hidden w-[190px] sm:table-cell">{t('organization.applications')}</TableHead>
             <TableHead className="w-14 text-right">
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">{t('admin.actions')}</span>
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -62,12 +65,16 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
                   {opportunity.title}
                 </p>
                 <p className="mt-1 truncate text-xs text-neutral-500">
-                  {opportunity.location || 'Location not set'}
+                  {opportunity.location || t('organization.locationNotSet')}
                 </p>
               </TableCell>
               <TableCell className="hidden md:table-cell">
                 <Badge variant="secondary">
-                  {ORGANIZATION_OPPORTUNITY_TYPE_LABELS[opportunity.type] || opportunity.type}
+                  {getOrganizationOpportunityTypeLabel(
+                    opportunity.type,
+                    t,
+                    ORGANIZATION_OPPORTUNITY_TYPE_LABELS[opportunity.type] || opportunity.type,
+                  )}
                 </Badge>
               </TableCell>
               <TableCell>
@@ -78,7 +85,7 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
                 />
               </TableCell>
               <TableCell className="hidden text-neutral-600 lg:table-cell">
-                {formatOrganizationOpportunityDate(opportunity.published_at)}
+                {formatOrganizationOpportunityDate(opportunity.published_at, {}, language)}
               </TableCell>
               <TableCell className="hidden sm:table-cell">
                 {hidesApplications ? (
@@ -92,7 +99,7 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
                       <div className="flex items-center gap-1.5">
                         <Users className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
                         <span className="font-semibold text-blue-700">
-                          {Number(opportunity.applications_count || 0)} total
+                  {t('organization.totalCountShort', { count: Number(opportunity.applications_count || 0) })}
                         </span>
                       </div>
                     </Link>
@@ -104,7 +111,7 @@ const OrganizationOpportunitiesTable = ({ opportunities, statusActionId, onStatu
                         <div className="flex items-center gap-1.5">
                           <FileUser className="h-4 w-4 shrink-0 text-neutral-700" aria-hidden="true" />
                           <span className="font-semibold text-blue-700">
-                            {Number(opportunity.new_applications_count || 0)} new
+                            {t('organization.newCountShort', { count: Number(opportunity.new_applications_count || 0) })}
                           </span>
                         </div>
                       </Link>

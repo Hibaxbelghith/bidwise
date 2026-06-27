@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, FileText, SearchCheck, Sparkles, UserCheck } from 'lucide-react';
 
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import {
   getProfileCompletionScore,
   hasActiveResume,
@@ -113,6 +114,7 @@ const cardStyles = {
 };
 
 const OpportunitiesBrowseInterruptionCard = ({ card }) => {
+  const { t } = useLanguage();
   const Icon = card.icon;
   const styles = cardStyles.blue; // Always use blue styles
   const ctaClassName = [
@@ -120,6 +122,31 @@ const OpportunitiesBrowseInterruptionCard = ({ card }) => {
     styles.gradient,
     styles.shadow,
   ].join(' ');
+  const content = {
+    guest: {
+      title: t('opportunities.guestCardTitle'),
+      description: t('opportunities.guestCardDesc'),
+      ctaLabel: t('opportunities.personalizedMatches'),
+    },
+    resume: {
+      title: t('opportunities.resumeCardTitle'),
+      description: t('opportunities.resumeCardDesc'),
+      ctaLabel: t('opportunities.uploadResume'),
+    },
+    profile: {
+      title: t('opportunities.profileCardTitle'),
+      description: t('opportunities.profileCardDesc'),
+      ctaLabel: t('opportunities.reviewProfile'),
+    },
+    matches: {
+      title: t('opportunities.searchSmarterTitle'),
+      description: t('opportunities.searchSmarterDesc'),
+      ctaLabel: t('opportunities.seeYourMatches'),
+    },
+  }[card.key] || {};
+  const title = content.title || card.title;
+  const description = content.description || card.description;
+  const ctaLabel = content.ctaLabel || card.ctaLabel;
 
   return (
     <article className="group relative overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-lg transition-all duration-500 hover:border-neutral-300 hover:shadow-2xl">
@@ -140,10 +167,10 @@ const OpportunitiesBrowseInterruptionCard = ({ card }) => {
 
             <div className="min-w-0 flex-1">
               <h2 className="text-lg font-bold leading-tight text-neutral-900 lg:text-xl">
-                {card.title}
+                {title}
               </h2>
               <p className="mt-1 text-sm leading-relaxed text-neutral-500">
-                {card.description}
+                {description}
               </p>
             </div>
           </div>
@@ -152,13 +179,13 @@ const OpportunitiesBrowseInterruptionCard = ({ card }) => {
             {card.to ? (
               <Button asChild className={ctaClassName}>
                 <Link to={card.to}>
-                  {card.ctaLabel}
+                  {ctaLabel}
                   <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
                 </Link>
               </Button>
             ) : (
               <Button type="button" className={ctaClassName} onClick={card.onClick}>
-                {card.ctaLabel}
+                {ctaLabel}
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
               </Button>
             )}

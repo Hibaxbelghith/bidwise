@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import { DESCRIPTION_COLLAPSE_HEIGHT } from '../../constants/opportunityDetail.js';
 
 const OpportunityDescriptionSection = ({
@@ -8,19 +9,22 @@ const OpportunityDescriptionSection = ({
   isLongDescription,
   isDescriptionExpanded,
   onToggleDescription,
-}) => (
+}) => {
+  const { t } = useLanguage();
+
+  return (
   <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
     <div className="mb-3 flex items-center justify-between gap-2">
-      <h2 className="text-lg font-semibold text-neutral-900">Description</h2>
+      <h2 className="text-lg font-semibold text-neutral-900">{t('opportunities.detail.description')}</h2>
       {isLongDescription ? (
         <Button variant="ghost" size="sm" onClick={onToggleDescription}>
           {isDescriptionExpanded ? (
             <>
-              Show less <ChevronUp className="h-4 w-4" />
+              {t('opportunities.detail.showLess')} <ChevronUp className="h-4 w-4" />
             </>
           ) : (
             <>
-              Show more <ChevronDown className="h-4 w-4" />
+              {t('opportunities.detail.showMore')} <ChevronDown className="h-4 w-4" />
             </>
           )}
         </Button>
@@ -45,6 +49,7 @@ const OpportunityDescriptionSection = ({
       ) : null}
     </div>
   </section>
-);
+  );
+};
 
 export default OpportunityDescriptionSection;

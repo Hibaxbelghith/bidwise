@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from django.conf import settings
 from django.core.cache import cache
+from django.http import HttpResponse
 from django.db.models import Count, Max, Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -40,12 +41,17 @@ from .recommendation_service import get_score_label, rank_opportunities, select_
 from .recommendation_llm import apply_llm_hierarchy_validation_to_ranked
 from .resume_match.evidence import READY_STATUS, build_resume_match_evidence
 from .resume_match.chatbot import OpportunityAssistantError, answer_opportunity_question
+from .resume_match.ats_cv_generator import ATSResumeGenerationError, generate_ats_cv_document
+from .resume_match.cover_letter_docx_export import COVER_LETTER_DOCX_CONTENT_TYPE, generate_cover_letter_docx
+from .resume_match.docx_export import DOCX_CONTENT_TYPE, generate_ats_cv_docx
 from .resume_match.llm import (
     ResumeMatchLLMError,
     generate_cover_letter,
+    generate_deterministic_cover_letter,
     generate_interview_prep,
     generate_resume_match_analysis,
     generate_resume_optimization,
+    generate_deterministic_summary_rewrite,
     generate_summary_rewrite,
 )
 from .retrieval import (
@@ -63,12 +69,14 @@ DEFAULT_RECOMMENDATIONS = 10
 MIN_MATCH_SCORE = 0.1
 RECOMMENDATIONS_CACHE_TTL_SECONDS = 15 * 60
 RESUME_MATCH_LLM_CACHE_TTL_SECONDS = 24 * 60 * 60
-RESUME_MATCH_LLM_PROMPT_VERSION = 25
+ATS_CV_EXPORT_CACHE_TTL_SECONDS = 24 * 60 * 60
+RESUME_MATCH_LLM_PROMPT_VERSION = 28
+ATS_CV_EXPORT_VERSION = 1
 ASSISTANT_QUESTION_MAX_CHARS = 500
 ASSISTANT_HISTORY_MAX_MESSAGES = 4
 ASSISTANT_HISTORY_MAX_CHARS = 1800
 OPPORTUNITY_ASSISTANT_CACHE_TTL_SECONDS = 24 * 60 * 60
-OPPORTUNITY_ASSISTANT_VERSION = 12
+OPPORTUNITY_ASSISTANT_VERSION = 15
 APPLICATION_ACTION_INTENTS = (
     (
         "full_fit_analysis",
@@ -1121,6 +1129,36 @@ def _resume_match_cache_key(request, opportunity, evidence, action):
     return f"ai:resume-match:{_stable_hash(payload)}"
 
 
+def _ats_cv_export_cache_key(request, opportunity, evidence, optimization_markdown):
+    profile = getattr(request.user, "profil", None)
+    resume = evidence.get("resume") if isinstance(evidence, dict) else {}
+    match = evidence.get("match") if isinstance(evidence, dict) else {}
+    if not profile or not isinstance(resume, dict):
+        return ""
+
+    provider_signature = {
+        "provider": str(getattr(settings, "LLM_PROVIDER", "") or ""),
+        "ollama_model": str(getattr(settings, "OLLAMA_MODEL", "") or ""),
+        "gemini_model": str(getattr(settings, "GEMINI_MODEL", "") or ""),
+    }
+    payload = {
+        "version": ATS_CV_EXPORT_VERSION,
+        "user_id": getattr(request.user, "id", None),
+        "profile_id": getattr(profile, "id", None),
+        "resume_id": resume.get("id"),
+        "resume_updated_at": resume.get("updated_at", ""),
+        "opportunity_id": getattr(opportunity, "id", None),
+        "opportunity_updated_at": getattr(opportunity, "date_modification", None).isoformat()
+        if getattr(opportunity, "date_modification", None)
+        else "",
+        "optimization_hash": hashlib.sha256(
+            str(optimization_markdown or "").encode("utf-8")
+        ).hexdigest()[:16],
+        "provider": provider_signature,
+    }
+    return f"ai:ats-cv-export:{_stable_hash(payload)}"
+
+
 def _opportunity_assistant_cache_key(request, opportunity, evidence, question):
     resume = evidence.get("resume") if isinstance(evidence, dict) else {}
     recommendation = evidence.get("recommendation") if isinstance(evidence, dict) else {}
@@ -1184,7 +1222,12 @@ def _detect_application_action(question):
 
     for action, phrases in APPLICATION_ACTION_INTENTS:
         for phrase in phrases:
-            if _assistant_intent_text(phrase) in text:
+            normalized_phrase = _assistant_intent_text(phrase)
+            if action == "full_fit_analysis":
+                if text == normalized_phrase or text.startswith(f"{normalized_phrase} "):
+                    return action
+                continue
+            if normalized_phrase in text:
                 return action
     return ""
 
@@ -1467,10 +1510,15 @@ def opportunity_assistant_question_view(request, opportunity_id):
                 getattr(opportunity, "id", None),
                 exc,
             )
-            return Response(
-                {"detail": "This AI action is temporarily unavailable. Please try again."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+            if application_action == "generate_cover_letter":
+                analysis = generate_deterministic_cover_letter(evidence)
+            elif application_action == "rewrite_summary":
+                analysis = generate_deterministic_summary_rewrite(evidence)
+            else:
+                return Response(
+                    {"detail": "This AI action is temporarily unavailable. Please try again."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
         markdown = str(analysis.get("analysis_markdown") or "").strip() if isinstance(analysis, dict) else ""
         if not markdown:
@@ -1580,7 +1628,11 @@ def resume_match_action_view(request, opportunity_id):
             getattr(opportunity, "id", None),
             exc,
         )
-        if action in {"optimize_cv", "rewrite_summary", "generate_cover_letter", "interview_prep"}:
+        if action == "generate_cover_letter":
+            analysis = generate_deterministic_cover_letter(evidence)
+        elif action == "rewrite_summary":
+            analysis = generate_deterministic_summary_rewrite(evidence)
+        elif action in {"optimize_cv", "interview_prep"}:
             return Response(
                 {
                     "status": "fallback",
@@ -1591,14 +1643,15 @@ def resume_match_action_view(request, opportunity_id):
                 },
                 status=status.HTTP_200_OK,
             )
-        response_payload = {
-            "status": "fallback",
-            "source": "deterministic",
-            "error": "Full AI analysis is temporarily unavailable. Showing the quick BidWise analysis instead.",
-            "evidence": evidence,
-            "analysis": deterministic,
-        }
-        return Response(response_payload, status=status.HTTP_200_OK)
+        else:
+            response_payload = {
+                "status": "fallback",
+                "source": "deterministic",
+                "error": "Full AI analysis is temporarily unavailable. Showing the quick BidWise analysis instead.",
+                "evidence": evidence,
+                "analysis": deterministic,
+            }
+            return Response(response_payload, status=status.HTTP_200_OK)
 
     response_payload = {
         "status": "ready",
@@ -1611,4 +1664,110 @@ def resume_match_action_view(request, opportunity_id):
 
     response = Response(response_payload, status=status.HTTP_200_OK)
     response["X-BidWise-Resume-Match-Cache"] = "miss" if cache_key else "skip"
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def resume_match_ats_cv_export_view(request, opportunity_id):
+    markdown = str(request.data.get("optimization_markdown") or "").strip()
+    if len(markdown) < 40:
+        return Response(
+            {"optimization_markdown": ["Run Optimize my CV for this role before exporting."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    opportunity = _get_resume_match_opportunity(opportunity_id)
+    if opportunity is None:
+        return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    evidence = build_resume_match_evidence(user=request.user, opportunity=opportunity)
+    if evidence.get("status") != READY_STATUS:
+        return Response(
+            {
+                "detail": "Resume evidence is not ready for export.",
+                "status": evidence.get("status"),
+                "resume_status": evidence.get("resume_status", ""),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    document_payload = None
+    document_source = "markdown_fallback"
+    cache_key = _ats_cv_export_cache_key(request, opportunity, evidence, markdown)
+    cached_document = cache.get(cache_key) if cache_key else None
+    if isinstance(cached_document, dict):
+        document_payload = cached_document
+        document_source = "llm_cache"
+    else:
+        try:
+            generated = generate_ats_cv_document(evidence, optimization_markdown=markdown)
+            document_payload = generated.get("document") if isinstance(generated, dict) else None
+            if isinstance(document_payload, dict) and cache_key:
+                cache.set(cache_key, document_payload, timeout=ATS_CV_EXPORT_CACHE_TTL_SECONDS)
+            document_source = "llm"
+        except ATSResumeGenerationError as exc:
+            logger.warning(
+                "ATS CV structured generation failed user_id=%s opportunity_id=%s reason=%s",
+                getattr(request.user, "id", None),
+                getattr(opportunity, "id", None),
+                exc,
+            )
+
+    content = generate_ats_cv_docx(
+        evidence=evidence,
+        optimization_markdown=markdown,
+        ats_document=document_payload if isinstance(document_payload, dict) else None,
+        verified_email=str(getattr(request.user, "email", "") or "").strip(),
+    )
+    profile = evidence.get("profile") if isinstance(evidence.get("profile"), dict) else {}
+    contact = profile.get("contact") if isinstance(profile.get("contact"), dict) else {}
+    name = str(contact.get("full_name") or "candidate").strip() or "candidate"
+    safe_name = "".join(char if char.isalnum() else "_" for char in name).strip("_").lower() or "candidate"
+    response = HttpResponse(content, content_type=DOCX_CONTENT_TYPE)
+    response["Content-Disposition"] = f'attachment; filename="{safe_name}_ats_cv.docx"'
+    response["X-BidWise-ATS-CV-Source"] = document_source
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def resume_match_cover_letter_export_view(request, opportunity_id):
+    markdown = str(request.data.get("cover_letter_markdown") or "").strip()
+    if len(markdown) < 80:
+        return Response(
+            {"cover_letter_markdown": ["Run Generate motivation letter before exporting."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    opportunity = _get_resume_match_opportunity(opportunity_id)
+    if opportunity is None:
+        return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    evidence = build_resume_match_evidence(user=request.user, opportunity=opportunity)
+    if evidence.get("status") != READY_STATUS:
+        return Response(
+            {
+                "detail": "Resume evidence is not ready for export.",
+                "status": evidence.get("status"),
+                "resume_status": evidence.get("resume_status", ""),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        content = generate_cover_letter_docx(
+            evidence=evidence,
+            cover_letter_markdown=markdown,
+            verified_email=str(getattr(request.user, "email", "") or "").strip(),
+        )
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    profile = evidence.get("profile") if isinstance(evidence.get("profile"), dict) else {}
+    contact = profile.get("contact") if isinstance(profile.get("contact"), dict) else {}
+    name = str(contact.get("full_name") or "candidate").strip() or "candidate"
+    safe_name = "".join(char if char.isalnum() else "_" for char in name).strip("_").lower() or "candidate"
+    response = HttpResponse(content, content_type=COVER_LETTER_DOCX_CONTENT_TYPE)
+    response["Content-Disposition"] = f'attachment; filename="{safe_name}_cover_letter.docx"'
     return response

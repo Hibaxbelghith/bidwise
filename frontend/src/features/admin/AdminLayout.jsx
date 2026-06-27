@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 
 import { Button } from '../../components/ui/button.jsx';
+import LanguageToggle from '../../components/layout/LanguageToggle.jsx';
+import { useLanguage } from '../../i18n/LanguageContext.jsx';
 import { adminLogout } from './adminAuthService.js';
 
 const LOGOUT_REDIRECT_DELAY_MS = 160;
@@ -24,49 +26,49 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'bidwise-admin-sidebar-collapsed';
 const navItems = [
   {
     to: '/admin/dashboard',
-    label: 'Dashboard',
+    labelKey: 'admin.dashboard',
     icon: LayoutDashboard,
     children: [
       {
         to: '/admin/dashboard/operations',
-        label: 'Operations Monitoring',
+        labelKey: 'admin.operationsMonitoring',
         icon: LayoutDashboard,
       },
       {
         to: '/admin/dashboard/sources',
-        label: 'Sources Monitoring',
+        labelKey: 'admin.sourcesMonitoring',
         icon: RadioTower,
       },
       {
         to: '/admin/dashboard/scheduler',
-        label: 'Scheduler Intelligence',
+        labelKey: 'admin.schedulerIntelligence',
         icon: CalendarClock,
       },
       {
         to: '/admin/dashboard/pipeline',
-        label: 'Pipeline Health',
+        labelKey: 'admin.pipelineHealth',
         icon: Activity,
       },
       {
         to: '/admin/dashboard/alerts',
-        label: 'Alerts',
+        labelKey: 'admin.alerts',
         icon: BellRing,
       },
       {
         to: '/admin/dashboard/analytics',
-        label: 'Analytics',
+        labelKey: 'admin.analytics',
         icon: BarChart3,
       },
     ],
   },
   {
     to: '/admin/opportunities',
-    label: 'Opportunities',
+    labelKey: 'admin.opportunities',
     icon: BriefcaseBusiness,
   },
   {
     to: '/admin/users',
-    label: 'Users',
+    labelKey: 'admin.users',
     icon: UsersRound,
   },
 ];
@@ -74,6 +76,7 @@ const navItems = [
 const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [isLogoutPending, setIsLogoutPending] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
@@ -123,12 +126,14 @@ const AdminLayout = () => {
           </div>
           <div className={isSidebarCollapsed ? 'sr-only' : ''}>
             <p className="text-sm font-semibold">BidWise Admin</p>
-            <p className="text-xs text-neutral-400">Backoffice</p>
+            <p className="text-xs text-neutral-400">{t('common.backoffice')}</p>
           </div>
         </div>
 
         <nav className="space-y-1 px-3 py-4" aria-label="Admin navigation">
-          {navItems.map(({ to, label, icon: Icon, children }) => (
+          {navItems.map(({ to, labelKey, icon: Icon, children }) => {
+            const label = t(labelKey);
+            return (
             <div key={to}>
               <NavLink
                 to={to}
@@ -152,7 +157,7 @@ const AdminLayout = () => {
 
               {children && isDashboardSection && !isSidebarCollapsed ? (
                 <div className="mt-1 space-y-1 border-l border-neutral-800 pl-4">
-                  {children.map(({ to: childTo, label: childLabel, icon: ChildIcon }) => (
+                  {children.map(({ to: childTo, labelKey: childLabelKey, icon: ChildIcon }) => (
                     <NavLink
                       key={childTo}
                       to={childTo}
@@ -165,13 +170,14 @@ const AdminLayout = () => {
                       }
                     >
                       <ChildIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                      {childLabel}
+                      {t(childLabelKey)}
                     </NavLink>
                   ))}
                 </div>
               ) : null}
             </div>
-          ))}
+          );
+          })}
         </nav>
 
         <button
@@ -197,17 +203,17 @@ const AdminLayout = () => {
                 <ShieldCheck className="h-5 w-5" aria-hidden="true" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-neutral-900">Admin workspace</p>
-                <p className="text-xs text-neutral-500">Operational control panel</p>
+                <p className="text-sm font-semibold text-neutral-900">{t('admin.adminWorkspace')}</p>
+                <p className="text-xs text-neutral-500">{t('admin.operationalControlPanel')}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
             
-              
+              <LanguageToggle />
               <Button type="button" variant="outline" onClick={handleLogout} disabled={isLogoutPending}>
                 <LogOut className="h-4 w-4" aria-hidden="true" />
-                Logout
+                {t('common.logout')}
               </Button>
             </div>
           </div>
@@ -215,7 +221,7 @@ const AdminLayout = () => {
 
         <nav className="border-b border-neutral-200 bg-white px-4 py-2 sm:px-6 lg:hidden" aria-label="Admin mobile navigation">
           <div className="flex gap-2 overflow-x-auto">
-            {navItems.map(({ to, label, icon: Icon }) => (
+            {navItems.map(({ to, labelKey, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -229,13 +235,13 @@ const AdminLayout = () => {
                 }
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
-                {label}
+                {t(labelKey)}
               </NavLink>
             ))}
           </div>
           {isDashboardSection ? (
             <div className="mt-2 flex gap-2 overflow-x-auto">
-              {navItems[0].children.map(({ to, label, icon: Icon }) => (
+              {navItems[0].children.map(({ to, labelKey, icon: Icon }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -248,7 +254,7 @@ const AdminLayout = () => {
                   }
                 >
                   <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  {label}
+                  {t(labelKey)}
                 </NavLink>
               ))}
             </div>

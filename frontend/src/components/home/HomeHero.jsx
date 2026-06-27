@@ -1,11 +1,12 @@
 import { Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useLanguage } from '../../i18n/LanguageContext.jsx';
 
 const pipelineBenefits = [
-	'Multi-source Collection',
-	'AI Recommendations',
-	'Application Assistance',
-	'Tracking',
+	'home.heroBenefitCollection',
+	'home.heroBenefitRecommendations',
+	'home.heroBenefitAssistance',
+	'home.heroBenefitTracking',
 ];
 
 const opportunitySources = [
@@ -150,19 +151,21 @@ function HeroBackground() {
 }
 
 export default function HomeHero() {
+	const { t } = useLanguage();
+
 	return (
 		<section className="home-hero relative min-h-[calc(100svh-4rem)] overflow-hidden bg-gradient-to-b from-white via-[#eef5ff] to-[#dbeafe]">
 			<HeroBackground />
 
 			<div className="relative z-10 mx-auto flex min-h-[calc(100svh-4rem)] max-w-6xl flex-col items-center justify-center px-4 py-8 text-center sm:px-6 sm:py-10 lg:px-8">
 				<p className="mb-4 text-xs font-extrabold uppercase tracking-[0.2em] text-blue-600 sm:text-sm">
-					Multiple sources. One intelligent platform.
+					{t('home.heroEyebrow')}
 				</p>
 
 				<h1 className="max-w-5xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 sm:text-6xl lg:text-7xl">
-					Stop searching everywhere.
+					{t('home.heroTitleLine1')}
 					<br />
-					<span className="text-blue-600">Find what matters here.</span>
+					<span className="text-blue-600">{t('home.heroTitleLine2')}</span>
 				</h1>
 
 				<div className="mt-9 flex flex-wrap items-center justify-center gap-x-7 gap-y-4 text-base font-semibold text-slate-800 sm:mt-10 sm:gap-x-10 sm:text-lg">
@@ -171,7 +174,7 @@ export default function HomeHero() {
 							<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-blue-500 text-blue-600">
 								<Check className="h-4 w-4" strokeWidth={2.5} aria-hidden="true" />
 							</span>
-							<span>{benefit}</span>
+							<span>{t(benefit)}</span>
 						</div>
 					))}
 				</div>
@@ -180,11 +183,11 @@ export default function HomeHero() {
 					to="/opportunities"
 					className="mt-9 rounded-xl bg-blue-600 px-10 py-4 text-xs font-extrabold uppercase tracking-[0.18em] text-white shadow-xl shadow-blue-600/30 transition hover:-translate-y-0.5 hover:bg-blue-700 sm:mt-10 sm:px-14 sm:text-sm"
 				>
-					Explore Opportunities
+					{t('home.heroCta')}
 				</Link>
 
 				<div className="mt-10 flex flex-col items-center sm:mt-12">
-					<div className="flex -space-x-2" aria-label="Opportunity sources">
+					<div className="flex -space-x-2" aria-label={t('home.opportunitySources')}>
 						{opportunitySources.map((source) => (
 							<div
 								key={source.name}
@@ -200,8 +203,8 @@ export default function HomeHero() {
 						))}
 					</div>
 					<p className="mt-3 max-w-xl px-4 text-sm font-medium leading-6 text-slate-700 sm:text-base">
-						LinkedIn, Keejob, public tenders and direct organization posts,
-						<br className="hidden sm:block" /> all in one place.
+						{t('home.heroSourcesLine1')}
+						<br className="hidden sm:block" /> {t('home.heroSourcesLine2')}
 					</p>
 				</div>
 			</div>

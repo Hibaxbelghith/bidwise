@@ -13,6 +13,7 @@ import {
 
 import { Badge } from '../../../../components/ui/badge.jsx';
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
 import RecommendationInsightPanel from '../recommendations/RecommendationInsightPanel.jsx';
 import RecommendationMatchBadge from '../recommendations/RecommendationMatchBadge.jsx';
@@ -65,6 +66,7 @@ const OpportunityBrowseCard = memo(({
   returnTab = 'explore',
 }) => {
   const location = useLocation();
+  const { t } = useLanguage();
   const viewModel = useMemo(
     () => buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated),
     [isUserAuthenticated, opportunity],
@@ -135,7 +137,7 @@ const OpportunityBrowseCard = memo(({
                 <Badge variant={viewModel.statusBadgeVariant}>{viewModel.statusLabel}</Badge>
                 {viewModel.sourceLabel ? (
                   <Badge className="border-neutral-200 bg-white text-neutral-700" variant="outline">
-                    Source: {viewModel.sourceLabel}
+                    {t('opportunities.card.source')}: {viewModel.sourceLabel}
                   </Badge>
                 ) : null}
                 {!viewModel.isProject ? (
@@ -176,7 +178,7 @@ const OpportunityBrowseCard = memo(({
               ) : null}
               <Button asChild size="sm" className="bg-neutral-950 text-white hover:bg-neutral-800">
                 <Link to={`/opportunities/${opportunity.id}`} state={detailState}>
-                  View details
+                  {t('opportunities.card.viewDetails')}
                 </Link>
               </Button>
             </div>
@@ -198,7 +200,7 @@ const OpportunityBrowseCard = memo(({
             {viewModel.deadlineDateLabel ? (
               <span className="inline-flex items-center gap-1.5">
                 <CalendarDays className="h-4 w-4 text-neutral-500" />
-                Deadline {viewModel.deadlineDateLabel}
+                {t('opportunities.card.deadline')} {viewModel.deadlineDateLabel}
               </span>
             ) : null}
             {!viewModel.isProject && viewModel.workModeLabel ? (
@@ -236,18 +238,18 @@ const OpportunityBrowseCard = memo(({
                 <Badge variant="outline">{viewModel.projectProcedureLabel}</Badge>
               ) : null}
               {viewModel.projectCautionLabel ? (
-                <Badge variant="outline">Caution: {viewModel.projectCautionLabel}</Badge>
+                <Badge variant="outline">{t('opportunities.card.caution')}: {viewModel.projectCautionLabel}</Badge>
               ) : null}
               {viewModel.projectLotsCount ? (
                 <Badge variant="outline">
                   <Layers3 className="h-3.5 w-3.5" />
-                  {viewModel.projectLotsCount} lot{viewModel.projectLotsCount > 1 ? 's' : ''}
+                  {viewModel.projectLotsCount} {t(viewModel.projectLotsCount > 1 ? 'opportunities.card.lots' : 'opportunities.card.lot')}
                 </Badge>
               ) : null}
               {viewModel.projectDocumentsCount ? (
                 <Badge variant="outline">
                   <FileText className="h-3.5 w-3.5" />
-                  {viewModel.projectDocumentsCount} document{viewModel.projectDocumentsCount > 1 ? 's' : ''}
+                  {viewModel.projectDocumentsCount} {t(viewModel.projectDocumentsCount > 1 ? 'opportunities.card.documents' : 'opportunities.card.document')}
                 </Badge>
               ) : null}
             </div>
@@ -258,7 +260,7 @@ const OpportunityBrowseCard = memo(({
           {viewModel.isProject && tenderReasons.length > 0 ? (
             <div className="mt-4 rounded-md border border-blue-100 bg-blue-50/70 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-blue-900">
-                Why this priority
+                {t('opportunities.card.whyPriority')}
               </p>
               <ul className="mt-2 space-y-1 text-sm text-blue-900">
                 {tenderReasons.map((reason) => (
@@ -297,8 +299,8 @@ const OpportunityBrowseCard = memo(({
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-4">
         <p className="text-sm font-medium text-neutral-600">
           {viewModel.publishedAgoLabel
-            ? `Published ${viewModel.publishedAgoLabel}`
-            : `Published ${viewModel.publishedDateLabel}`}
+            ? `${t('opportunities.card.published')} ${viewModel.publishedAgoLabel}`
+            : `${t('opportunities.card.published')} ${viewModel.publishedDateLabel}`}
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -312,19 +314,19 @@ const OpportunityBrowseCard = memo(({
               className={isSaved ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
             >
               <Bookmark className={isSaved ? 'h-4 w-4 fill-current' : 'h-4 w-4'} />
-              {isSaved ? 'Saved' : 'Save'}
+              {isSaved ? t('opportunities.card.saved') : t('opportunities.card.save')}
             </Button>
           ) : (
             <Button asChild size="sm" variant="outline">
               <Link to="/login">
                 <Bookmark className="h-4 w-4" />
-                Sign in to save
+                {t('opportunities.card.signInToSave')}
               </Link>
             </Button>
           )}
           <Button asChild size="sm" className="bg-neutral-950 text-white hover:bg-neutral-800 sm:hidden">
             <Link to={`/opportunities/${opportunity.id}`} state={detailState}>
-              View details
+              {t('opportunities.card.viewDetails')}
             </Link>
           </Button>
         </div>

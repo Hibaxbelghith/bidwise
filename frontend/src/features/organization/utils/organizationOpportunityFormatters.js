@@ -44,12 +44,12 @@ const VALUE_LABELS = {
   '7_12_MONTHS': '7 to 12 months',
 };
 
-export const formatOrganizationOpportunityDate = (value, options = {}) => {
+export const formatOrganizationOpportunityDate = (value, options = {}, locale = 'en') => {
   if (!value) return 'Not set';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
 
-  return new Intl.DateTimeFormat('en', {
+  return new Intl.DateTimeFormat(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -67,4 +67,3 @@ export const formatOrganizationOpportunityValue = (value) => {
 export const formatOrganizationOpportunityFieldLabel = (value) => String(value || '')
   .replaceAll('_', ' ')
   .replace(/\b\w/g, (character) => character.toUpperCase());
-

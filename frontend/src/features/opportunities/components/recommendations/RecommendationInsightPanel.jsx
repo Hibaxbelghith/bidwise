@@ -1,5 +1,6 @@
 import { Check, Sparkles, ThumbsUp } from 'lucide-react';
 
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import { buildRecommendationViewModel } from '../../utils/recommendationUtils.js';
 import RecommendationMatchBadge from './RecommendationMatchBadge.jsx';
 
@@ -36,10 +37,12 @@ const RecommendationInsightPanel = ({
   context = 'feed',
   className = '',
 }) => {
+  const { t } = useLanguage();
   const viewModel = buildRecommendationViewModel(recommendation, {
     context,
     reasonLimit: compact ? 3 : context === 'detail' ? 5 : 4,
     gapLimit: compact ? 3 : context === 'detail' ? 5 : 4,
+    t,
   });
 
   if (!viewModel) return null;
@@ -109,7 +112,7 @@ const RecommendationInsightPanel = ({
 
       {viewModel.visibleReasons.length > 0 ? (
         <div className={['rounded-md p-3', viewModel.tone.surface].join(' ')}>
-          <p className="text-xs font-semibold uppercase">{viewModel.reasonsTitle || 'Why this matches'}</p>
+          <p className="text-xs font-semibold uppercase">{viewModel.reasonsTitle || t('opportunities.detail.whyThisMatches')}</p>
           <ul className="mt-2 grid gap-2 text-sm leading-5 sm:grid-cols-2">
             {viewModel.visibleReasons.map((reason) => (
               <li key={reason} className="flex items-start gap-2">

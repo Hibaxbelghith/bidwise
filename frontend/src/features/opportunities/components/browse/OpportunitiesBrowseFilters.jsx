@@ -4,6 +4,7 @@ import { CalendarDays, ChevronDown, MapPin, Search, SlidersHorizontal } from 'lu
 
 import { Button } from '../../../../components/ui/button.jsx';
 import { Input } from '../../../../components/ui/input.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import {
   Select,
   SelectContent,
@@ -14,32 +15,39 @@ import {
 import { TYPE_OPTIONS } from '../../constants/opportunityOptions.js';
 
 const WORK_MODE_OPTIONS = [
-  { value: 'REMOTE', label: 'Remote' },
-  { value: 'HYBRID', label: 'Hybrid' },
-  { value: 'ON_SITE', label: 'On site' },
+  { value: 'REMOTE', labelKey: 'opportunities.filters.remote' },
+  { value: 'HYBRID', labelKey: 'opportunities.filters.hybrid' },
+  { value: 'ON_SITE', labelKey: 'opportunities.filters.onSite' },
 ];
 
 const EXPERIENCE_OPTIONS = [
-  { value: 'entry', label: 'Entry' },
-  { value: 'junior', label: 'Junior' },
-  { value: 'mid', label: 'Mid' },
-  { value: 'senior', label: 'Senior' },
+  { value: 'entry', labelKey: 'opportunities.filters.entry' },
+  { value: 'junior', labelKey: 'opportunities.filters.junior' },
+  { value: 'mid', labelKey: 'opportunities.filters.mid' },
+  { value: 'senior', labelKey: 'opportunities.filters.senior' },
 ];
 
 const DATE_POSTED_OPTIONS = [
-  { value: 'all', label: 'Any time' },
-  { value: 'day', label: 'Last day' },
-  { value: '3days', label: 'Last 3 days' },
-  { value: 'week', label: 'Last week' },
-  { value: '2weeks', label: 'Last 2 weeks' },
-  { value: 'month', label: 'Last month' },
+  { value: 'all', labelKey: 'opportunities.filters.anyTime' },
+  { value: 'day', labelKey: 'opportunities.filters.lastDay' },
+  { value: '3days', labelKey: 'opportunities.filters.last3Days' },
+  { value: 'week', labelKey: 'opportunities.filters.lastWeek' },
+  { value: '2weeks', labelKey: 'opportunities.filters.last2Weeks' },
+  { value: 'month', labelKey: 'opportunities.filters.lastMonth' },
 ];
 
 const DEADLINE_WINDOW_OPTIONS = [
-  { value: 'all', label: 'Any deadline' },
-  { value: 'week', label: 'This week' },
-  { value: 'month', label: 'This month' },
+  { value: 'all', labelKey: 'opportunities.filters.anyDeadline' },
+  { value: 'week', labelKey: 'opportunities.filters.thisWeek' },
+  { value: 'month', labelKey: 'opportunities.filters.thisMonth' },
 ];
+
+const TYPE_LABEL_KEYS = {
+  EMPLOI: 'opportunities.filters.typeJob',
+  STAGE: 'opportunities.filters.typeInternship',
+  SAISONNIER: 'opportunities.filters.typeSeasonal',
+  PROJET: 'opportunities.filters.typeTender',
+};
 
 const SOURCE_LOGOS = [
   {
@@ -195,6 +203,7 @@ const FilterGroup = ({ title, children }) => (
 );
 
 const LocationFilterInput = ({ cityFilter, locationOptions, setCityFilter }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const normalizedFilter = cityFilter.trim().toLowerCase();
   const visibleOptions = useMemo(() => {
@@ -207,7 +216,7 @@ const LocationFilterInput = ({ cityFilter, locationOptions, setCityFilter }) => 
       <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
       <Input
         type="text"
-        placeholder="Location"
+        placeholder={t('opportunities.filters.location')}
         value={cityFilter}
         className="h-11 bg-white pl-9 pr-9 text-neutral-900 placeholder:text-neutral-500"
         autoComplete="off"
@@ -224,7 +233,7 @@ const LocationFilterInput = ({ cityFilter, locationOptions, setCityFilter }) => 
       />
       <button
         type="button"
-        aria-label="Toggle location options"
+        aria-label={t('opportunities.filters.toggleLocationOptions')}
         className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
         onMouseDown={(event) => {
           event.preventDefault();
@@ -268,7 +277,7 @@ const LocationFilterInput = ({ cityFilter, locationOptions, setCityFilter }) => 
               </button>
             ))
           ) : (
-            <p className="px-3 py-2 text-sm text-neutral-500">No locations found</p>
+            <p className="px-3 py-2 text-sm text-neutral-500">{t('opportunities.filters.noLocationsFound')}</p>
           )}
         </div>
       ) : null}
@@ -291,6 +300,7 @@ const SidebarFilters = ({
   experienceFilter,
   setExperienceFilter,
 }) => {
+  const { t } = useLanguage();
   const typeCounts = Object.keys(facets?.types || {}).length
     ? facetCountsByKey(facets.types)
     : countBy(opportunities, (item) => item?.type_opportunite);
@@ -318,10 +328,10 @@ const SidebarFilters = ({
 
   return (
     <div className="space-y-6">
-      <FilterGroup title="Opportunity types">
+      <FilterGroup title={t('opportunities.filters.opportunityTypes')}>
         {tenderOnly ? (
           <FilterPill active count={typeCounts.PROJET || 0} onClick={() => {}}>
-            Calls for tender
+            {t('opportunities.filters.callsForTender')}
           </FilterPill>
         ) : showTypeSkeleton ? (
           TYPE_OPTIONS.map((option) => <FilterPillSkeleton key={option.value} />)
@@ -333,7 +343,7 @@ const SidebarFilters = ({
               count={typeCounts[option.value] || 0}
               onClick={() => handleTypeClick(option.value)}
             >
-              {option.label}
+              {t(TYPE_LABEL_KEYS[option.value] || option.label)}
             </FilterPill>
           ))
         )}
@@ -341,7 +351,7 @@ const SidebarFilters = ({
 
       {showRoleFilters ? (
         <>
-          <FilterGroup title="Work mode">
+          <FilterGroup title={t('opportunities.filters.workMode')}>
             {WORK_MODE_OPTIONS.map((option) => (
               <FilterPill
                 key={option.value}
@@ -349,12 +359,12 @@ const SidebarFilters = ({
                 count={workModeCounts[option.value] || 0}
                 onClick={() => setWorkModeFilter(workModeFilter === option.value ? '' : option.value)}
               >
-                {option.label}
+                {t(option.labelKey)}
               </FilterPill>
             ))}
           </FilterGroup>
 
-          <FilterGroup title="Experience">
+          <FilterGroup title={t('opportunities.filters.experience')}>
             {EXPERIENCE_OPTIONS.map((option) => (
               <FilterPill
                 key={option.value}
@@ -362,7 +372,7 @@ const SidebarFilters = ({
                 count={experienceCounts[option.value] || 0}
                 onClick={() => setExperienceFilter(experienceFilter === option.value ? '' : option.value)}
               >
-                {option.label}
+                {t(option.labelKey)}
               </FilterPill>
             ))}
           </FilterGroup>
@@ -370,7 +380,7 @@ const SidebarFilters = ({
       ) : null}
 
       {!tenderOnly ? (
-      <FilterGroup title="Sources">
+      <FilterGroup title={t('opportunities.filters.sources')}>
         {sourceOptions.length > 0 ? (
           sourceOptions.map((source) => (
             <FilterPill
@@ -421,6 +431,7 @@ const OpportunitiesBrowseFilters = ({
   resetFilters,
   tenderOnly = false,
 }) => {
+  const { t } = useLanguage();
   const sidebarProps = {
     loading,
     opportunities,
@@ -441,24 +452,24 @@ const OpportunitiesBrowseFilters = ({
     ? facetLocationOptions
     : cityOptions.map((city) => ({ key: city, count: 0 }));
   const dateFilterOptions = tenderOnly ? DEADLINE_WINDOW_OPTIONS : DATE_POSTED_OPTIONS;
-  const dateFilterPlaceholder = tenderOnly ? 'Deadline' : 'Date posted';
+  const dateFilterPlaceholder = tenderOnly ? t('opportunities.filters.deadline') : t('opportunities.filters.datePosted');
   const searchPlaceholder = tenderOnly
-    ? 'Search tenders: IT, construction, supplies...'
-    : 'Search roles, skills or companies...';
+    ? t('opportunities.filters.searchTenders')
+    : t('opportunities.filters.searchGeneral');
 
   if (variant === 'sidebar') {
     return (
       <aside className="hidden lg:block">
         <div className="sticky top-24 rounded-md border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-950">Filters</h2>
+            <h2 className="text-sm font-semibold text-neutral-950">{t('opportunities.filters.filters')}</h2>
             {hasActiveFilters ? (
               <button
                 type="button"
                 onClick={resetFilters}
                 className="text-xs font-semibold text-blue-700 hover:text-blue-900"
               >
-                Reset all
+                {t('opportunities.filters.resetAll')}
               </button>
             ) : null}
           </div>
@@ -502,7 +513,7 @@ const OpportunitiesBrowseFilters = ({
             <SelectContent>
               {dateFilterOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -510,7 +521,7 @@ const OpportunitiesBrowseFilters = ({
 
           {hasActiveFilters ? (
             <Button size="lg" variant="outline" onClick={resetFilters}>
-              Reset
+              {t('opportunities.filters.reset')}
             </Button>
           ) : null}
         </div>
@@ -519,7 +530,7 @@ const OpportunitiesBrowseFilters = ({
           <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-neutral-900">
             <span className="inline-flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" />
-              More filters
+              {t('opportunities.filters.moreFilters')}
             </span>
             <ChevronDown className="h-4 w-4" />
           </summary>

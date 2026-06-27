@@ -4,6 +4,11 @@ import { Button } from '../../../components/ui/button.jsx';
 import { STATUS_OPTIONS } from '../../opportunities/constants/opportunityOptions.js';
 import { TUNISIAN_LOCATION_OPTIONS } from '../../profile/profilePreferences.js';
 import { ORGANIZATION_FILTER_TYPE_OPTIONS } from '../hooks/useOpportunitiesFiltering.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
+import {
+  getOrganizationOpportunityStatusLabel,
+  getOrganizationOpportunityTypeLabel,
+} from '../utils/organizationLabelUtils.js';
 
 const OpportunitiesFilterBar = ({
   selectedStatuses,
@@ -29,6 +34,7 @@ const OpportunitiesFilterBar = ({
   onResetAllFilters,
   onCloseDropdowns,
 }) => {
+  const { t } = useLanguage();
   const statusDropdownRef = useRef(null);
   const locationDropdownRef = useRef(null);
   const typeDropdownRef = useRef(null);
@@ -63,7 +69,7 @@ const OpportunitiesFilterBar = ({
           onClick={() => setIsTypeDropdownOpen(!isTypeDropdownOpen)}
         >
           <span className="font-semibold text-blue-700">({selectedTypes.length})</span>
-          Type
+          {t('organization.type')}
           <ChevronDown className="h-4 w-4" aria-hidden="true" />
         </Button>
 
@@ -77,7 +83,7 @@ const OpportunitiesFilterBar = ({
                   onChange={(e) => toggleAllTypes(e.target.checked)}
                   className="w-4 h-4 rounded border-neutral-300"
                 />
-                <span className="text-sm font-semibold text-neutral-950">Select all</span>
+                <span className="text-sm font-semibold text-neutral-950">{t('organization.selectAll')}</span>
               </label>
             </div>
             <div className="max-h-64 overflow-y-auto">
@@ -92,7 +98,9 @@ const OpportunitiesFilterBar = ({
                     onChange={() => toggleTypeFilter(type.value)}
                     className="w-4 h-4 rounded border-neutral-300"
                   />
-                  <span className="text-sm text-neutral-700">{type.label}</span>
+                  <span className="text-sm text-neutral-700">
+                    {getOrganizationOpportunityTypeLabel(type.value, t, type.label)}
+                  </span>
                 </label>
               ))}
             </div>
@@ -101,13 +109,13 @@ const OpportunitiesFilterBar = ({
                 onClick={() => setIsTypeDropdownOpen(false)}
                 className="text-sm text-blue-700 font-semibold hover:text-blue-800"
               >
-                Done
+                {t('organization.done')}
               </button>
               <button
                 onClick={() => toggleAllTypes(true)}
                 className="text-sm text-neutral-600 hover:text-neutral-700"
               >
-                Reset
+                {t('organization.reset')}
               </button>
             </div>
           </div>
@@ -121,7 +129,7 @@ const OpportunitiesFilterBar = ({
           onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
         >
           <span className="font-semibold text-blue-700">({selectedStatuses.length})</span>
-          Status
+          {t('organization.status')}
           <ChevronDown className="h-4 w-4" aria-hidden="true" />
         </Button>
 
@@ -135,7 +143,7 @@ const OpportunitiesFilterBar = ({
                   onChange={(e) => toggleAllStatuses(e.target.checked)}
                   className="w-4 h-4 rounded border-neutral-300"
                 />
-                <span className="text-sm font-semibold text-neutral-950">Select all</span>
+                <span className="text-sm font-semibold text-neutral-950">{t('organization.selectAll')}</span>
               </label>
             </div>
             <div className="max-h-64 overflow-y-auto">
@@ -150,7 +158,9 @@ const OpportunitiesFilterBar = ({
                     onChange={() => toggleStatusFilter(status.value)}
                     className="w-4 h-4 rounded border-neutral-300"
                   />
-                  <span className="text-sm text-neutral-700">{status.label}</span>
+                  <span className="text-sm text-neutral-700">
+                    {getOrganizationOpportunityStatusLabel(status.value, t, status.label)}
+                  </span>
                 </label>
               ))}
             </div>
@@ -159,13 +169,13 @@ const OpportunitiesFilterBar = ({
                 onClick={() => setIsStatusDropdownOpen(false)}
                 className="text-sm text-blue-700 font-semibold hover:text-blue-800"
               >
-                Done
+                {t('organization.done')}
               </button>
               <button
                 onClick={() => toggleAllStatuses(true)}
                 className="text-sm text-neutral-600 hover:text-neutral-700"
               >
-                Reset
+                {t('organization.reset')}
               </button>
             </div>
           </div>
@@ -179,7 +189,7 @@ const OpportunitiesFilterBar = ({
           onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
         >
           <span className="font-semibold text-blue-700">({selectedLocations.length})</span>
-          Location
+          {t('organization.location')}
           <ChevronDown className="h-4 w-4" aria-hidden="true" />
         </Button>
 
@@ -190,7 +200,7 @@ const OpportunitiesFilterBar = ({
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-400" />
                 <input
                   type="text"
-                  placeholder="Search locations..."
+                  placeholder={t('organization.searchLocations')}
                   value={locationSearchTerm}
                   onChange={(e) => setLocationSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -203,7 +213,7 @@ const OpportunitiesFilterBar = ({
                   onChange={(e) => toggleAllLocations(e.target.checked)}
                   className="w-4 h-4 rounded border-neutral-300"
                 />
-                <span className="text-sm font-semibold text-neutral-950">Select all</span>
+                <span className="text-sm font-semibold text-neutral-950">{t('organization.selectAll')}</span>
               </label>
             </div>
             <div className="max-h-64 overflow-y-auto">
@@ -225,7 +235,7 @@ const OpportunitiesFilterBar = ({
                 ))
               ) : (
                 <div className="px-4 py-6 text-center text-sm text-neutral-500">
-                  No locations found
+                  {t('organization.noLocationsFound')}
                 </div>
               )}
             </div>
@@ -234,7 +244,7 @@ const OpportunitiesFilterBar = ({
                 onClick={() => setIsLocationDropdownOpen(false)}
                 className="text-sm text-blue-700 font-semibold hover:text-blue-800"
               >
-                Done
+                {t('organization.done')}
               </button>
               <button
                 onClick={() => {
@@ -243,7 +253,7 @@ const OpportunitiesFilterBar = ({
                 }}
                 className="text-sm text-neutral-600 hover:text-neutral-700"
               >
-                Reset
+                {t('organization.reset')}
               </button>
             </div>
           </div>
@@ -254,14 +264,14 @@ const OpportunitiesFilterBar = ({
         <SlidersHorizontal className="h-4 w-4 text-blue-700" aria-hidden="true" />
         {selectedStatuses.length > 0 || selectedLocations.length > 0 || selectedTypes.length > 0 ? (
           <span className="font-semibold text-blue-700">
-            {selectedStatuses.length + selectedLocations.length + selectedTypes.length} filter{(selectedStatuses.length + selectedLocations.length + selectedTypes.length) === 1 ? '' : 's'} applied
+            {t('organization.filtersApplied', { count: selectedStatuses.length + selectedLocations.length + selectedTypes.length })}
           </span>
         ) : (
-          'No filters'
+          t('organization.noFilters')
         )}
       </Button>
       <span className="text-sm font-semibold text-neutral-600">
-        {totalResults === null ? 'Loading' : `${totalResults} result${totalResults === 1 ? '' : 's'}`}
+        {totalResults === null ? t('auth.loading') : t('organization.resultsCount', { count: totalResults })}
       </span>
     </div>
   );

@@ -156,8 +156,18 @@ def _resume_readiness(resume: Any) -> dict[str, str]:
 
 
 def _profile_payload(profile: Any, features: dict[str, Any]) -> dict[str, Any]:
+    user = getattr(profile, "utilisateur", None)
+    first_name = str(getattr(profile, "prenom", "") or getattr(user, "first_name", "") or "").strip()
+    last_name = str(getattr(profile, "nom", "") or getattr(user, "last_name", "") or "").strip()
+    full_name = " ".join(part for part in (first_name, last_name) if part).strip()
     return {
         "id": getattr(profile, "id", None),
+        "contact": {
+            "full_name": full_name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "email": str(getattr(user, "email", "") or "").strip(),
+        },
         "target_roles": _clean_list(features.get("target_roles") or features.get("roles")),
         "skills": _clean_list(features.get("profile_skills") or features.get("skills")),
         "all_skills": _clean_list(features.get("skills")),
@@ -748,11 +758,16 @@ def _labeled_map(values: Any) -> dict[str, str]:
 
 
 def _tokens(value: Any) -> set[str]:
-    return {
+    tokens = {
         token
         for token in re.findall(r"[a-z0-9]+", _normalize(value))
         if len(token) >= 3 or token in {"qa", "ui", "ux", "bi", "ai"}
     }
+    expanded = set(tokens)
+    for token in tokens:
+        if len(token) > 4 and token.endswith("s"):
+            expanded.add(token[:-1])
+    return expanded
 
 
 def _normalize(value: Any) -> str:

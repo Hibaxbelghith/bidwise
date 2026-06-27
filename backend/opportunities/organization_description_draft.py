@@ -64,7 +64,7 @@ def generate_organization_description_draft(
             getattr(llm_provider, "provider_name", ""),
             exc,
         )
-        raise DescriptionDraftError(str(exc)) from exc
+        return _build_deterministic_description(cleaned)
 
     description = _normalize_description(payload.get("description"))
     if not description:
@@ -76,6 +76,125 @@ def generate_organization_description_draft(
         "model": getattr(llm_provider, "model", ""),
         "generated": True,
     }
+
+
+def _build_deterministic_description(values: dict[str, Any]) -> dict[str, Any]:
+    title = values["title"]
+    skills = values.get("skills") or []
+    location = values.get("location") or ""
+    contract = values.get("contract") or ""
+    work_mode = values.get("work_mode") or ""
+    education = values.get("education_level") or ""
+    min_experience = values.get("min_experience")
+    max_experience = values.get("max_experience")
+    is_french = _looks_french(title)
+
+    if is_french:
+        context = ", ".join(item for item in (contract, work_mode, location) if item)
+        context_sentence = (
+            f"Le poste s'inscrit dans un environnement {context}."
+            if context
+            else "Le poste s'inscrit dans un environnement professionnel collaboratif."
+        )
+        skill_text = ", ".join(skills[:6]) if skills else "les competences liees au poste"
+        experience_text = _french_experience_text(min_experience, max_experience)
+        education_text = f" Une formation de niveau {education} est attendue." if education else ""
+        responsibilities = _responsibility_lines(skills, language="fr")
+        description = (
+            f"**A propos du poste**\n"
+            f"Nous recherchons un(e) {title} pour contribuer activement aux projets de l'equipe. "
+            f"{context_sentence} Cette opportunite permet de developper des competences concretes et de participer a des missions utiles.\n\n"
+            f"**Responsabilites**\n"
+            + "\n".join(f"- {item}" for item in responsibilities)
+            + "\n\n"
+            f"**Profil recherche**\n"
+            f"Le/la candidat(e) dispose de bases solides en {skill_text}.{education_text}{experience_text} "
+            "Rigueur, autonomie, communication et esprit d'equipe sont essentiels pour reussir dans cette fonction.\n\n"
+            f"Ce poste est fait pour vous ! Rejoignez-nous pour progresser et contribuer a des projets professionnels concrets."
+        )
+    else:
+        context = ", ".join(item for item in (contract, work_mode, location) if item)
+        context_sentence = (
+            f"The role is based in a {context} environment."
+            if context
+            else "The role is part of a collaborative professional environment."
+        )
+        skill_text = ", ".join(skills[:6]) if skills else "the skills relevant to the role"
+        experience_text = _english_experience_text(min_experience, max_experience)
+        education_text = f" A {education} education level is expected." if education else ""
+        responsibilities = _responsibility_lines(skills, language="en")
+        description = (
+            f"**About the role**\n"
+            f"We are looking for a {title} to contribute actively to the team's projects. "
+            f"{context_sentence} This opportunity offers hands-on responsibilities and room for professional development.\n\n"
+            f"**Responsibilities**\n"
+            + "\n".join(f"- {item}" for item in responsibilities)
+            + "\n\n"
+            f"**Candidate profile**\n"
+            f"The ideal candidate has a solid foundation in {skill_text}.{education_text}{experience_text} "
+            "Attention to detail, autonomy, communication, and teamwork are important for success in this role.\n\n"
+            "This role is for you. Join us to grow your skills and contribute to meaningful professional projects."
+        )
+
+    return {
+        "description": _normalize_description(description),
+        "provider": "deterministic",
+        "model": "",
+        "generated": False,
+    }
+
+
+def _looks_french(value: str) -> bool:
+    normalized = f" {str(value or '').casefold()} "
+    markers = (" developpeur ", " assistant ", " comptable ", " charge ", " responsable ", " stage ")
+    return any(marker in normalized for marker in markers) or bool(
+        re.search(r"[àâçéèêëîïôùûüÿœ]", normalized)
+    )
+
+
+def _responsibility_lines(skills: list[str], *, language: str) -> list[str]:
+    selected = [skill for skill in skills[:4] if skill]
+    if language == "fr":
+        lines = [
+            f"Mettre en oeuvre {skill} dans les missions quotidiennes."
+            for skill in selected
+        ]
+        lines.extend(
+            [
+                "Collaborer avec les membres de l'equipe sur les priorites du poste.",
+                "Documenter les travaux realises et partager les informations utiles.",
+                "Contribuer a l'amelioration continue des methodes de travail.",
+            ]
+        )
+    else:
+        lines = [
+            f"Apply {skill} in day-to-day responsibilities."
+            for skill in selected
+        ]
+        lines.extend(
+            [
+                "Collaborate with team members on role priorities.",
+                "Document completed work and share relevant information.",
+                "Contribute to the continuous improvement of working practices.",
+            ]
+        )
+    return lines[:7]
+
+
+def _french_experience_text(minimum: int | None, maximum: int | None) -> str:
+    if minimum is not None and maximum is not None:
+        return f" Une experience de {minimum} a {maximum} ans est recherchee."
+    if minimum is not None:
+        return f" Une experience minimale de {minimum} ans est recherchee."
+    return ""
+
+
+def _english_experience_text(minimum: int | None, maximum: int | None) -> str:
+    if minimum is not None and maximum is not None:
+        return f" The expected experience range is {minimum} to {maximum} years."
+    if minimum is not None:
+        return f" At least {minimum} years of experience is expected."
+    return ""
 
 
 def _get_description_draft_provider(provider: LLMProvider | None = None) -> LLMProvider:

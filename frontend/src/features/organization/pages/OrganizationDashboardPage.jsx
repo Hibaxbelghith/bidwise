@@ -18,6 +18,7 @@ import { changeOrganizationOpportunityStatus } from '../services/organizationSer
 import { useOpportunitiesFiltering } from '../hooks/useOpportunitiesFiltering.js';
 import OpportunitiesFilterBar from '../components/OpportunitiesFilterBar.jsx';
 import OpportunitiesContent from '../components/OpportunitiesContent.jsx';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const normalizeFilterKey = (value) =>
   String(value || '')
@@ -33,6 +34,7 @@ const includesNormalized = (values, value) => {
 };
 
 const OrganizationDashboardPage = () => {
+  const { t } = useLanguage();
   const { loading, user } = useAuth();
   const profile = user?.organization_profile;
   const [opportunities, setOpportunities] = useState([]);
@@ -68,7 +70,7 @@ const OrganizationDashboardPage = () => {
         if (!isCancelled) {
           setOpportunities([]);
           setOpportunitiesError(
-            error?.response?.data?.detail || 'Unable to load your published opportunities.'
+            error?.response?.data?.detail || t('organization.unableLoadPublishedOpportunities')
           );
         }
       } finally {
@@ -138,7 +140,7 @@ const OrganizationDashboardPage = () => {
       )));
       setPendingStatusAction(null);
     } catch (error) {
-      setOpportunitiesError(error?.response?.data?.detail || 'Unable to update opportunity status.');
+      setOpportunitiesError(error?.response?.data?.detail || t('organization.unableUpdateOpportunityStatus'));
     } finally {
       setStatusActionId(null);
     }
@@ -156,7 +158,7 @@ const OrganizationDashboardPage = () => {
     return (
       <section className="flex min-h-[70vh] items-center justify-center bg-neutral-50 px-4">
         <div className="rounded-lg border border-neutral-200 bg-white px-5 py-4 text-sm text-neutral-600">
-          Loading organization workspace
+          {t('organization.loadingWorkspace')}
         </div>
       </section>
     );
@@ -177,7 +179,7 @@ const OrganizationDashboardPage = () => {
               <Button asChild className="h-12 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800 ml-auto">
                 <Link to="/organization/post">
                   <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-                  Publish an opportunity
+                  {t('organization.publishOpportunity')}
                 </Link>
               </Button>
             </div>

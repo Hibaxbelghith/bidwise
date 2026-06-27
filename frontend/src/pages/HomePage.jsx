@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button.jsx';
 import HomeHero from '../components/home/HomeHero.jsx';
+import { useLanguage } from '../i18n/LanguageContext.jsx';
 import {
 	ArrowRight,
 	Briefcase,
@@ -19,45 +20,55 @@ import {
 	Rocket,
 } from 'lucide-react';
 
-const opportunityTypes = [
+const buildOpportunityTypes = (t) => [
 	{
-		title: 'Jobs',
-		description: 'Explore professional roles collected from multiple sources.',
+		title: t('home.jobs'),
+		description: t('home.jobsDesc'),
 		icon: Briefcase,
 		bg: 'bg-blue-100',
 		text: 'text-blue-600',
 	},
 	{
-		title: 'Internships',
-		description: 'Find internships aligned with your skills and career goals.',
+		title: t('home.internships'),
+		description: t('home.internshipsDesc'),
 		icon: Users,
 		bg: 'bg-green-100',
 		text: 'text-green-600',
 	},
 	{
-		title: 'Calls for Tenders',
-		description: 'Access structured tender opportunities and key requirements.',
+		title: t('home.tenders'),
+		description: t('home.tendersDesc'),
 		icon: Zap,
 		bg: 'bg-purple-100',
 		text: 'text-purple-600',
 	},
 	{
-		title: 'Direct Applications',
-		description: 'Apply directly to opportunities published by organizations.',
+		title: t('home.directApplications'),
+		description: t('home.directApplicationsDesc'),
 		icon: FileText,
 		bg: 'bg-orange-100',
 		text: 'text-orange-600',
 	},
 	{
-		title: 'External Sources',
-		description: 'Continue to the original source while keeping your activity organized.',
+		title: t('home.externalSources'),
+		description: t('home.externalSourcesDesc'),
 		icon: Search,
 		bg: 'bg-red-100',
 		text: 'text-red-600',
 	},
 ];
 
-const Home = () => (
+const Home = () => {
+	const { t } = useLanguage();
+	const opportunityTypes = buildOpportunityTypes(t);
+	const organizationFeatures = [
+		{ icon: Zap, title: t('home.publishMinutes'), desc: t('home.publishMinutesDesc') },
+		{ icon: BarChart3, title: t('home.manageOpportunities'), desc: t('home.manageOpportunitiesDesc') },
+		{ icon: Users, title: t('home.reviewApplications'), desc: t('home.reviewApplicationsDesc') },
+		{ icon: Building2, title: t('home.centralizedDashboard'), desc: t('home.centralizedDashboardDesc') },
+	];
+
+	return (
 	<main className="overflow-x-hidden">
 		<HomeHero />
 
@@ -66,10 +77,10 @@ const Home = () => (
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 				<div className="mb-20 text-center">
 					<h2 id="home-features-heading" className="mb-4 text-4xl font-bold text-neutral-900">
-						How BidWise Works
+						{t('home.howItWorks')}
 					</h2>
 					<p className="mx-auto max-w-2xl text-lg text-neutral-600">
-						From discovery to application tracking, BidWise brings every step into one clear workflow.
+						{t('home.howItWorksDesc')}
 					</p>
 				</div>
 
@@ -78,10 +89,9 @@ const Home = () => (
 						<div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
 							<Database className="h-6 w-6 text-blue-600" />
 						</div>
-						<h3 className="mb-3 text-xl font-semibold text-neutral-900">Discover</h3>
+						<h3 className="mb-3 text-xl font-semibold text-neutral-900">{t('home.discover')}</h3>
 						<p className="text-sm leading-relaxed text-neutral-600">
-							Browse jobs, internships and calls for tenders collected from multiple sources
-							and published directly by organizations.
+							{t('home.discoverDesc')}
 						</p>
 					</div>
 
@@ -89,10 +99,9 @@ const Home = () => (
 						<div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
 							<Target className="h-6 w-6 text-blue-600" />
 						</div>
-						<h3 className="mb-3 text-xl font-semibold text-neutral-900">Match</h3>
+						<h3 className="mb-3 text-xl font-semibold text-neutral-900">{t('home.match')}</h3>
 						<p className="text-sm leading-relaxed text-neutral-600">
-							Receive personalized recommendations based on your profile, CV, skills and
-							preferences, with clear compatibility insights.
+							{t('home.matchDesc')}
 						</p>
 					</div>
 
@@ -100,10 +109,9 @@ const Home = () => (
 						<div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
 							<FileText className="h-6 w-6 text-blue-600" />
 						</div>
-						<h3 className="mb-3 text-xl font-semibold text-neutral-900">Prepare</h3>
+						<h3 className="mb-3 text-xl font-semibold text-neutral-900">{t('home.prepare')}</h3>
 						<p className="text-sm leading-relaxed text-neutral-600">
-							Analyze your CV against an opportunity, improve your professional summary and
-							generate a personalized cover letter with AI assistance.
+							{t('home.prepareDesc')}
 						</p>
 					</div>
 
@@ -111,10 +119,9 @@ const Home = () => (
 						<div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
 							<Bot className="h-6 w-6 text-blue-600" />
 						</div>
-						<h3 className="mb-3 text-xl font-semibold text-neutral-900">Understand</h3>
+						<h3 className="mb-3 text-xl font-semibold text-neutral-900">{t('home.understand')}</h3>
 						<p className="text-sm leading-relaxed text-neutral-600">
-							Use the contextual AI assistant to understand requirements, ask questions about
-							an opportunity and prepare more effectively.
+							{t('home.understandDesc')}
 						</p>
 					</div>
 
@@ -122,10 +129,9 @@ const Home = () => (
 						<div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
 							<Bell className="h-6 w-6 text-blue-600" />
 						</div>
-						<h3 className="mb-3 text-xl font-semibold text-neutral-900">Track</h3>
+						<h3 className="mb-3 text-xl font-semibold text-neutral-900">{t('home.track')}</h3>
 						<p className="text-sm leading-relaxed text-neutral-600">
-							Save opportunities, manage direct and external applications, follow their status
-							and receive relevant notifications from one dashboard.
+							{t('home.trackDesc')}
 						</p>
 					</div>
 
@@ -133,11 +139,11 @@ const Home = () => (
 						<div className="text-center">
 							<Rocket className="mx-auto mb-4 h-12 w-12 text-blue-600" />
 							<p className="mb-4 text-sm font-medium text-neutral-900">
-								Ready to find opportunities that fit your profile?
+								{t('home.ready')}
 							</p>
 							<Button size="sm" asChild>
 								<Link to="/opportunities">
-									Explore Opportunities
+									{t('common.browseOpportunities')}
 									<ArrowRight className="ml-2 h-4 w-4" />
 								</Link>
 							</Button>
@@ -154,42 +160,41 @@ const Home = () => (
 					<div>
 						<div className="mb-6 inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700">
 							<Users className="h-4 w-4" />
-							For Candidates
+							{t('home.forCandidates')}
 						</div>
 
 						<h2 className="mb-6 text-4xl font-bold text-neutral-900">
-							Turn Your Profile Into Better Opportunities
+							{t('home.candidateTitle')}
 						</h2>
 
 						<p className="mb-8 text-lg text-neutral-600">
-							Build a complete profile, import your CV and let BidWise prioritize opportunities
-							that align with your skills, experience and preferences.
+							{t('home.candidateDesc')}
 						</p>
 
 						<ul className="mb-8 space-y-4">
 							<li className="flex items-start gap-3">
 								<CheckCircle2 className="mt-1 h-5 w-5 flex-shrink-0 text-green-500" />
 								<span className="text-neutral-700">
-									<strong>Explainable matching:</strong> See compatibility scores, matched skills and the reasons behind each recommendation.
+									<strong>{t('home.explainableMatching')}</strong> {t('home.explainableMatchingDesc')}
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<CheckCircle2 className="mt-1 h-5 w-5 flex-shrink-0 text-green-500" />
 								<span className="text-neutral-700">
-									<strong>Application support:</strong> Compare your CV with each offer and prepare tailored application content.
+									<strong>{t('home.applicationSupport')}</strong> {t('home.applicationSupportDesc')}
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<CheckCircle2 className="mt-1 h-5 w-5 flex-shrink-0 text-green-500" />
 								<span className="text-neutral-700">
-									<strong>Centralized follow-up:</strong> Save opportunities and track direct or external applications in one place.
+									<strong>{t('home.centralizedFollowup')}</strong> {t('home.centralizedFollowupDesc')}
 								</span>
 							</li>
 						</ul>
 
 						<Button asChild>
 							<Link to="/opportunities">
-								Explore Recommended Opportunities
+								{t('home.exploreRecommended')}
 								<ArrowRight className="ml-2 h-5 w-5" />
 							</Link>
 						</Button>
@@ -198,23 +203,23 @@ const Home = () => (
 					<div className="grid gap-4 sm:grid-cols-2">
 						<div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
 							<Briefcase className="mb-3 h-8 w-8 text-blue-500" />
-							<p className="text-lg font-bold text-neutral-900">Multi-source discovery</p>
-							<p className="text-sm text-neutral-600">Fresh opportunities collected from multiple channels.</p>
+							<p className="text-lg font-bold text-neutral-900">{t('home.multiSourceDiscovery')}</p>
+							<p className="text-sm text-neutral-600">{t('home.multiSourceDiscoveryDesc')}</p>
 						</div>
 						<div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
 							<FileText className="mb-3 h-8 w-8 text-green-500" />
-							<p className="text-lg font-bold text-neutral-900">CV-powered profile</p>
-							<p className="text-sm text-neutral-600">Import your CV to enrich your profile faster.</p>
+							<p className="text-lg font-bold text-neutral-900">{t('home.cvPoweredProfile')}</p>
+							<p className="text-sm text-neutral-600">{t('home.cvPoweredProfileDesc')}</p>
 						</div>
 						<div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
 							<Target className="mb-3 h-8 w-8 text-purple-500" />
-							<p className="text-lg font-bold text-neutral-900">Explainable AI matching</p>
-							<p className="text-sm text-neutral-600">Understand why each opportunity fits your profile.</p>
+							<p className="text-lg font-bold text-neutral-900">{t('home.explainableAiMatching')}</p>
+							<p className="text-sm text-neutral-600">{t('home.explainableAiMatchingDesc')}</p>
 						</div>
 						<div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
 							<Bell className="mb-3 h-8 w-8 text-orange-500" />
-							<p className="text-lg font-bold text-neutral-900">Application tracking</p>
-							<p className="text-sm text-neutral-600">Keep opportunities and application status organized.</p>
+							<p className="text-lg font-bold text-neutral-900">{t('home.applicationTracking')}</p>
+							<p className="text-sm text-neutral-600">{t('home.applicationTrackingDesc')}</p>
 						</div>
 					</div>
 				</div>
@@ -226,28 +231,7 @@ const Home = () => (
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 				<div className="grid items-center gap-12 lg:grid-cols-2">
 					<div className="order-2 space-y-6 lg:order-1">
-						{[
-							{
-								icon: Zap,
-								title: 'Publish in Minutes',
-								desc: 'Create and publish jobs, internships and calls for tenders through guided forms.',
-							},
-							{
-								icon: BarChart3,
-								title: 'Manage Opportunities',
-								desc: 'Edit, activate, suspend or close published opportunities from one workspace.',
-							},
-							{
-								icon: Users,
-								title: 'Review Applications',
-								desc: 'Review candidates, shortlist or reject applications and keep decisions organized.',
-							},
-							{
-								icon: Building2,
-								title: 'Centralized Dashboard',
-								desc: 'Monitor opportunity activity, applications and key statistics in one place.',
-							},
-						].map((item) => {
+						{organizationFeatures.map((item) => {
 							const Icon = item.icon;
 							return (
 								<div key={item.title} className="flex gap-4">
@@ -266,27 +250,26 @@ const Home = () => (
 					<div className="order-1 lg:order-2">
 						<div className="mb-6 inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700">
 							<Building2 className="h-4 w-4" />
-							For Organizations
+							{t('common.forOrganizations')}
 						</div>
 
 						<h2 className="mb-6 text-4xl font-bold text-neutral-900">
-							Publish Opportunities. Manage Candidates.
+							{t('home.organizationTitle')}
 						</h2>
 
 						<p className="mb-8 text-lg text-neutral-600">
-							Give your organization a professional space to publish opportunities, receive
-							applications and manage the recruitment process from a centralized dashboard.
+							{t('home.organizationDesc')}
 						</p>
 
 						<Button asChild className="mb-4">
 							<Link to="/organizations">
-								Discover the Organization Space
+								{t('home.discoverOrgSpace')}
 								<ArrowRight className="ml-2 h-5 w-5" />
 							</Link>
 						</Button>
 
 						<p className="text-sm text-neutral-500">
-							Built for structured, transparent opportunity management.
+							{t('home.orgBuiltFor')}
 						</p>
 					</div>
 				</div>
@@ -298,10 +281,10 @@ const Home = () => (
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 				<div className="mb-16 text-center">
 					<h2 id="home-types-heading" className="mb-4 text-4xl font-bold text-neutral-900">
-						One Platform, Multiple Application Paths
+						{t('home.pathsTitle')}
 					</h2>
 					<p className="mx-auto max-w-2xl text-lg text-neutral-600">
-						Discover opportunities from BidWise organizations and external sources without losing track of your progress.
+						{t('home.pathsDesc')}
 					</p>
 				</div>
 
@@ -332,15 +315,15 @@ const Home = () => (
 			<div className="relative mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
 				<div className="mb-8 inline-flex items-center gap-2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm">
 					<Sparkles className="h-4 w-4" />
-					For Candidates and Organizations
+					{t('home.forBoth')}
 				</div>
 
 				<h2 id="home-cta-heading" className="mb-6 text-5xl font-bold text-white">
-					Make Every Opportunity Count
+					{t('home.ctaTitle')}
 				</h2>
 
 				<p className="mb-10 text-xl text-blue-100">
-					Explore relevant opportunities, prepare stronger applications or publish and manage opportunities for your organization.
+					{t('home.ctaDesc')}
 				</p>
 
 				<div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -350,7 +333,7 @@ const Home = () => (
   asChild
 >
   <Link to="/opportunities">
-    Explore Opportunities
+    {t('common.browseOpportunities')}
     <ArrowRight className="ml-2 h-5 w-5" />
   </Link>
 </Button>
@@ -361,27 +344,28 @@ const Home = () => (
 						className="min-w-[200px] border-white/30 bg-white/10 text-white backdrop-blur-sm hover:bg-white/20"
 						asChild
 					>
-						<Link to="/organizations">For Organizations</Link>
+						<Link to="/organizations">{t('common.forOrganizations')}</Link>
 					</Button>
 				</div>
 
 				<div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-white/80">
 					<div className="flex items-center gap-2">
 						<Users className="h-4 w-4" />
-						<span>Personalized recommendations</span>
+						<span>{t('home.personalizedRecommendations')}</span>
 					</div>
 					<div className="flex items-center gap-2">
 						<Building2 className="h-4 w-4" />
-						<span>Direct and external opportunities</span>
+						<span>{t('home.directExternal')}</span>
 					</div>
 					<div className="flex items-center gap-2">
 						<CheckCircle2 className="h-4 w-4" />
-						<span>AI-assisted applications</span>
+						<span>{t('home.aiAssisted')}</span>
 					</div>
 				</div>
 			</div>
 		</section>
 	</main>
-);
+	);
+};
 
 export default Home;

@@ -1,5 +1,6 @@
 import { Building2 } from 'lucide-react';
 
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import { buildCompanyInitialsAvatar } from '../utils/opportunityFormatters.js';
 
 const OpportunityCompanyAvatar = ({
@@ -9,7 +10,10 @@ const OpportunityCompanyAvatar = ({
   iconClassName = 'h-5 w-5 text-neutral-400',
   imageClassName = 'absolute inset-0 h-full w-full rounded-xl bg-white object-contain',
 }) => {
-  const altText = organizationLabel ? `${organizationLabel} logo` : 'Company logo';
+  const { t } = useLanguage();
+  const altText = organizationLabel
+    ? t('opportunities.organizationLogo', { organization: organizationLabel })
+    : t('opportunities.companyLogo');
 
   return (
     <div className={containerClassName}>

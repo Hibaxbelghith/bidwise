@@ -19,6 +19,7 @@ import {
   uploadOrganizationLogo,
   upsertOrganizationProfile,
 } from '../services/organizationService.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const initialValues = {
   organization_name: '',
@@ -56,6 +57,7 @@ const FieldError = ({ id, message }) => {
 };
 
 const CreateOrganizationAccountPage = () => {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const headingRef = useRef(null);
   const logoFileInputRef = useRef(null);
@@ -95,7 +97,7 @@ const CreateOrganizationAccountPage = () => {
       <section className="flex min-h-[70vh] items-center justify-center bg-neutral-50 px-4">
         <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white px-5 py-4 text-sm text-neutral-600">
           <Spinner size={16} className="text-emerald-700" />
-          Preparing organization setup
+          {t('organization.preparingSetup')}
         </div>
       </section>
     );
@@ -113,7 +115,7 @@ const CreateOrganizationAccountPage = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const nextErrors = validateOrganizationProfileForm(values);
+    const nextErrors = validateOrganizationProfileForm(values, t);
     setErrors(nextErrors);
     setSubmitError('');
     setSubmitSuccess('');
@@ -127,7 +129,7 @@ const CreateOrganizationAccountPage = () => {
       await upsertOrganizationProfile(buildOrganizationProfilePayload(values));
       await refreshUser();
       if (isEditingProfile) {
-        setSubmitSuccess('Profile successfully updated.');
+        setSubmitSuccess(t('organization.profileUpdated'));
       } else {
         setIsSubmitted(true);
         navigate(ORGANIZATION_DASHBOARD_PATH, { replace: true });
@@ -158,7 +160,7 @@ const CreateOrganizationAccountPage = () => {
       updateValue('logo', uploaded.url || '');
     } catch (error) {
       const parsed = parseOrganizationApiError(error);
-      setLogoUploadError(parsed.message || 'Unable to upload logo.');
+      setLogoUploadError(parsed.message || t('organization.unableUploadLogo'));
     } finally {
       setIsUploadingLogo(false);
     }
@@ -175,7 +177,7 @@ const CreateOrganizationAccountPage = () => {
           <div>
             <Link to="/organization/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-neutral-200 hover:text-white">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              Back
+              {t('common.back')}
             </Link>
             <div className="mt-10">
               <div className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-neutral-950">
@@ -187,21 +189,21 @@ const CreateOrganizationAccountPage = () => {
                 tabIndex={-1}
                 className="mt-6 text-3xl font-semibold leading-tight text-white outline-none"
               >
-                {isEditingProfile ? 'Update your organization settings.' : 'Create your organization account.'}
+                {isEditingProfile ? t('organization.updateSettingsTitle') : t('organization.createAccountTitle')}
               </h1>
               <p className="mt-4 text-sm leading-6 text-neutral-300">
                 {isEditingProfile
-                  ? 'Keep your organization identity current so your workspace and public opportunities stay clear and professional.'
-                  : 'Tell us who is publishing opportunities. These details keep promoter accounts clear, trustworthy, and ready for future posting tools.'}
+                  ? t('organization.updateSettingsDesc')
+                  : t('organization.createAccountDesc')}
               </p>
             </div>
           </div>
 
           <div className="mt-10 space-y-4 text-sm text-neutral-300">
             {[
-              'One shared BidWise sign-in',
-              'Tunisia phone verification format',
-              'Clean organization profile foundation',
+              t('organization.benefitSharedSignin'),
+              t('organization.benefitTunisiaPhone'),
+              t('organization.benefitCleanProfile'),
             ].map((item) => (
               <div key={item} className="flex items-center gap-3">
                 <CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" />
@@ -214,15 +216,15 @@ const CreateOrganizationAccountPage = () => {
         <div className="rounded-b-lg border-x border-b border-neutral-200 bg-white p-6 shadow-sm lg:rounded-r-lg lg:rounded-bl-none lg:border-y lg:border-r lg:border-l-0 lg:p-10">
           <div className="mb-8 max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">
-              {isEditingProfile ? 'Account settings' : 'Organization setup'}
+              {isEditingProfile ? t('layout.accountSettings') : t('organization.setup')}
             </p>
             <h2 className="mt-3 text-2xl font-semibold text-neutral-950">
-              {isEditingProfile ? 'Organization profile' : 'Profile details'}
+              {isEditingProfile ? t('organization.profile') : t('organization.profileDetails')}
             </h2>
             <p className="mt-2 text-sm leading-6 text-neutral-600">
               {isEditingProfile
-                ? 'Update the details candidates see before they trust and apply to your opportunities.'
-                : 'Required fields are marked with an asterisk.'}
+                ? t('organization.profileEditHelp')
+                : t('organization.requiredFieldsHelp')}
             </p>
           </div>
 
@@ -242,7 +244,7 @@ const CreateOrganizationAccountPage = () => {
           <form onSubmit={handleSubmit} className="max-w-3xl space-y-6" noValidate>
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <Label htmlFor="organization_name">Organization name *</Label>
+                <Label htmlFor="organization_name">{t('organization.organizationName')} *</Label>
                 <Input
                   id="organization_name"
                   value={values.organization_name}
@@ -258,7 +260,7 @@ const CreateOrganizationAccountPage = () => {
               </div>
 
               <div>
-                <Label htmlFor="first_name">First name *</Label>
+                <Label htmlFor="first_name">{t('profile.firstName')} *</Label>
                 <Input
                   id="first_name"
                   value={values.first_name}
@@ -274,7 +276,7 @@ const CreateOrganizationAccountPage = () => {
               </div>
 
               <div>
-                <Label htmlFor="last_name">Last name *</Label>
+                <Label htmlFor="last_name">{t('profile.lastName')} *</Label>
                 <Input
                   id="last_name"
                   value={values.last_name}
@@ -290,7 +292,7 @@ const CreateOrganizationAccountPage = () => {
               </div>
 
               <div>
-                <Label htmlFor="website">Website</Label>
+                <Label htmlFor="website">{t('organization.website')}</Label>
                 <Input
                   id="website"
                   value={values.website}
@@ -305,7 +307,7 @@ const CreateOrganizationAccountPage = () => {
               </div>
 
               <div className="sm:col-span-2">
-                <Label htmlFor="logo">Organization logo URL</Label>
+                <Label htmlFor="logo">{t('organization.logoUrl')}</Label>
                 <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start">
                   <div className="min-w-0 flex-1">
                     <Input
@@ -336,12 +338,12 @@ const CreateOrganizationAccountPage = () => {
                     {isUploadingLogo ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        Uploading...
+                        {t('organization.uploading')}
                       </>
                     ) : (
                       <>
                         <Upload className="h-4 w-4" aria-hidden="true" />
-                        Upload image
+                        {t('organization.uploadImage')}
                       </>
                     )}
                   </Button>
@@ -356,7 +358,7 @@ const CreateOrganizationAccountPage = () => {
                     {showLogoPreview ? (
                       <img
                         src={logoPreviewSrc}
-                        alt="Organization logo preview"
+                        alt={t('organization.logoPreview')}
                         className="h-full w-full object-contain"
                         loading="lazy"
                         onError={(event) => {
@@ -380,18 +382,18 @@ const CreateOrganizationAccountPage = () => {
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-neutral-900">Logo preview</p>
+                    <p className="text-sm font-medium text-neutral-900">{t('organization.logoPreview')}</p>
                     <p className="text-sm text-neutral-500">
                       {showLogoPreview
-                        ? 'This image will represent your organization across your workspace.'
-                        : 'Add a logo URL to preview your organization branding before saving.'}
+                        ? t('organization.logoPreviewReady')
+                        : t('organization.logoPreviewHelp')}
                     </p>
                   </div>
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="phone">Phone *</Label>
+                <Label htmlFor="phone">{t('organization.phone')} *</Label>
                 <Input
                   id="phone"
                   value={values.phone}
@@ -407,7 +409,7 @@ const CreateOrganizationAccountPage = () => {
               </div>
 
               <div>
-                <Label htmlFor="organization_type">Organization type *</Label>
+                <Label htmlFor="organization_type">{t('organization.organizationType')} *</Label>
                 <select
                   id="organization_type"
                   value={values.organization_type}
@@ -417,10 +419,10 @@ const CreateOrganizationAccountPage = () => {
                   aria-describedby={errors.organization_type ? 'organization_type-error' : undefined}
                   className="mt-2 h-11 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-900 focus-visible:border-blue-500 focus-visible:ring-[3px] focus-visible:ring-blue-500/30"
                 >
-                  <option value="">Select type</option>
+                  <option value="">{t('organization.selectType')}</option>
                   {ORGANIZATION_TYPES.map((type) => (
                     <option key={type.value} value={type.value}>
-                      {type.label}
+                      {t(type.labelKey)}
                     </option>
                   ))}
                 </select>
@@ -428,12 +430,12 @@ const CreateOrganizationAccountPage = () => {
               </div>
 
               <div>
-                <Label htmlFor="how_did_you_hear_about_us">How did you hear about us?</Label>
+                <Label htmlFor="how_did_you_hear_about_us">{t('organization.hearAboutUs')}</Label>
                 <Input
                   id="how_did_you_hear_about_us"
                   value={values.how_did_you_hear_about_us}
                   onChange={(event) => updateValue('how_did_you_hear_about_us', event.target.value)}
-                  placeholder="LinkedIn, referral, event..."
+                  placeholder={t('organization.hearAboutUsPlaceholder')}
                   className="mt-2 h-11 bg-white"
                 />
               </div>
@@ -442,8 +444,8 @@ const CreateOrganizationAccountPage = () => {
             <div className="flex flex-col gap-3 border-t border-neutral-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-neutral-500">
                 {isEditingProfile
-                  ? 'Changes are saved to your organization profile without affecting existing scraped sources.'
-                  : 'You can update these details later from your organization workspace.'}
+                  ? t('organization.editingProfileNote')
+                  : t('organization.createProfileNote')}
               </p>
               <Button
                 type="submit"
@@ -453,10 +455,10 @@ const CreateOrganizationAccountPage = () => {
                 {isSubmitting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    Saving
+                    {t('admin.saving')}
                   </>
                 ) : (
-                  isEditingProfile ? 'Save changes' : 'Continue'
+                  isEditingProfile ? t('profile.saveChanges') : t('organization.continue')
                 )}
               </Button>
             </div>

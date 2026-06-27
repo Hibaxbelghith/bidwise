@@ -86,13 +86,14 @@ class OpportunityAssistantChatbotTests(TestCase):
         self.assertIn("70% semantic similarity", provider.prompt)
         self.assertNotIn("resume_text", provider.prompt)
 
-    def test_prompt_accepts_multilingual_questions_but_requires_english_answers(self):
-        provider = FakeProvider(payload={"answer": "The role requires Python and Django.", "answered": True})
+    def test_prompt_answers_multilingual_questions_in_the_question_language(self):
+        provider = FakeProvider(payload={"answer": "Le poste exige Python et Django.", "answered": True})
 
         answer_opportunity_question("Quelles compétences sont requises ?", self.evidence, provider=provider)
 
         self.assertIn("Understand questions written in English, French, Arabic, or mixed language", provider.prompt)
-        self.assertIn("always write the answer in English", provider.prompt)
+        self.assertIn("answer in that same language", provider.prompt)
+        self.assertIn("If the question is in French, answer entirely in French", provider.prompt)
 
     def test_includes_recent_history_to_resolve_follow_up_questions(self):
         provider = FakeProvider(payload={"answer": "It is the recommendation score.", "answered": True})

@@ -27,13 +27,14 @@ import { ConfirmModal } from '../components/ConfirmModal.jsx';
 
 import { formatDate } from '../components/opportunities/opportunity.Utils.js';
 import { formatDateTime } from '../components/dashboard/dashboard.Utils.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 import AdminUsersSkeleton from './AdminUsersSkeleton.jsx';
 
-const getRoleLabel = (user) => {
-  if (user.is_admin) return 'ADMIN';
-  if (user.account_type === 'organization') return 'PROMOTEUR';
-  return 'CANDIDAT';
+const getRoleLabel = (user, t = null) => {
+  if (user.is_admin) return t ? t('admin.roleAdmin') : 'ADMIN';
+  if (user.account_type === 'organization') return t ? t('admin.roleOrganization') : 'ORGANIZATION';
+  return t ? t('admin.roleCandidate') : 'CANDIDATE';
 };
 
 const getRoleClassName = (user) => {
@@ -53,9 +54,9 @@ const statusClassName = (user) => {
   return 'border-green-200 bg-green-50 text-green-700';
 };
 
-const statusLabel = (user) => {
-  if (user.is_suspended) return 'SUSPENDED';
-  return 'ACTIVE';
+const statusLabel = (user, t = null) => {
+  if (user.is_suspended) return t ? t('admin.statusSuspended') : 'SUSPENDED';
+  return t ? t('admin.statusActive') : 'ACTIVE';
 };
 
 const ariaSortFor = (ordering, field) => {
@@ -84,6 +85,7 @@ const AdminUsersTable = ({
   onSuspendUser,
   onReactivateUser,
 }) => {
+  const { t } = useLanguage();
   const [suspendModalUser, setSuspendModalUser] = useState(null);
   const [suspendError, setSuspendError] = useState(null);
   const [detailsUser, setDetailsUser] = useState(null);
@@ -109,33 +111,33 @@ const AdminUsersTable = ({
   // Vérifier si on peut modifier le rôle admin
   const canToggleAdmin = useCallback((user) => {
     if (isCurrentAdmin(user)) {
-      toast.error('Vous ne pouvez pas modifier votre propre rôle administrateur.');
+      toast.error(t('admin.cannotModifyOwnRole'));
       return false;
     }
     return true;
-  }, [isCurrentAdmin]);
+  }, [isCurrentAdmin, t]);
 
   // Vérifier si on peut suspendre l'utilisateur
   const canSuspendUser = useCallback((user) => {
     if (isCurrentAdmin(user)) {
-      toast.error('Vous ne pouvez pas suspendre votre propre compte.');
+      toast.error(t('admin.cannotSuspendOwnAccount'));
       return false;
     }
     if (user.is_suspended) {
-      toast.error('Ce compte est déjà suspendu.');
+      toast.error(t('admin.accountAlreadySuspended'));
       return false;
     }
     return true;
-  }, [isCurrentAdmin]);
+  }, [isCurrentAdmin, t]);
 
   // Vérifier si on peut réactiver l'utilisateur
   const canReactivate = useCallback((user) => {
     if (!user.is_suspended) {
-      toast.error('Ce compte n\'est pas suspendu.');
+      toast.error(t('admin.accountNotSuspended'));
       return false;
     }
     return true;
-  }, []);
+  }, [t]);
 
   // Ouvrir modal de confirmation pour toggle admin
   const openToggleAdminConfirm = (user) => {
@@ -145,11 +147,11 @@ const AdminUsersTable = ({
       isOpen: true,
       type: 'toggleAdmin',
       user,
-      title: user.is_admin ? 'Supprimer les droits admin' : 'Nommer administrateur',
+      title: user.is_admin ? t('admin.removeAdminPrivileges') : t('admin.grantAdminPrivileges'),
       message: user.is_admin
-        ? `Role actuel: ADMIN. Cette action retirera les droits administrateur de ${user.email}, revoquera ses refresh tokens et sera enregistree dans l'audit log.`
-        : `Role actuel: ${getRoleLabel(user)}. Cette action nommera ${user.email} administrateur, revoquera ses refresh tokens et sera enregistree dans l'audit log.`,
-      confirmLabel: user.is_admin ? 'Supprimer admin' : 'Make Admin',
+        ? t('admin.removeAdminConfirm', { email: user.email })
+        : t('admin.makeAdminConfirm', { email: user.email, role: getRoleLabel(user, t) }),
+      confirmLabel: user.is_admin ? t('admin.removeAdmin') : t('admin.makeAdmin'),
       variant: user.is_admin ? 'warning' : 'info',
     });
   };
@@ -162,9 +164,9 @@ const AdminUsersTable = ({
       isOpen: true,
       type: 'reactivate',
       user,
-      title: 'Réactiver le compte',
-      message: `Cette action reactivera le compte de ${user.email}, revoquera ses refresh tokens existants et sera enregistree dans l'audit log.`,
-      confirmLabel: 'Réactiver',
+      title: t('admin.reactivateAccount'),
+      message: t('admin.reactivateConfirm', { email: user.email }),
+      confirmLabel: t('admin.reactivate'),
       variant: 'info',
     });
   };
@@ -191,18 +193,18 @@ const AdminUsersTable = ({
         }
         result = await onToggleAdmin(user);
         if (result?.success) {
-          toast.success(`${user.email} est désormais ${result.data?.is_admin ? 'administrateur' : 'utilisateur standard'}.`);
+          toast.success(t(result.data?.is_admin ? 'admin.userNowAdmin' : 'admin.userNowStandard', { email: user.email }));
         } else if (result?.error) {
-          toast.error(result.error.message || 'Échec de la modification du rôle.');
+          toast.error(result.error.message || t('admin.failedUpdateRole'));
         }
         break;
       
       case 'reactivate':
         result = await onReactivateUser(user);
         if (result?.success) {
-          toast.success(`Le compte de ${user.email} a été réactivé.`);
+          toast.success(t('admin.userReactivated', { email: user.email }));
         } else if (result?.error) {
-          toast.error(result.error.message || 'Échec de la réactivation du compte.');
+          toast.error(result.error.message || t('admin.failedReactivateAccount'));
         }
         break;
       
@@ -212,27 +214,27 @@ const AdminUsersTable = ({
 
     setIsActionLoading(false);
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
-  }, [confirmModal, onToggleAdmin, onReactivateUser, canToggleAdmin]);
+  }, [confirmModal, onToggleAdmin, onReactivateUser, canToggleAdmin, t]);
 
   // Soumission du modal de suspension
   const handleSuspendModalSubmit = useCallback(async (user, reason, detail) => {
     if (!canSuspendUser(user)) {
-      return { success: false, error: { message: 'Impossible de suspendre cet utilisateur.' } };
+      return { success: false, error: { message: t('admin.userCannotBeSuspended') } };
     }
     
     const result = await onSuspendUser(user, reason, detail);
     
     if (result?.success) {
-      toast.success(`Le compte de ${user.email} a été suspendu.`);
+      toast.success(t('admin.userSuspended', { email: user.email }));
       setSuspendModalUser(null);
       setSuspendError(null);
     } else if (result?.error) {
       setSuspendError(result.error);
-      toast.error(result.error.message || 'Échec de la suspension du compte.');
+      toast.error(result.error.message || t('admin.failedSuspendAccount'));
     }
     
     return result;
-  }, [onSuspendUser, canSuspendUser]);
+  }, [onSuspendUser, canSuspendUser, t]);
 
   const handleSuspendModalClose = useCallback(() => {
     setSuspendModalUser(null);
@@ -252,8 +254,8 @@ const AdminUsersTable = ({
     <>
       <Card>
         <CardHeader className="flex flex-col gap-2 border-b border-neutral-200 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">Liste des utilisateurs</CardTitle>
-          <span className="text-sm text-neutral-500">{count} total</span>
+          <CardTitle className="text-base">{t('admin.userList')}</CardTitle>
+          <span className="text-sm text-neutral-500">{t('admin.totalCount', { count })}</span>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -265,7 +267,7 @@ const AdminUsersTable = ({
                     className="inline-flex items-center gap-1 text-sm font-medium"
                     onClick={() => onToggleOrdering('email')}
                   >
-                    Email
+                    {t('admin.email')}
                     {(() => {
                       const Icon = sortIconFor(ordering, 'email');
                       return <Icon className="h-3.5 w-3.5" aria-hidden="true" />;
@@ -278,7 +280,7 @@ const AdminUsersTable = ({
                     className="inline-flex items-center gap-1"
                     onClick={() => onToggleOrdering('date_joined')}
                   >
-                    Inscrit le
+                    {t('admin.joined')}
                     {(() => {
                       const Icon = sortIconFor(ordering, 'date_joined');
                       return <Icon className="h-3.5 w-3.5" aria-hidden="true" />;
@@ -291,16 +293,16 @@ const AdminUsersTable = ({
                     className="inline-flex items-center gap-1"
                     onClick={() => onToggleOrdering('last_login_at')}
                   >
-                    Dernière connexion
+                    {t('admin.lastLogin')}
                     {(() => {
                       const Icon = sortIconFor(ordering, 'last_login_at');
                       return <Icon className="h-3.5 w-3.5" aria-hidden="true" />;
                     })()}
                   </button>
                 </TableHead>
-                <TableHead className="px-4 py-3 text-sm font-medium">Rôle</TableHead>
-                <TableHead className="px-4 py-3 text-sm font-medium">Statut</TableHead>
-                <TableHead className="px-4 py-3 text-right text-sm font-medium">Actions</TableHead>
+                <TableHead className="px-4 py-3 text-sm font-medium">{t('admin.role')}</TableHead>
+                <TableHead className="px-4 py-3 text-sm font-medium">{t('admin.status')}</TableHead>
+                <TableHead className="px-4 py-3 text-right text-sm font-medium">{t('admin.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             
@@ -325,7 +327,7 @@ const AdminUsersTable = ({
               {showNoUsers && (
                 <TableRow>
                   <TableCell colSpan={6} className="px-4 py-10 text-center text-neutral-500">
-                    Aucun utilisateur trouvé.
+                    {t('admin.noUsersFound')}
                   </TableCell>
                 </TableRow>
               )}
@@ -340,7 +342,7 @@ const AdminUsersTable = ({
                       <p className="truncate font-medium text-neutral-900">
                         {user.email || `User #${user.id}`}
                         {isOwnAccount && (
-                          <span className="ml-2 text-xs font-normal text-blue-600">(Vous)</span>
+                          <span className="ml-2 text-xs font-normal text-blue-600">({t('admin.you')})</span>
                         )}
                       </p>
                     </TableCell>
@@ -352,12 +354,12 @@ const AdminUsersTable = ({
                     </TableCell>
                     <TableCell className="px-4 py-3">
                       <Badge variant="outline" className={getRoleClassName(user)}>
-                        {getRoleLabel(user)}
+                        {getRoleLabel(user, t)}
                       </Badge>
                     </TableCell>
                     <TableCell className="px-4 py-3">
                       <Badge variant="outline" className={statusClassName(user)}>
-                        {statusLabel(user)}
+                        {statusLabel(user, t)}
                       </Badge>
                     </TableCell>
                     <TableCell className="px-4 py-3">
@@ -366,8 +368,8 @@ const AdminUsersTable = ({
                           type="button"
                           variant="outline"
                           size="icon"
-                          aria-label={`Voir la fiche de ${user.email}`}
-                          title="Voir la fiche"
+                          aria-label={t('admin.viewDetailsFor', { email: user.email })}
+                          title={t('admin.viewDetails')}
                           disabled={isLoading}
                           onClick={() => setDetailsUser(user)}
                         >
@@ -378,10 +380,10 @@ const AdminUsersTable = ({
                           type="button"
                           variant="outline"
                           size="icon"
-                          aria-label={user.is_admin ? `Retirer les droits admin de ${user.email}` : `Nommer ${user.email} administrateur`}
+                          aria-label={user.is_admin ? t('admin.removeAdminPrivilegesFrom', { email: user.email }) : t('admin.makeUserAdmin', { email: user.email })}
                           disabled={actionUserId === user.id || isLoading || isOwnAccount}
                           onClick={() => openToggleAdminConfirm(user)}
-                          title={isOwnAccount ? "Vous ne pouvez pas modifier votre propre role" : user.is_admin ? "Retirer admin" : "Ajouter admin"}
+                          title={isOwnAccount ? t('admin.cannotModifyOwnRole') : user.is_admin ? t('admin.removeAdmin') : t('admin.makeAdmin')}
                         >
                           {user.is_admin ? (
                             <ShieldOff className="h-3.5 w-3.5" aria-hidden="true" />
@@ -396,8 +398,8 @@ const AdminUsersTable = ({
                             type="button"
                             variant="outline"
                             size="icon"
-                            aria-label={`Reactiver le compte de ${user.email}`}
-                            title="Reactiver"
+                            aria-label={t('admin.reactivateUser', { email: user.email })}
+                            title={t('admin.reactivate')}
                             disabled={actionUserId === user.id || isLoading}
                             onClick={() => openReactivateConfirm(user)}
                           >
@@ -408,10 +410,10 @@ const AdminUsersTable = ({
                             type="button"
                             variant="destructive"
                             size="icon"
-                            aria-label={`Suspendre le compte de ${user.email}`}
+                            aria-label={t('admin.suspendUser', { email: user.email })}
                             disabled={actionUserId === user.id || isLoading || isOwnAccount}
                             onClick={() => openSuspendModal(user)}
-                            title={isOwnAccount ? "Vous ne pouvez pas suspendre votre propre compte" : "Suspendre"}
+                            title={isOwnAccount ? t('admin.cannotSuspendOwnAccount') : t('admin.suspend')}
                           >
                             <UserX className="h-3.5 w-3.5" aria-hidden="true" />
                           </Button>
@@ -432,7 +434,7 @@ const AdminUsersTable = ({
         title={confirmModal.title}
         message={confirmModal.message}
         confirmLabel={confirmModal.confirmLabel}
-        cancelLabel="Annuler"
+        cancelLabel={t('common.cancel')}
         variant={confirmModal.variant}
         onConfirm={handleConfirmAction}
         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
@@ -452,23 +454,23 @@ const AdminUsersTable = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
             <div className="border-b border-neutral-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-neutral-900">Fiche utilisateur</h2>
+              <h2 className="text-lg font-semibold text-neutral-900">{t('admin.userDetails')}</h2>
               <p className="mt-1 text-sm text-neutral-500">{detailsUser.email}</p>
             </div>
             <div className="grid gap-3 px-6 py-5 text-sm">
               <p><span className="font-medium text-neutral-700">ID:</span> {detailsUser.id}</p>
-              <p><span className="font-medium text-neutral-700">Role:</span> {getRoleLabel(detailsUser)}</p>
-              <p><span className="font-medium text-neutral-700">Statut:</span> {statusLabel(detailsUser)}</p>
-              <p><span className="font-medium text-neutral-700">Provider:</span> {detailsUser.provider || '-'}</p>
-              <p><span className="font-medium text-neutral-700">Inscription:</span> {formatDate(detailsUser.date_joined)}</p>
-              <p><span className="font-medium text-neutral-700">Derniere connexion:</span> {formatDateTime(detailsUser.last_login_at)}</p>
+              <p><span className="font-medium text-neutral-700">{t('admin.role')}:</span> {getRoleLabel(detailsUser, t)}</p>
+              <p><span className="font-medium text-neutral-700">{t('admin.status')}:</span> {statusLabel(detailsUser, t)}</p>
+              <p><span className="font-medium text-neutral-700">{t('admin.provider')}:</span> {detailsUser.provider || '-'}</p>
+              <p><span className="font-medium text-neutral-700">{t('admin.joined')}:</span> {formatDate(detailsUser.date_joined)}</p>
+              <p><span className="font-medium text-neutral-700">{t('admin.lastLogin')}:</span> {formatDateTime(detailsUser.last_login_at)}</p>
               {detailsUser.suspension_reason ? (
-                <p><span className="font-medium text-neutral-700">Motif suspension:</span> {detailsUser.suspension_reason}</p>
+                <p><span className="font-medium text-neutral-700">{t('admin.suspensionReason')}:</span> {detailsUser.suspension_reason}</p>
               ) : null}
             </div>
             <div className="flex justify-end border-t border-neutral-200 px-6 py-4">
               <Button type="button" variant="outline" onClick={() => setDetailsUser(null)}>
-                Fermer
+                {t('common.close') || 'Close'}
               </Button>
             </div>
           </div>

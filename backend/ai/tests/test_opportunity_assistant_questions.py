@@ -374,3 +374,38 @@ class OpportunityAssistantQuestionViewTests(APITestCase):
         self.assertEqual(response.data["action"], "full_fit_analysis")
         generate_resume_match_analysis.assert_called_once()
         answer_question.assert_not_called()
+
+    @patch("ai.views.build_resume_match_evidence")
+    @patch("ai.views.answer_opportunity_question")
+    @patch("ai.views.generate_resume_match_analysis")
+    def test_skill_question_with_correspondent_stays_a_free_question(
+        self,
+        generate_resume_match_analysis,
+        answer_question,
+        build_evidence,
+    ):
+        self.client.force_authenticate(self.user)
+        build_evidence.return_value = {
+            "status": READY_STATUS,
+            "has_resume": True,
+            "resume": {"id": 14, "updated_at": "2026-06-05T10:00:00Z"},
+            "match": {},
+            "opportunity": {},
+        }
+        answer_question.return_value = {
+            "answer": "La saisie comptable et Excel correspondent directement.",
+            "answered": True,
+            "provider": "gemini",
+            "model": "gemini-test",
+        }
+
+        response = self.client.post(
+            self.url,
+            {"question": "Quelles compétences de mon CV correspondent directement aux missions ?"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["source"], "llm")
+        answer_question.assert_called_once()
+        generate_resume_match_analysis.assert_not_called()

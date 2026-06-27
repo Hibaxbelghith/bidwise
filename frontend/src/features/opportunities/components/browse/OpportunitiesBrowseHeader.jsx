@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Sparkles } from 'lucide-react';
 
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 
 const getUserDisplayName = (user) => {
   const profileName = [user?.profil?.prenom, user?.profil?.nom].filter(Boolean).join(' ').trim();
@@ -11,6 +12,7 @@ const getUserDisplayName = (user) => {
 
 const OpportunitiesBrowseHeader = ({ isUserAuthenticated, authLoading = false, user }) => {
   const displayName = getUserDisplayName(user);
+  const { t } = useLanguage();
 
   if (authLoading || isUserAuthenticated) {
     return null;
@@ -23,15 +25,13 @@ const OpportunitiesBrowseHeader = ({ isUserAuthenticated, authLoading = false, u
           <div className="max-w-3xl">
             <p className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
               <Sparkles className="h-4 w-4" />
-              BidWise Opportunity Explorer
+              {t('opportunities.explorer')}
             </p>
             <h1 className="text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">
-              Find multi-source opportunities that match you
+              {t('opportunities.explorerTitle')}
             </h1>
             <p className="mt-2 max-w-2xl text-base leading-7 text-neutral-700">
-              Browse jobs, internships and calls for tenders aggregated from multiple
-              sources or jump right in and create a free profile to find the opportunities that fit
-              you best.
+              {t('opportunities.explorerDesc')}
             </p>
           </div>
 
@@ -41,7 +41,7 @@ const OpportunitiesBrowseHeader = ({ isUserAuthenticated, authLoading = false, u
             className="group w-full !bg-blue-600 !text-white shadow-lg shadow-blue-600/20 ring-1 ring-blue-500/20 hover:!bg-blue-700 hover:shadow-blue-600/30 sm:w-auto"
           >
             <Link to="/login">
-              Get Personalized Matches
+              {t('opportunities.personalizedMatches')}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </Button>

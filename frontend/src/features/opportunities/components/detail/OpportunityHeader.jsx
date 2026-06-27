@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '../../../../components/ui/badge.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
 import RecommendationMatchBadge from '../recommendations/RecommendationMatchBadge.jsx';
 import { hasDisplayValue } from '../../utils/opportunityHelpers.js';
@@ -21,7 +22,10 @@ const OpportunityHeader = ({
   companyLogo,
   recommendation,
   onBack,
-}) => (
+}) => {
+  const { t } = useLanguage();
+
+  return (
   <header className="border-b border-neutral-200 bg-white">
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
       <button
@@ -30,7 +34,7 @@ const OpportunityHeader = ({
         onClick={onBack}
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to opportunities
+        {t('opportunities.detail.backToOpportunities')}
       </button>
 
       <div className="mt-5 flex items-start gap-4">
@@ -61,12 +65,12 @@ const OpportunityHeader = ({
             ) : null}
             <span className="inline-flex items-center gap-1.5">
               <Calendar className="h-4 w-4" />
-              Published: {publishedDateLabel}
+              {t('opportunities.detail.published')}: {publishedDateLabel}
             </span>
             {deadlineDateLabel ? (
               <span className="inline-flex items-center gap-1.5">
                 <Calendar className="h-4 w-4" />
-                Deadline: {deadlineDateLabel}
+                {t('opportunities.detail.deadline')}: {deadlineDateLabel}
               </span>
             ) : null}
           </div>
@@ -74,6 +78,7 @@ const OpportunityHeader = ({
       </div>
     </div>
   </header>
-);
+  );
+};
 
 export default OpportunityHeader;

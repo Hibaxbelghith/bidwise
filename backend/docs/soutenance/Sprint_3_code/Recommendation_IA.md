@@ -50,10 +50,27 @@ Le candidat renseigne:
 - type d'opportunite: `Jobs`;
 - localisations preferees: Tunis, Sousse, Sfax, etc.;
 - modes de travail: remote, hybrid, on-site;
-- contrats: CDI, CDD, SIVP, Freelance;
+- contrats: CDI, CDD;
 - experience: junior, 2 ans;
-- secteur: `Accounting / Finance / Audit`;
-- competences: comptabilite generale, saisie comptable, rapprochements bancaires, facturation, declarations fiscales, Excel, Sage, ERP.
+- secteur: `Accounting / Audit`;
+- competences:
+  comptabilite generale, saisie comptable, rapprochements bancaires,
+  declarations fiscales, gestion des pieces comptables, facturation,
+  suivi des paiements, relances clients, preparation de cloture mensuelle,
+  reporting comptable, classement et archivage, lettrage des comptes,
+  Excel, Word, PowerPoint, Sage Comptabilite, Ciel Compta, ERP.
+
+Le CV de demo renforce ce profil avec:
+
+- titre: `Comptable Junior`;
+- roles recherches:
+  `Comptable Junior`, `Assistant Comptable`, `Aide Comptable`,
+  `Comptable Fournisseurs`, `Comptable Clients`;
+- experience en cabinet comptable a Tunis;
+- stage comptable a Ariana;
+- preferences plus larges mentionnees dans le CV (`SIVP`, `Ariana`, `Ben Arous`,
+  `sur site`, `hybride`) qui ne sont pas toutes reprises dans le profil
+  charge pour la demonstration finale.
 
 Ces donnees sont stockees dans le profil candidat et servent a construire les features utilisateur.
 
@@ -279,7 +296,7 @@ Il faut la presenter comme une bonne opportunite a verifier, pas comme le match 
 
 ### Pourquoi certaines offres sont en Related ?
 
-Une offre comme `Auditeur Interne` partage la famille comptable/audit et certaines competences, mais le role n'est pas exactement `Comptable Junior`. Elle reste donc pertinente, mais avec verification humaine.
+Une offre comme `Auditeur Interne` partage la famille comptable/audit et certaines competences, mais le role n'est pas exactement `Comptable`. Elle reste donc pertinente, mais avec verification humaine.
 
 ## Qualite, limites et defense
 

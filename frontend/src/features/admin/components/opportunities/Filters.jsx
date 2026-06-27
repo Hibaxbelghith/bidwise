@@ -12,12 +12,14 @@ import {
 const Filters = ({
   searchDraft,
   source,
+  status,
   sources,
   isLoading,
   isSourcesLoading,
   onSearchDraftChange,
   onSearchSubmit,
   onSourceChange,
+  onStatusChange,
 }) => (
   <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
     <div>
@@ -50,6 +52,21 @@ const Filters = ({
               {option.nom}
             </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+      <Select value={status} onValueChange={onStatusChange}>
+        <SelectTrigger className="sm:w-48">
+          <span />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="">All statuses</SelectItem>
+          <SelectItem value="ACTIVE">Active</SelectItem>
+          <SelectItem value="PENDING_REVIEW">Pending review</SelectItem>
+          <SelectItem value="REJECTED">Rejected</SelectItem>
+          <SelectItem value="SUSPENDUE">Suspended</SelectItem>
+          <SelectItem value="FERMEE">Closed</SelectItem>
+          <SelectItem value="EXPIREE">Expired</SelectItem>
+          <SelectItem value="ARCHIVEE">Archived</SelectItem>
         </SelectContent>
       </Select>
       <Button type="submit" disabled={isLoading}>

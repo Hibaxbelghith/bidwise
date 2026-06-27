@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import OpportunitiesBrowseSkeleton, {
   FetchingSkeletonBanner,
   SkeletonOpportunityCard,
@@ -142,6 +143,7 @@ const ForYouFeed = ({
   onResetFilters,
   onRetry,
 }) => {
+  const { t } = useLanguage();
   const feedItems = useMemo(() => {
     if (!isUserAuthenticated) return [];
     if (profileRecommendationTier === 'insufficient') return [];
@@ -228,8 +230,8 @@ const ForYouFeed = ({
         isUserAuthenticated={isUserAuthenticated}
         hasActiveFilters={hasActiveFilters}
         onResetFilters={onResetFilters}
-        title="Your profile needs more signal before For You can rank opportunities."
-        description="Complete your profile to at least 40% so BidWise AI can rank opportunities using your roles, preferences, experience, and profile context instead of recency."
+        title={t('opportunities.profileNeedsSignal')}
+        description={t('opportunities.profileNeedsSignalDesc')}
       />
     );
   }
@@ -240,12 +242,12 @@ const ForYouFeed = ({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-neutral-950">
-              {isTenderFeed ? 'Your call-for-tender recommendation feed' : 'Your AI recommendation feed'}
+              {isTenderFeed ? t('opportunities.tenderFeed') : t('opportunities.aiFeed')}
             </p>
             <p className="mt-1 text-sm text-neutral-600">
               {isTenderFeed
-                ? 'High-priority tenders are shown first using your regions, tender categories, and semantic similarity.'
-                : 'Strong matches are shown first. Lower-confidence opportunities stay separated so you can review them without inflated scores.'}
+                ? t('opportunities.tenderFeedDesc')
+                : t('opportunities.aiFeedDesc')}
             </p>
           </div>
         </div>
@@ -253,10 +255,9 @@ const ForYouFeed = ({
 
       {showPartialWarning ? (
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Partial recommendations</p>
+          <p className="font-semibold">{t('opportunities.partialRecommendations')}</p>
           <p className="mt-1 leading-6">
-            Your profile is {profileCompletionScore}% complete, so these matches use the strongest
-            available signals. Add more role, preference, experience, or resume context to improve ranking quality.
+            {t('opportunities.partialDesc', { score: profileCompletionScore })}
           </p>
         </div>
       ) : null}
@@ -271,7 +272,7 @@ const ForYouFeed = ({
             <p>{error}</p>
             {onRetry ? (
               <Button type="button" variant="outline" onClick={onRetry}>
-                Retry
+                {t('opportunities.retry')}
               </Button>
             ) : null}
           </div>
@@ -286,13 +287,13 @@ const ForYouFeed = ({
           onResetFilters={onResetFilters}
           title={
             hasOnlyFallbackRecommendations && resumeStillPreparing
-              ? 'Your AI matches are being prepared.'
-              : 'No AI-qualified matches yet.'
+              ? t('opportunities.matchesPreparing')
+              : t('opportunities.noQualified')
           }
           description={
             hasOnlyFallbackRecommendations && resumeStillPreparing
-              ? 'BidWise has recent opportunities, but your personalized profile signals are still updating. Try again in a moment.'
-              : 'We filtered out weak or recency-only results. Add more profile signals or check Explore while BidWise gathers stronger evidence.'
+              ? t('opportunities.preparingDesc')
+              : t('opportunities.weakFilteredDesc')
           }
         />
       ) : null}
@@ -302,11 +303,11 @@ const ForYouFeed = ({
           <div className="space-y-3 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-2">
             {strongMatchItems.length > 0 ? (
               <FeedSection
-                title={isTenderFeed ? 'Strong priorities' : 'Strong matches'}
+                title={isTenderFeed ? t('opportunities.strongPriorities') : t('opportunities.strongMatches')}
                 description={
                   isTenderFeed
-                    ? 'Best aligned with your tender categories, regions, and project context.'
-                    : 'Best aligned with your role, skills, CV, and preferences.'
+                    ? t('opportunities.strongTenderDesc')
+                    : t('opportunities.strongMatchesDesc')
                 }
                 items={strongMatchItems}
                 selectedOpportunity={selectedOpportunity}
@@ -319,20 +320,20 @@ const ForYouFeed = ({
                 title={
                   isTenderFeed
                     ? strongMatchItems.length > 0
-                      ? 'Tenders to monitor'
-                      : 'Tender priorities'
+                      ? t('opportunities.tendersMonitor')
+                      : t('opportunities.tenderPriorities')
                     : strongMatchItems.length > 0
-                      ? 'Related opportunities to review'
-                      : 'Related opportunities'
+                      ? t('opportunities.relatedReview')
+                      : t('opportunities.relatedOpportunities')
                 }
                 description={
                   isTenderFeed
                     ? strongMatchItems.length > 0
-                      ? 'Relevant tenders kept separate because they need manual review before action.'
-                      : 'Best active tenders based on your categories and regions.'
+                      ? t('opportunities.tendersMonitorDesc')
+                      : t('opportunities.tenderPrioritiesDesc')
                     : strongMatchItems.length > 0
-                    ? 'Lower-confidence matches kept separate because they need a human check.'
-                    : 'No strong match is available yet, so these are the safest related opportunities to inspect.'
+                    ? t('opportunities.relatedReviewDesc')
+                    : t('opportunities.relatedDesc')
                 }
                 items={relatedReviewItems}
                 selectedOpportunity={selectedOpportunity}

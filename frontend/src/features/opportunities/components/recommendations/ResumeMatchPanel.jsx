@@ -1,4 +1,4 @@
-import { AlertCircle, FileText, Loader2, Maximize2, Upload, X, Minimize2 } from 'lucide-react';
+import { AlertCircle, FileText, Maximize2, Upload, X, Minimize2 } from 'lucide-react';
 import { Button } from '../../../../components/ui/button.jsx';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -11,9 +11,11 @@ import {
   OpportunityAssistantMessages,
 } from './OpportunityAssistantChat.jsx';
 import { ALLOWED_RESUME_ACCEPT } from '../../../profile/profileValidation.js';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
+import { downloadCoverLetterDocx, downloadOptimizedAtsCv } from '../../services/opportunitiesService.js';
 
-const getResumeFileName = (resume) =>
-  resume?.metadata?.original_filename || resume?.file?.name || 'Uploaded resume';
+const getResumeFileName = (resume, fallback = 'Uploaded resume') =>
+  resume?.metadata?.original_filename || resume?.file?.name || fallback;
 
 const getResumeUrl = (resume) => resume?.file_url || resume?.previewUrl || '';
 
@@ -30,50 +32,53 @@ const getAnalysisMarkdown = (resumeMatch, aiAnalysis) =>
   resumeMatch?.analysis_markdown ||
   '';
 
-const getStatusMessage = (resumeMatch) => {
+const getStatusMessage = (resumeMatch, t) => {
   if (!resumeMatch) return '';
   if (resumeMatch.has_resume === false) {
-    return 'Upload your resume to compare it with this opportunity.';
+    return t('opportunities.detail.uploadResumeToCompare');
     }
   if (resumeMatch.status && resumeMatch.status !== 'READY') {
-    return 'Your resume is still being processed. Try again once the resume analysis is ready.';
+    return t('opportunities.detail.resumeProcessing');
   }
   return '';
 };
 
-const ACTION_LABELS = {
-  optimize_cv: 'Optimize my CV for this role',
-  rewrite_summary: 'Rewrite professional summary',
-  generate_cover_letter: 'Generate motivation letter',
-  interview_prep: 'Prepare HR interview questions',
-};
+const getActionLabels = (t) => ({
+  optimize_cv: t('opportunities.detail.optimizeCv'),
+  rewrite_summary: t('opportunities.detail.rewriteSummary'),
+  generate_cover_letter: t('opportunities.detail.generateCoverLetter'),
+  interview_prep: t('opportunities.detail.interviewPrep'),
+});
 
-const ACTION_LOADING_MESSAGES = {
-  optimize_cv: 'Optimizing your CV for this role...',
-  rewrite_summary: 'Rewriting your professional summary...',
-  generate_cover_letter: 'Generating your motivation letter...',
-  interview_prep: 'Preparing interview questions...',
-};
+const getActionLoadingMessages = (t) => ({
+  optimize_cv: t('opportunities.detail.optimizingCv'),
+  rewrite_summary: t('opportunities.detail.rewritingSummary'),
+  generate_cover_letter: t('opportunities.detail.generatingCoverLetter'),
+  interview_prep: t('opportunities.detail.preparingInterview'),
+});
 
-const ACTION_SUGGESTIONS = [
-  { key: 'optimize_cv', label: 'Optimize my CV for this role' },
-  { key: 'rewrite_summary', label: 'Rewrite my professional summary' },
-  { key: 'generate_cover_letter', label: 'Generate a motivation letter' },
-  { key: 'interview_prep', label: 'Prepare HR interview questions' },
+const getActionSuggestions = (t) => [
+  { key: 'optimize_cv', label: t('opportunities.detail.optimizeCv') },
+  { key: 'rewrite_summary', label: t('opportunities.detail.rewriteMySummary') },
+  { key: 'generate_cover_letter', label: t('opportunities.detail.generateAMotivationLetter') },
+  { key: 'interview_prep', label: t('opportunities.detail.interviewPrep') },
 ];
 
-const ANALYSIS_STEPS = [
-  'Reading resume signals',
-  'Comparing job requirements',
-  'Checking ATS keywords',
-  'Preparing recommendations',
+const getAnalysisSteps = (t) => [
+  t('opportunities.detail.readingResumeSignals'),
+  t('opportunities.detail.comparingJobRequirements'),
+  t('opportunities.detail.checkingAtsKeywords'),
+  t('opportunities.detail.preparingRecommendations'),
 ];
 
-const ACTION_STEPS = {
-  optimize_cv: ['Reviewing resume sections', 'Prioritizing ATS keywords', 'Drafting stronger CV wording'],
-  rewrite_summary: ['Reading profile evidence', 'Selecting safe keywords', 'Writing summary options'],
-  generate_cover_letter: ['Mapping your strengths', 'Personalizing the letter', 'Preparing short version'],
-  interview_prep: ['Scanning role gaps', 'Drafting likely questions', 'Building answer strategy'],
+const getActionSteps = (t) => {
+  const analysisSteps = getAnalysisSteps(t);
+  return {
+    optimize_cv: analysisSteps,
+    rewrite_summary: analysisSteps,
+    generate_cover_letter: analysisSteps,
+    interview_prep: analysisSteps,
+  };
 };
 
 const ResumeMatchPanel = ({
@@ -98,10 +103,15 @@ const ResumeMatchPanel = ({
   chatError = '',
   onSendQuestion,
 }) => {
+  const { t } = useLanguage();
   const [isMinimized, setIsMinimized] = useState(false);
   const [pendingSuggestionKey, setPendingSuggestionKey] = useState('');
+  const [downloadLoadingId, setDownloadLoadingId] = useState('');
+  const [downloadError, setDownloadError] = useState('');
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const latestActionRef = useRef(null);
+  const latestChatThreadRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
   const deterministicMarkdown = getAnalysisMarkdown(resumeMatch, null);
@@ -128,7 +138,7 @@ const ResumeMatchPanel = ({
         .filter((item) => item.markdown)
     : [];
   const fallbackMessage = isAiFallback && resumeMatchReady && !hasNoResume
-    ? aiAnalysis?.error || 'Full AI analysis is not available right now. Showing quick analysis instead.'
+    ? aiAnalysis?.error || t('opportunities.detail.fullAiUnavailable')
     : '';
   const shouldShowDeterministic =
     Boolean(deterministicMarkdown) &&
@@ -137,7 +147,12 @@ const ResumeMatchPanel = ({
     !aiMarkdown &&
     !aiLoading &&
     !loading;
-  const statusMessage = getStatusMessage(resumeMatch);
+  const statusMessage = getStatusMessage(resumeMatch, t);
+  const actionLabels = getActionLabels(t);
+  const actionLoadingMessages = getActionLoadingMessages(t);
+  const actionSuggestions = getActionSuggestions(t);
+  const analysisSteps = getAnalysisSteps(t);
+  const actionSteps = getActionSteps(t);
   const uploadBusy =
     uploadState?.status === 'uploading' ||
     uploadState?.status === 'confirming' ||
@@ -145,17 +160,81 @@ const ResumeMatchPanel = ({
   const uploadProcessing = uploadState?.status === 'processing';
   const pendingResume = uploadState?.resume || null;
 
-  // Auto-scroll to bottom when new content arrives
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+  const handleDownloadOptimizedCv = async (message) => {
+    const opportunityId = resumeMatch?.evidence?.opportunity?.id || resumeMatch?.opportunity_id;
+    if (!message?.content || !opportunityId) {
+      return;
     }
+    setDownloadError('');
+    setDownloadLoadingId(message.id);
+    try {
+      const { blob, filename } = await downloadOptimizedAtsCv(opportunityId, message.content);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setDownloadError(
+        requestError?.response?.data?.detail ||
+          requestError?.message ||
+          'Could not generate the DOCX file.',
+      );
+    } finally {
+      setDownloadLoadingId('');
+    }
+  };
+
+  const handleDownloadCoverLetter = async (message) => {
+    const opportunityId = resumeMatch?.evidence?.opportunity?.id || resumeMatch?.opportunity_id;
+    if (!message?.content || !opportunityId) {
+      return;
+    }
+    setDownloadError('');
+    setDownloadLoadingId(message.id);
+    try {
+      const { blob, filename } = await downloadCoverLetterDocx(opportunityId, message.content);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setDownloadError(
+        requestError?.response?.data?.detail ||
+          requestError?.message ||
+          'Could not generate the DOCX file.',
+      );
+    } finally {
+      setDownloadLoadingId('');
+    }
+  };
+
+  // Keep the user at the start of the newest generated block, not at the composer.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [
     deterministicMarkdown,
     aiMarkdown,
-    actionMessages.length,
     aiLoading,
+  ]);
+
+  useEffect(() => {
+    latestActionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [
+    actionMessages.length,
     actionLoading,
+  ]);
+
+  useEffect(() => {
+    latestChatThreadRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [
     chatMessages.length,
     chatLoading,
   ]);
@@ -168,16 +247,16 @@ const ResumeMatchPanel = ({
           className="flex w-[560px] max-w-[calc(100vw-2rem)] animate-in fade-in slide-in-from-bottom-2 items-center justify-between rounded-2xl bg-white px-5 py-3 shadow-lg ring-1 ring-gray-200 transition-all duration-300 hover:shadow-xl hover:ring-gray-300"
         >
           <div className="flex flex-col items-start">
-            <span className="text-base font-semibold text-gray-900">BidWise AI</span>
-            <span className="text-[10px] text-gray-400">Beta</span>
+            <span className="text-base font-semibold text-gray-900">{t('opportunities.detail.bidwiseAi')}</span>
+            <span className="text-[10px] text-gray-400">{t('opportunities.detail.beta')}</span>
           </div>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setIsMinimized(false)}
               className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
-              aria-label="Open BidWise AI"
-              title="Open"
+              aria-label={t('opportunities.detail.openBidwiseAi')}
+              title={t('opportunities.detail.open')}
             >
               <Maximize2 className="h-4 w-4" />
             </button>
@@ -185,8 +264,8 @@ const ResumeMatchPanel = ({
               type="button"
               onClick={onClose}
               className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
-              aria-label="Close BidWise AI"
-              title="Close"
+              aria-label={t('opportunities.detail.closeBidwiseAi')}
+              title={t('opportunities.detail.close')}
             >
               <X className="h-4 w-4" />
             </button>
@@ -207,22 +286,22 @@ const ResumeMatchPanel = ({
         <header className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white px-5 py-3">
           <div className="flex items-center gap-2">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">BidWise AI</h3>
-              <p className="text-[10px] uppercase tracking-wide text-gray-400">Beta</p>
+              <h3 className="text-sm font-semibold text-gray-900">{t('opportunities.detail.bidwiseAi')}</h3>
+              <p className="text-[10px] uppercase tracking-wide text-gray-400">{t('opportunities.detail.beta')}</p>
             </div>
           </div>
           <div className="flex items-center gap-0.5">
             <button
               onClick={() => setIsMinimized(true)}
               className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-              aria-label="Minimize"
+              aria-label={t('opportunities.detail.minimize')}
             >
               <Minimize2 className="h-3.5 w-3.5" />
             </button>
             <button
               onClick={onClose}
               className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-              aria-label="Close"
+              aria-label={t('opportunities.detail.close')}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -238,7 +317,7 @@ const ResumeMatchPanel = ({
             {!hasNoResume && resumeMatch ? (
               <div className="mb-4 flex justify-end">
                 <div className="max-w-[85%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-2">
-                  <p className="text-sm text-white">Is my resume a good match for this role?</p>
+                  <p className="text-sm text-white">{t('opportunities.detail.resumeGoodMatchQuestion')}</p>
                 </div>
               </div>
             ) : null}
@@ -249,12 +328,11 @@ const ResumeMatchPanel = ({
 
                 {hasNoResume ? (
                   <div className="rounded-2xl rounded-tl-md bg-white px-5 py-4 shadow-sm ring-1 ring-gray-100">
-                    <h4 className="text-base font-semibold text-gray-950">Hi! Welcome to BidWise AI</h4>
+                    <h4 className="text-base font-semibold text-gray-950">{t('opportunities.detail.welcomeAi')}</h4>
                     <p className="mt-2 text-sm leading-6 text-gray-700">
-                      Powered by thousands of opportunities listings, I can bring you smarter recommendations
-                      and streamline your career research.
+                      {t('opportunities.detail.welcomeAiBody')}
                     </p>
-                    <p className="mt-3 text-sm font-medium text-gray-900">Let's get started!</p>
+                    <p className="mt-3 text-sm font-medium text-gray-900">{t('opportunities.detail.letsGetStarted')}</p>
 
                     <input
                       ref={fileInputRef}
@@ -278,7 +356,10 @@ const ResumeMatchPanel = ({
 
                     {uploadState?.status === 'uploading' ? (
                       <div className="mt-4">
-                        <ThinkingLoader label="Uploading your resume" steps={['Uploading file', 'Preparing preview']} />
+                        <ThinkingLoader
+                          label={t('opportunities.detail.uploadingResume')}
+                          steps={[t('opportunities.detail.uploadingFile'), t('opportunities.detail.preparingPreview')]}
+                        />
                       </div>
                     ) : null}
 
@@ -289,7 +370,7 @@ const ResumeMatchPanel = ({
                       className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                     >
                       <Upload className="mr-2 inline h-4 w-4" />
-                      Upload your resume
+                      {t('profile.uploadResume')}
                     </button>
                   </div>
                 ) : null}
@@ -298,12 +379,12 @@ const ResumeMatchPanel = ({
                   <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 px-4 py-6">
                     <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white shadow-2xl">
                       <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
-                        <h3 className="text-base font-semibold text-neutral-950">Resume preview</h3>
+                        <h3 className="text-base font-semibold text-neutral-950">{t('opportunities.detail.resumePreview')}</h3>
                         <button
                           type="button"
                           onClick={onCancelResumeUpload}
                           className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-                          aria-label="Close resume preview"
+                          aria-label={t('opportunities.detail.closeResumePreview')}
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -312,13 +393,13 @@ const ResumeMatchPanel = ({
                         <div className="flex items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3">
                           <FileText className="h-5 w-5 text-neutral-500" />
                           <p className="min-w-0 truncate text-sm font-medium text-neutral-900">
-                            {getResumeFileName(pendingResume)}
+                            {getResumeFileName(pendingResume, t('opportunities.detail.uploadedResume'))}
                           </p>
                         </div>
 
                         {getResumeUrl(pendingResume) && isPreviewableInline(pendingResume) ? (
                           <iframe
-                            title={`Resume preview - ${getResumeFileName(pendingResume)}`}
+                            title={`${t('opportunities.detail.resumePreview')} - ${getResumeFileName(pendingResume, t('opportunities.detail.uploadedResume'))}`}
                             src={getResumeUrl(pendingResume)}
                             referrerPolicy="no-referrer"
                             className="h-80 w-full rounded-md border border-neutral-200 bg-white"
@@ -328,10 +409,10 @@ const ResumeMatchPanel = ({
                             <div>
                               <FileText className="mx-auto h-10 w-10 text-neutral-400" />
                               <p className="mt-3 text-sm font-medium text-neutral-900">
-                                {getResumeFileName(pendingResume)}
+                                {getResumeFileName(pendingResume, t('opportunities.detail.uploadedResume'))}
                               </p>
                               <p className="mt-1 text-sm text-neutral-500">
-                                This file is ready to use. Confirm it to attach it to your profile.
+                                {t('opportunities.detail.fileReadyUse')}
                               </p>
                             </div>
                           </div>
@@ -339,7 +420,7 @@ const ResumeMatchPanel = ({
 
                         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                           <Button type="button" variant="outline" onClick={onCancelResumeUpload}>
-                            Cancel
+                            {t('common.cancel')}
                           </Button>
                           <Button
                             type="button"
@@ -347,7 +428,7 @@ const ResumeMatchPanel = ({
                             onClick={onConfirmResumeUpload}
                             disabled={uploadState?.status === 'confirming'}
                           >
-                            {uploadState?.status === 'confirming' ? 'Confirming...' : 'Looks good'}
+                            {uploadState?.status === 'confirming' ? t('opportunities.detail.confirming') : t('opportunities.detail.looksGood')}
                           </Button>
                         </div>
                       </div>
@@ -357,7 +438,7 @@ const ResumeMatchPanel = ({
 
                 {/* Loading */}
                 {!hasNoResume && (loading || uploadProcessing) && !aiMarkdown && !shouldShowDeterministic && (
-                  <ThinkingLoader label="BidWise AI is reading your resume" />
+                  <ThinkingLoader label={t('opportunities.detail.aiReadingResume')} />
                 )}
 
                 {/* Error */}
@@ -387,7 +468,7 @@ const ResumeMatchPanel = ({
 
                 {/* AI Analysis Loading */}
                 {resumeMatchReady && !hasNoResume && aiLoading && (
-                  <ThinkingLoader label="BidWise AI is building the match analysis" />
+                  <ThinkingLoader label={t('opportunities.detail.aiBuildingMatch')} />
                 )}
 
                 {/* AI Analysis Error */}
@@ -416,11 +497,15 @@ const ResumeMatchPanel = ({
                 )}
 
                 {/* Follow-up action results */}
-                {actionMessages.map((message) => (
-                  <div key={message.id} className="mt-4">
+                {actionMessages.map((message, index) => (
+                  <div
+                    key={message.id}
+                    ref={index === actionMessages.length - 1 ? latestActionRef : null}
+                    className="mt-4 scroll-mt-4"
+                  >
                     <div className="mb-3 flex justify-end">
                       <div className="max-w-[85%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-2">
-                        <p className="text-sm text-white">{ACTION_LABELS[message.action] || 'Run AI assistant action'}</p>
+                        <p className="text-sm text-white">{actionLabels[message.action] || t('opportunities.detail.runAiAction')}</p>
                       </div>
                     </div>
                     <div className="rounded-2xl rounded-tl-md bg-white px-5 py-4 shadow-sm ring-1 ring-emerald-100">
@@ -434,15 +519,15 @@ const ResumeMatchPanel = ({
 
                 {/* Follow-up action loading */}
                 {resumeMatchReady && !hasNoResume && actionLoading && (
-                  <div className="mt-4">
+                  <div ref={latestActionRef} className="mt-4 scroll-mt-4">
                     <div className="mb-3 flex justify-end">
                       <div className="max-w-[85%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-2">
-                        <p className="text-sm text-white">{ACTION_LABELS[actionLoading] || 'Run AI assistant action'}</p>
+                        <p className="text-sm text-white">{actionLabels[actionLoading] || t('opportunities.detail.runAiAction')}</p>
                       </div>
                     </div>
                     <ThinkingLoader
-                      label={ACTION_LOADING_MESSAGES[actionLoading] || 'BidWise AI is working'}
-                      steps={ACTION_STEPS[actionLoading] || ANALYSIS_STEPS}
+                      label={actionLoadingMessages[actionLoading] || t('opportunities.detail.aiWorking')}
+                      steps={actionSteps[actionLoading] || analysisSteps}
                     />
                   </div>
                 )}
@@ -459,11 +544,24 @@ const ResumeMatchPanel = ({
                   messages={chatMessages}
                   loading={chatLoading}
                   error={chatError}
+                  onDownloadOptimizedCv={handleDownloadOptimizedCv}
+                  onDownloadCoverLetter={handleDownloadCoverLetter}
+                  downloadLoadingId={downloadLoadingId}
+                  threadStartRef={latestChatThreadRef}
                 />
+
+                {downloadError ? (
+                  <div className="mt-3 flex gap-2 rounded-2xl rounded-tl-md bg-amber-50 px-4 py-2.5 ring-1 ring-amber-100">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                    <span className="text-sm text-amber-600">{downloadError}</span>
+                  </div>
+                ) : null}
+
+                <div ref={messagesEndRef} />
 
                 {resumeMatchReady && !hasNoResume && (aiMarkdown || shouldShowDeterministic) && (
                   <div className="mt-4 space-y-2">
-                    {ACTION_SUGGESTIONS.map((suggestion) => (
+                    {actionSuggestions.map((suggestion) => (
                       <button
                         key={suggestion.key}
                         type="button"
@@ -483,16 +581,12 @@ const ResumeMatchPanel = ({
                           }
                         }}
                       >
-                        {pendingSuggestionKey === suggestion.key ? (
-                          <Loader2 className="mr-2 h-3.5 w-3.5 shrink-0 animate-spin text-blue-600" />
-                        ) : null}
                         <span>{suggestion.label}</span>
                       </button>
                     ))}
                   </div>
                 )}
 
-                <div ref={messagesEndRef} />
               </div>
             </div>
           </div>

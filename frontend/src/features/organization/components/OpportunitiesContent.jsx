@@ -3,6 +3,7 @@ import { FilePlus2 } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
 import OrganizationOpportunitiesTable from './OrganizationOpportunitiesTable.jsx';
 import OpportunitiesStats from './OpportunitiesStats.jsx';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const OpportunitiesContent = ({
   isLoading,
@@ -13,12 +14,13 @@ const OpportunitiesContent = ({
   onStatusAction,
   onResetFilters,
 }) => {
+  const { t } = useLanguage();
   if (isLoading) {
     return (
       <div className="flex min-h-[560px] flex-col items-center justify-center px-6 py-12 text-center">
         <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-600 shadow-sm">
           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue-700" />
-          Loading your published opportunities
+          {t('organization.loadingPublishedOpportunities')}
         </div>
       </div>
     );
@@ -46,13 +48,13 @@ const OpportunitiesContent = ({
       <div className="flex min-h-[560px] flex-col items-center justify-center px-6 py-12 text-center">
         <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 p-6">
           <p className="text-sm text-neutral-600">
-            No opportunities match the selected filters.
+            {t('organization.noOpportunitiesMatchFilters')}
           </p>
           <button
             onClick={onResetFilters}
             className="mt-3 text-sm text-blue-700 font-semibold hover:text-blue-800"
           >
-            Reset all filters
+            {t('organization.resetAllFilters')}
           </button>
         </div>
       </div>
@@ -71,16 +73,15 @@ const OpportunitiesContent = ({
         </div>
       </div>
       <h2 className="max-w-4xl text-2xl font-semibold text-neutral-950">
-        Publish your first opportunity and start receiving qualified applications.
+        {t('organization.firstOpportunityTitle')}
       </h2>
       <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-600">
-        Create a job, internship, or seasonal role directly on BidWise. Your organization
-        will be able to manage opportunities and track applications from this workspace.
+        {t('organization.firstOpportunityDesc')}
       </p>
       <Button asChild className="mt-8 h-12 rounded-xl bg-blue-700 px-5 text-white hover:bg-blue-800">
         <Link to="/organization/post">
           <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-          Publish an opportunity
+          {t('organization.publishOpportunity')}
         </Link>
       </Button>
     </div>

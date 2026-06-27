@@ -3,6 +3,7 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import { Search, ChevronDown } from 'lucide-react';
 
 import { Spinner } from '../../../components/ui/spinner.jsx';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import {
   ORGANIZATION_CREATE_ACCOUNT_PATH,
@@ -11,9 +12,10 @@ import {
 import OrganizationSidebar from '../components/OrganizationSidebar.jsx';
 import OrganizationApplicationsTable from '../components/OrganizationApplicationsTable.jsx';
 import { listAllOrganizationApplications } from '../services/organizationService.js';
-import { getApplicationStatusLabel } from '../../applications/applicationStatusUi.js';
+import { getApplicationStatusMeta } from '../../applications/applicationStatusUi.js';
 
 const OrganizationAllApplicationsPage = () => {
+  const { t } = useLanguage();
   const { loading, user } = useAuth();
   const profile = user?.organization_profile;
   const [searchParams] = useSearchParams();
@@ -75,7 +77,7 @@ const OrganizationAllApplicationsPage = () => {
         }
       } catch (err) {
         if (!isCancelled) {
-          setError('Failed to load applications. Please try again.');
+          setError(t('organization.unableLoadApplications'));
           console.error('Error fetching applications:', err);
         }
       } finally {
@@ -89,7 +91,7 @@ const OrganizationAllApplicationsPage = () => {
     return () => {
       isCancelled = true;
     };
-  }, [profile]);
+  }, [profile, t]);
 
 
 
@@ -171,7 +173,7 @@ const OrganizationAllApplicationsPage = () => {
     return (
       <section className="flex min-h-[70vh] items-center justify-center bg-neutral-50 px-4">
         <div className="rounded-lg border border-neutral-200 bg-white px-5 py-4 text-sm text-neutral-600">
-          Loading organization workspace
+          {t('organization.loadingWorkspace')}
         </div>
       </section>
     );
@@ -190,7 +192,7 @@ const OrganizationAllApplicationsPage = () => {
           {/* Header */}
           <div className="border-b border-neutral-200 bg-[#efeeec] px-5 py-4">
             <h1 id="applications-heading" className="text-2xl font-semibold text-neutral-900">
-              {filterParam === 'new' ? 'New Applications' : 'Applications'}
+              {filterParam === 'new' ? t('organization.newApplications') : t('organization.applications')}
             </h1>
           </div>
 
@@ -209,7 +211,7 @@ const OrganizationAllApplicationsPage = () => {
               <div className="flex min-h-[560px] flex-col items-center justify-center px-6 py-12 text-center">
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-6">
                   <p className="text-sm text-neutral-600">
-                    No applications yet.
+                    {t('organization.noApplicationsYet')}
                   </p>
                 </div>
               </div>
@@ -221,7 +223,7 @@ const OrganizationAllApplicationsPage = () => {
                     <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
                     <input
                       type="text"
-                      placeholder="Search by candidate name, email, phone, or opportunity title..."
+                      placeholder={t('organization.searchApplicationsPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-neutral-200 bg-white text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -234,11 +236,11 @@ const OrganizationAllApplicationsPage = () => {
                   {/* Status Filter - Direct Display */}
                   <div className="flex items-center gap-2 flex-wrap">
                     {[
-                      { key: 'SUBMITTED', label: getApplicationStatusLabel('SUBMITTED', 'organization'), count: counts.new },
-                      { key: 'VIEWED_BY_ORGANIZATION', label: getApplicationStatusLabel('VIEWED_BY_ORGANIZATION', 'organization'), count: counts.viewed },
-                      { key: 'SHORTLISTED', label: getApplicationStatusLabel('SHORTLISTED', 'organization'), count: counts.shortlisted },
-                      { key: 'REJECTED', label: getApplicationStatusLabel('REJECTED', 'organization'), count: counts.rejected },
-                      { key: 'WITHDRAWN', label: getApplicationStatusLabel('WITHDRAWN', 'organization'), count: counts.withdrawn },
+                      { key: 'SUBMITTED', label: getApplicationStatusMeta('SUBMITTED', 'organization', t).label, count: counts.new },
+                      { key: 'VIEWED_BY_ORGANIZATION', label: getApplicationStatusMeta('VIEWED_BY_ORGANIZATION', 'organization', t).label, count: counts.viewed },
+                      { key: 'SHORTLISTED', label: getApplicationStatusMeta('SHORTLISTED', 'organization', t).label, count: counts.shortlisted },
+                      { key: 'REJECTED', label: getApplicationStatusMeta('REJECTED', 'organization', t).label, count: counts.rejected },
+                      { key: 'WITHDRAWN', label: getApplicationStatusMeta('WITHDRAWN', 'organization', t).label, count: counts.withdrawn },
                     ].map((status) => (
                       <button
                         key={status.key}
@@ -266,16 +268,16 @@ const OrganizationAllApplicationsPage = () => {
                       onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
                       className="flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-200 bg-white text-sm font-medium hover:bg-neutral-50"
                     >
-                      Sort by
+                      {t('organization.sortBy')}
                       <ChevronDown className="h-4 w-4" />
                     </button>
                     {isSortDropdownOpen && (
                       <div className="absolute top-full right-0 mt-1 z-10 rounded-lg border border-neutral-200 bg-white shadow-lg">
                         {[
-                          { key: 'newest', label: 'Newest first' },
-                          { key: 'oldest', label: 'Oldest first' },
-                          { key: 'name-asc', label: 'Candidate name A-Z' },
-                          { key: 'opportunity-asc', label: 'Opportunity title A-Z' },
+                          { key: 'newest', label: t('organization.sortNewestFirst') },
+                          { key: 'oldest', label: t('organization.sortOldestFirst') },
+                          { key: 'name-asc', label: t('organization.sortCandidateName') },
+                          { key: 'opportunity-asc', label: t('organization.sortOpportunityTitle') },
                         ].map((sort) => (
                           <button
                             key={sort.key}
@@ -298,8 +300,8 @@ const OrganizationAllApplicationsPage = () => {
                   <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center">
                     <p className="text-neutral-600">
                       {searchTerm || selectedStatuses.length < 4
-                        ? 'No applications match your filters.'
-                        : 'No applications yet.'}
+                        ? t('organization.noApplicationsMatchFilters')
+                        : t('organization.noApplicationsYet')}
                     </p>
                   </div>
                 ) : (

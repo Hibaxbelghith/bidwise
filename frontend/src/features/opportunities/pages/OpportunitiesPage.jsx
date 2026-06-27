@@ -3,13 +3,21 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '../../../components/ui/button.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import OpportunitiesExperienceTabs from '../components/browse/OpportunitiesExperienceTabs.jsx';
 import OpportunitiesBrowseFilters from '../components/browse/OpportunitiesBrowseFilters.jsx';
 import OpportunitiesBrowseHeader from '../components/browse/OpportunitiesBrowseHeader.jsx';
 import OpportunitiesBrowseResults from '../components/browse/OpportunitiesBrowseResults.jsx';
+import ExternalApplicationFollowUpDialog from '../components/application/ExternalApplicationFollowUpDialog.jsx';
 import ForYouFeed from '../components/recommendations/ForYouFeed.jsx';
 import { useOpportunitiesBrowse } from '../hooks/useOpportunitiesBrowse.js';
 import { useOpportunityRecommendations } from '../hooks/useOpportunityRecommendations.js';
+import { updateExternalApplicationStatus } from '../services/opportunitiesService.js';
+import {
+  clearPendingExternalApplication,
+  getNextPendingExternalApplication,
+  postponePendingExternalApplication,
+} from '../utils/externalApplicationTracking.js';
 import {
   canUseForYouFeed,
   getProfileRecommendationTier,
@@ -21,6 +29,7 @@ const VISIBLE_PAGE_BUTTONS = 5;
 const OPPORTUNITY_TAB_STORAGE_KEY = 'bidwise:opportunities-active-tab:v1';
 const RECOMMENDATION_ENGINE_VERSION = 'jobbert-hybrid-v3';
 const VALID_TABS = new Set(['for-you', 'explore']);
+const EXTERNAL_CONFIRMED_STATUS = 'EXTERNAL_APPLIED_CONFIRMED';
 
 const isTenderOnlyProfile = (profile) => {
   const types = Array.isArray(profile?.opportunity_types) ? profile.opportunity_types : [];
@@ -91,11 +100,17 @@ const getVisiblePageNumbers = (currentPage, totalPages) => {
 };
 
 const OpportunitiesPage = () => {
+  const { t } = useLanguage();
   const resultsSectionRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(() => getInitialOpportunityTab(location));
+  const [pendingExternalApplication, setPendingExternalApplication] = useState(null);
+  const [externalPromptOpen, setExternalPromptOpen] = useState(false);
+  const [externalPromptBusy, setExternalPromptBusy] = useState(false);
+  const [externalPromptError, setExternalPromptError] = useState('');
   const pendingReturnPositionRef = useRef(null);
+  const externalPromptTimeoutRef = useRef(null);
   const { isAuthenticated, loading: authLoading, user } = useAuth();
   const authPendingWithoutUser = authLoading && !user;
   const isUserAuthenticated = !authPendingWithoutUser && isAuthenticated;
@@ -183,11 +198,130 @@ const OpportunitiesPage = () => {
   const forYouShowFetchingSpinner = recommendationsState.isFetching || recommendationsState.isHydratingDetails;
   const forYouItemsCount = recommendationsState.recommendedOpportunities.length;
 
+  useEffect(() => {
+    if (externalPromptTimeoutRef.current) {
+      clearTimeout(externalPromptTimeoutRef.current);
+      externalPromptTimeoutRef.current = null;
+    }
+
+    if (!isUserAuthenticated) {
+      setPendingExternalApplication(null);
+      setExternalPromptOpen(false);
+      setExternalPromptError('');
+      return undefined;
+    }
+
+    const maybeOpenExternalPrompt = () => {
+      const pending = getNextPendingExternalApplication();
+      setPendingExternalApplication(pending);
+
+      if (!pending || document.visibilityState !== 'visible') {
+        setExternalPromptOpen(false);
+        return;
+      }
+
+      const remainingDelay = (pending.remindAfter || 0) - Date.now();
+      if (remainingDelay > 0) {
+        externalPromptTimeoutRef.current = setTimeout(
+          maybeOpenExternalPrompt,
+          remainingDelay,
+        );
+        return;
+      }
+
+      setExternalPromptOpen(true);
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        maybeOpenExternalPrompt();
+      }
+    };
+
+    maybeOpenExternalPrompt();
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      if (externalPromptTimeoutRef.current) {
+        clearTimeout(externalPromptTimeoutRef.current);
+        externalPromptTimeoutRef.current = null;
+      }
+    };
+  }, [isUserAuthenticated]);
+
+  const handleExternalApplicationConfirmed = async () => {
+    if (!pendingExternalApplication?.applicationId) return;
+
+    try {
+      setExternalPromptBusy(true);
+      setExternalPromptError('');
+      await updateExternalApplicationStatus(
+        pendingExternalApplication.applicationId,
+        EXTERNAL_CONFIRMED_STATUS,
+      );
+      clearPendingExternalApplication(pendingExternalApplication.applicationId);
+      setPendingExternalApplication(null);
+      setExternalPromptOpen(false);
+    } catch (statusError) {
+      setExternalPromptError(
+        statusError?.response?.data?.detail || t('opportunities.unableExternalStatus'),
+      );
+    } finally {
+      setExternalPromptBusy(false);
+    }
+  };
+
+  const handleExternalApplicationNotYet = () => {
+    if (pendingExternalApplication?.applicationId) {
+      clearPendingExternalApplication(pendingExternalApplication.applicationId);
+    }
+    setPendingExternalApplication(null);
+    setExternalPromptError('');
+    setExternalPromptOpen(false);
+  };
+
+  const handleExternalPromptOpenChange = (nextOpen) => {
+    if (nextOpen) {
+      setExternalPromptOpen(true);
+      return;
+    }
+
+    handleExternalApplicationNotYet();
+  };
+
+  const handleExternalApplicationRemindLater = async () => {
+    if (!pendingExternalApplication?.applicationId) return;
+
+    try {
+      setExternalPromptBusy(true);
+      setExternalPromptError('');
+      await updateExternalApplicationStatus(
+        pendingExternalApplication.applicationId,
+        'EXTERNAL_REMIND_LATER',
+      );
+      const postponed = postponePendingExternalApplication(
+        pendingExternalApplication.applicationId,
+        'remind_later',
+      );
+      setPendingExternalApplication(postponed);
+      setExternalPromptOpen(false);
+    } catch (statusError) {
+      setExternalPromptError(
+        statusError?.response?.data?.detail || t('opportunities.unableReminder'),
+      );
+    } finally {
+      setExternalPromptBusy(false);
+    }
+  };
+
   const countLabel = useMemo(() => {
     if (loading && opportunities.length === 0) return '';
-    if (count <= 0) return 'No opportunities found for current filters';
-    return `${count} opportunities found`;
-  }, [count, loading, opportunities.length]);
+    if (count <= 0) return t('opportunities.noResults');
+    return t('opportunities.found', { count });
+  }, [count, loading, opportunities.length, t]);
   const visiblePageNumbers = useMemo(
     () => getVisiblePageNumbers(page, totalPages),
     [page, totalPages]
@@ -461,6 +595,19 @@ const OpportunitiesPage = () => {
           />
         </div>
       ) : null}
+
+      <ExternalApplicationFollowUpDialog
+        open={externalPromptOpen}
+        onOpenChange={handleExternalPromptOpenChange}
+        opportunityTitle={pendingExternalApplication?.title || t('opportunities.externalOpportunity')}
+        organizationLabel={pendingExternalApplication?.organizationLabel || ''}
+        sourceUrl={pendingExternalApplication?.sourceUrl || ''}
+        isBusy={externalPromptBusy}
+        error={externalPromptError}
+        onConfirmApplied={handleExternalApplicationConfirmed}
+        onNotYet={handleExternalApplicationNotYet}
+        onRemindLater={handleExternalApplicationRemindLater}
+      />
     </div>
   );
 };

@@ -1,18 +1,21 @@
 import { Compass, Sparkles } from 'lucide-react';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 
 const TABS = [
-  { value: 'for-you', label: 'For You', icon: Sparkles },
-  { value: 'explore', label: 'Explore', icon: Compass },
+  { value: 'for-you', labelKey: 'opportunities.forYou', icon: Sparkles },
+  { value: 'explore', labelKey: 'opportunities.explore', icon: Compass },
 ];
 
 const OpportunitiesExperienceTabs = ({ activeTab, isUserAuthenticated, onTabChange }) => {
+  const { t } = useLanguage();
+
   if (!isUserAuthenticated) return null;
 
   return (
     <div className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Centrage avec flex justify-center */}
-        <div className="flex items-center justify-center gap-2 py-4" role="tablist" aria-label="Opportunity views">
+        <div className="flex items-center justify-center gap-2 py-4" role="tablist" aria-label={t('opportunities.views')}>
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.value;
@@ -32,7 +35,7 @@ const OpportunitiesExperienceTabs = ({ activeTab, isUserAuthenticated, onTabChan
                 ].join(' ')}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
-                {tab.label}
+                {t(tab.labelKey)}
                 
                 {/* Soulignement bleu pour l'élément actif */}
                 {isActive && (

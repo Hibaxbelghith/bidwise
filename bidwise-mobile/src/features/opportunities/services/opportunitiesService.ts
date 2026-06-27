@@ -20,6 +20,12 @@ export interface OpportunityAssistantResponse {
   model?: string;
 }
 
+export interface OpportunityDocumentDownload {
+  bytes: ArrayBuffer;
+  filename: string;
+  contentType: string;
+}
+
 export interface OpportunitySource {
   id: number;
   nom: string;
@@ -541,4 +547,93 @@ export async function askOpportunityAssistant(
   return response.data && typeof response.data === 'object'
     ? (response.data as OpportunityAssistantResponse)
     : {};
+}
+
+function parseContentDispositionFilename(value: unknown, fallback: string): string {
+  const header = String(value || '').trim();
+  if (!header) return fallback;
+
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, '')) || fallback;
+    } catch {
+      return utf8Match[1].trim().replace(/^"|"$/g, '') || fallback;
+    }
+  }
+
+  const plainMatch = header.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1]?.trim() || fallback;
+}
+
+export async function downloadOptimizedAtsCv(
+  opportunityId: number | string,
+  markdown: string,
+): Promise<OpportunityDocumentDownload> {
+  const parsedId = Number(String(opportunityId || '').trim());
+  if (!Number.isInteger(parsedId) || parsedId <= 0) {
+    throw new Error('Opportunity id must be a positive integer');
+  }
+
+  const normalizedMarkdown = String(markdown || '').trim();
+  if (!normalizedMarkdown) {
+    throw new Error('Generated CV content is required');
+  }
+
+  const response = await api.post(
+    `${OPPORTUNITIES_ENDPOINT}${parsedId}/resume-match/export-ats-cv/`,
+    { optimization_markdown: normalizedMarkdown },
+    {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+    },
+  );
+
+  return {
+    bytes: response.data as ArrayBuffer,
+    filename: parseContentDispositionFilename(
+      response.headers?.['content-disposition'],
+      'optimized_ats_resume.docx',
+    ),
+    contentType: String(
+      response.headers?.['content-type']
+      || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ),
+  };
+}
+
+export async function downloadCoverLetterDocx(
+  opportunityId: number | string,
+  markdown: string,
+): Promise<OpportunityDocumentDownload> {
+  const parsedId = Number(String(opportunityId || '').trim());
+  if (!Number.isInteger(parsedId) || parsedId <= 0) {
+    throw new Error('Opportunity id must be a positive integer');
+  }
+
+  const normalizedMarkdown = String(markdown || '').trim();
+  if (!normalizedMarkdown) {
+    throw new Error('Generated cover letter content is required');
+  }
+
+  const response = await api.post(
+    `${OPPORTUNITIES_ENDPOINT}${parsedId}/resume-match/export-cover-letter/`,
+    { cover_letter_markdown: normalizedMarkdown },
+    {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+    },
+  );
+
+  return {
+    bytes: response.data as ArrayBuffer,
+    filename: parseContentDispositionFilename(
+      response.headers?.['content-disposition'],
+      'cover_letter.docx',
+    ),
+    contentType: String(
+      response.headers?.['content-type']
+      || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ),
+  };
 }

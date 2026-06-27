@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import OpportunityActionBar from '../components/detail/OpportunityActionBar.jsx';
 import OpportunityActionPanel from '../components/detail/OpportunityActionPanel.jsx';
 import OpportunityDescriptionSection from '../components/detail/OpportunityDescriptionSection.jsx';
@@ -22,6 +23,7 @@ import { useOpportunityDetailPage } from '../hooks/useOpportunityDetailPage.js';
 const VISIBLE_ADDITIONAL_INFO_LABELS = new Set(['Sector', 'Company size', 'Reference']);
 
 const OpportunityDetailPage = () => {
+  const { t } = useLanguage();
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -95,10 +97,10 @@ const OpportunityDetailPage = () => {
           onClick={handleBackToOpportunities}
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to opportunities
+          {t('opportunities.detail.backToOpportunities')}
         </button>
         <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
-          {detailPage.error || 'Opportunity not found'}
+          {detailPage.error || t('opportunities.detail.notFound')}
         </div>
       </div>
     );
@@ -117,7 +119,7 @@ const OpportunityDetailPage = () => {
   const handleApplicationSubmitted = () => {
     detailPage.markApplied();
     setApplicationOpen(false);
-    toast.success('Application submitted successfully.');
+    toast.success(t('opportunities.detail.applicationSubmitted'));
   };
 
   return (
@@ -182,9 +184,9 @@ const OpportunityDetailPage = () => {
             {viewModel.isProject && viewModel.hasProjectDocuments ? (
               <div className="mt-5">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-base font-semibold text-neutral-900">Documents</h3>
+                  <h3 className="text-base font-semibold text-neutral-900">{t('opportunities.detail.documents')}</h3>
                   <p className="text-xs text-neutral-500">
-                    Open the official source files attached to this tender.
+                    {t('opportunities.detail.officialTenderFiles')}
                   </p>
                 </div>
                 <OpportunityDocuments documents={viewModel.projectDocuments} />

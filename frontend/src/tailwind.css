@@ -23,6 +23,145 @@
   animation: attention-pulse 1.2s ease-in-out infinite;
 }
 
+.bidwise-pencil-loader {
+  position: relative;
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.bidwise-pencil-loader::before {
+  content: '';
+  position: absolute;
+  left: 0.34rem;
+  bottom: 0.35rem;
+  width: 1.25rem;
+  height: 0.55rem;
+  border-bottom: 2px solid #2563eb;
+  border-radius: 999px;
+  animation: bidwise-ink-write 1.25s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+.bidwise-pencil-loader::after {
+  content: '';
+  position: absolute;
+  width: 0.34rem;
+  height: 1.35rem;
+  border-radius: 0.18rem 0.18rem 0.08rem 0.08rem;
+  background: linear-gradient(180deg, #10b981 0 18%, #f8fafc 18% 28%, #111827 28% 100%);
+  box-shadow: 0 0 0 1px rgb(17 24 39 / 0.06);
+  transform: translate(0.08rem, -0.1rem) rotate(34deg);
+  animation: bidwise-pencil-write 1.25s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+
+.bidwise-pencil-loader__mark {
+  position: absolute;
+  right: 0.38rem;
+  bottom: 0.34rem;
+  height: 0.18rem;
+  width: 0.18rem;
+  border-radius: 999px;
+  background: #111827;
+  animation: bidwise-pencil-dot 1.25s ease-in-out infinite;
+}
+
+.bidwise-thinking-bar {
+  width: 42%;
+  animation: bidwise-thinking-bar 1.8s ease-in-out infinite;
+}
+
+.bidwise-robot-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0.18rem;
+  border-radius: 1rem;
+  background: radial-gradient(circle, rgb(37 99 235 / 0.18), transparent 62%);
+  animation: bidwise-robot-glow 1.4s ease-in-out infinite;
+}
+
+.bidwise-robot-loader {
+  position: relative;
+  z-index: 1;
+  animation: bidwise-robot-float 1.25s ease-in-out infinite;
+  filter: drop-shadow(0 10px 14px rgb(37 99 235 / 0.22));
+  transform-origin: 50% 65%;
+  will-change: transform;
+}
+
+@keyframes bidwise-robot-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg) scale(1);
+  }
+  45% {
+    transform: translateY(-7px) rotate(4deg) scale(1.08);
+  }
+  70% {
+    transform: translateY(-2px) rotate(0deg) scale(1.01);
+  }
+}
+
+@keyframes bidwise-robot-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes bidwise-pencil-write {
+  0%,
+  100% {
+    transform: translate(-0.15rem, -0.08rem) rotate(28deg);
+  }
+  45% {
+    transform: translate(0.22rem, 0.03rem) rotate(42deg);
+  }
+  75% {
+    transform: translate(0.02rem, -0.02rem) rotate(34deg);
+  }
+}
+
+@keyframes bidwise-ink-write {
+  0% {
+    opacity: 0.35;
+    transform: scaleX(0.25);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  100% {
+    opacity: 0.35;
+    transform: scaleX(0.55);
+  }
+}
+
+@keyframes bidwise-pencil-dot {
+  0%,
+  35% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  55%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+;
+    transform: scale(1);
+transform: translateX(220%);
+  }
+}
+
 /* Home hero animations adapted from the Lovable template. */
 .gradient-shift {
   background: linear-gradient(120deg, #ffffff, #f8fbff, #eaf3ff, #ffffff, #f3f8ff);

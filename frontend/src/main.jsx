@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './features/auth/AuthContext.jsx'
 import { Toaster } from 'sonner';
+import { LanguageProvider } from './i18n/LanguageContext.jsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,9 +23,11 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </LanguageProvider>
       <Toaster 
         position="bottom-left" 
         richColors 

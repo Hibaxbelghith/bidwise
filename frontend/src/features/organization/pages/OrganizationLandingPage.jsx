@@ -13,18 +13,20 @@ import {
   isOrganizationAccount,
   ORGANIZATION_LOGIN_PATH,
 } from '../organizationFlow.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 // Image de fond professionnelle
 const HERO_BG_IMAGE =
   'https://images.pexels.com/photos/3184418/pexels-photo-3184418.jpeg?auto=compress&cs=tinysrgb&w=1600';
 
 const opportunityTypes = [
-  { label: 'Jobs', icon: BriefcaseBusiness },
-  { label: 'Internships', icon: Users },
-  { label: 'Seasonal jobs', icon: CalendarClock },
+  { labelKey: 'organization.jobs', icon: BriefcaseBusiness },
+  { labelKey: 'organization.internships', icon: Users },
+  { labelKey: 'organization.seasonalJobs', icon: CalendarClock },
 ];
 
 const OrganizationLandingPage = () => {
+  const { t } = useLanguage();
   const { isAuthenticated, loading, user } = useAuth();
   const hasResolvedAuth = !loading || Boolean(user);
   const organizationPath =
@@ -32,7 +34,7 @@ const OrganizationLandingPage = () => {
       ? getPostAuthRedirectPath({ user, organizationIntent: true })
       : ORGANIZATION_LOGIN_PATH;
   const isOrganization = isOrganizationAccount(user);
-  const organizationActionLabel = isOrganization ? 'Organization dashboard' : 'Post an opportunity';
+  const organizationActionLabel = isOrganization ? t('organization.dashboard') : t('organization.postOpportunity');
 
   return (
     <div className="min-h-screen bg-white">
@@ -44,7 +46,7 @@ const OrganizationLandingPage = () => {
               <Link to="/" className="flex items-center gap-2">
               <span className="text-xl font-bold text-neutral-900">BidWise</span>
               <span className="rounded-md bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
-                For Organizations
+                {t('common.forOrganizations')}
               </span>
             </Link>
               
@@ -55,7 +57,7 @@ const OrganizationLandingPage = () => {
                   to={ORGANIZATION_LOGIN_PATH}
                   className="text-sm font-medium text-neutral-600 hover:text-neutral-900"
                 >
-                  Sign in
+                  {t('common.signIn')}
                 </Link>
               ) : null}
               <Button
@@ -69,7 +71,7 @@ const OrganizationLandingPage = () => {
                 to="/opportunities"
                 className="hidden text-sm text-neutral-600 hover:text-neutral-900 sm:inline-block"
               >
-                For candidates →
+                {t('organization.forCandidates')} →
               </Link>
             </div>
           </div>
@@ -92,11 +94,11 @@ const OrganizationLandingPage = () => {
           <div className="mx-auto max-w-3xl text-center text-white">
             
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-              Find the talent you're looking for
+              {t('organization.landingTitle')}
             </h1>
             
             <p className="mt-4 text-xl text-white/90">
-              Post opportunities and connect with qualified candidates immediately
+              {t('organization.landingSubtitle')}
             </p>
 
             {/* CTA Button unique */}
@@ -124,14 +126,14 @@ const OrganizationLandingPage = () => {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <p className="text-3xl font-bold text-neutral-900">5,000+</p>
-            <p className="text-sm text-neutral-500">active candidates on BidWise</p>
+            <p className="text-sm text-neutral-500">{t('organization.activeCandidates')}</p>
             <Button
               asChild
               variant="link"
               className="mt-2 text-blue-600 hover:text-blue-700"
             >
               <Link to={organizationPath}>
-                {isOrganization ? 'Go to dashboard' : 'Start hiring today'}
+                {isOrganization ? t('organization.goToDashboard') : t('organization.startHiringToday')}
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
@@ -144,17 +146,17 @@ const OrganizationLandingPage = () => {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold text-neutral-900">
-              Post hiring opportunities
+              {t('organization.postHiringOpportunities')}
             </h2>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-4">
-            {opportunityTypes.map(({ label, icon: Icon }) => (
+            {opportunityTypes.map(({ labelKey, icon: Icon }) => (
               <div
-                key={label}
+                key={labelKey}
                 className="flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-700"
               >
                 <Icon className="h-4 w-4 text-neutral-400" />
-                {label}
+                {t(labelKey)}
               </div>
             ))}
           </div>
@@ -166,10 +168,10 @@ const OrganizationLandingPage = () => {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 text-center">
             <h2 className="text-2xl font-bold text-neutral-900">
-              How posting works
+              {t('organization.howPostingWorks')}
             </h2>
             <p className="mt-2 text-neutral-500">
-              Three simple steps to start receiving applications
+              {t('organization.howPostingWorksDesc')}
             </p>
           </div>
 
@@ -178,27 +180,27 @@ const OrganizationLandingPage = () => {
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-600">
                 1
               </div>
-              <h3 className="font-semibold text-neutral-900">Create your profile</h3>
+              <h3 className="font-semibold text-neutral-900">{t('organization.stepCreateProfile')}</h3>
               <p className="mt-1 text-sm text-neutral-500">
-                Set up your organization in minutes
+                {t('organization.stepCreateProfileDesc')}
               </p>
             </div>
             <div className="text-center">
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-600">
                 2
               </div>
-              <h3 className="font-semibold text-neutral-900">Post your opportunity</h3>
+              <h3 className="font-semibold text-neutral-900">{t('organization.stepPostOpportunity')}</h3>
               <p className="mt-1 text-sm text-neutral-500">
-                Add all the details and requirements
+                {t('organization.stepPostOpportunityDesc')}
               </p>
             </div>
             <div className="text-center">
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-600">
                 3
               </div>
-              <h3 className="font-semibold text-neutral-900">Review candidates</h3>
+              <h3 className="font-semibold text-neutral-900">{t('organization.stepReviewCandidates')}</h3>
               <p className="mt-1 text-sm text-neutral-500">
-                Manage applications from your dashboard
+                {t('organization.stepReviewCandidatesDesc')}
               </p>
             </div>
           </div>
@@ -221,7 +223,7 @@ const OrganizationLandingPage = () => {
       {/* Footer */}
       <footer className="bg-white py-8">
         <div className="mx-auto max-w-7xl px-4 text-center text-sm text-neutral-500 sm:px-6 lg:px-8">
-          <p>&copy; 2026 BidWise. All rights reserved.</p>
+          <p>{t('layout.rights')}</p>
         </div>
       </footer>
     </div>

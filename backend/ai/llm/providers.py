@@ -252,6 +252,7 @@ class GeminiProvider:
     timeout_seconds: float
     temperature: float
     max_output_tokens: int
+    thinking_budget: int = 0
 
     provider_name: str = "gemini"
 
@@ -266,6 +267,9 @@ class GeminiProvider:
                 "temperature": self.temperature,
                 "maxOutputTokens": self.max_output_tokens,
                 "responseMimeType": "application/json",
+                "thinkingConfig": {
+                    "thinkingBudget": self.thinking_budget,
+                },
             },
         }
         if schema:
@@ -489,6 +493,7 @@ def _gemini_provider(model: str | None = None) -> GeminiProvider:
         timeout_seconds=float(getattr(settings, "GEMINI_TIMEOUT_SECONDS", 20.0)),
         temperature=float(getattr(settings, "GEMINI_TEMPERATURE", 0.1)),
         max_output_tokens=int(getattr(settings, "GEMINI_MAX_OUTPUT_TOKENS", 2500)),
+        thinking_budget=int(getattr(settings, "GEMINI_THINKING_BUDGET", 0)),
     )
 
 

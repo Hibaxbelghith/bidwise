@@ -8,6 +8,7 @@ const AdminOpportunitiesContent = ({
   sources,
   searchDraft,
   source,
+  status,
   ordering,
   page,
   count,
@@ -31,6 +32,7 @@ const AdminOpportunitiesContent = ({
   setSelectedOpportunity,
   handleSearchSubmit,
   handleSourceChange,
+  handleStatusChange,
   handleToggleOrdering,
   handleDelete,
   handleApprove,
@@ -41,12 +43,14 @@ const AdminOpportunitiesContent = ({
       <Filters
         searchDraft={searchDraft}
         source={source}
+        status={status}
         sources={sources}
         isLoading={isLoading}
         isSourcesLoading={isSourcesLoading}
         onSearchDraftChange={setSearchDraft}
         onSearchSubmit={handleSearchSubmit}
         onSourceChange={handleSourceChange}
+        onStatusChange={handleStatusChange}
       />
 
       {error || sourcesError ? (

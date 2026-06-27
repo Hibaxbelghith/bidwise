@@ -13,15 +13,16 @@ import {
   SourcesMonitoringView,
 } from './views/AdminDashboardViews.jsx';
 import { emptyDashboard } from '../hooks/useDashboard.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const viewTitles = {
-  dashboard: 'Vue globale',
-  operations: 'Operations Monitoring',
-  sources: 'Sources Monitoring',
-  scheduler: 'Scheduler Intelligence',
-  pipeline: 'Pipeline Health',
-  alerts: 'Alerts',
-  analytics: 'Analytics',
+  dashboard: 'admin.globalView',
+  operations: 'admin.operationsMonitoring',
+  sources: 'admin.sourcesMonitoring',
+  scheduler: 'admin.schedulerIntelligence',
+  pipeline: 'admin.pipelineHealth',
+  alerts: 'admin.alerts',
+  analytics: 'admin.analytics',
 };
 
 const validViews = new Set(Object.keys(viewTitles));
@@ -47,6 +48,7 @@ const DashboardSkeleton = () => (
 );
 
 const DashboardAdminContent = ({ dashboard, isLoading, error }) => {
+  const { t } = useLanguage();
   const { dashboardView } = useParams();
   const activeView = dashboardView || 'dashboard';
   const embeddings = dashboard?.monitoring?.embeddings || emptyDashboard.monitoring.embeddings;
@@ -97,7 +99,7 @@ const DashboardAdminContent = ({ dashboard, isLoading, error }) => {
         <div className="mb-8">
           <div className="mb-3 flex flex-wrap items-center gap-3">
             <h1 id="admin-dashboard-heading" className="text-3xl font-bold text-neutral-900">
-              {viewTitles[activeView]}
+              {t(viewTitles[activeView])}
             </h1>
 
           </div>

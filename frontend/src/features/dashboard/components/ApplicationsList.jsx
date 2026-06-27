@@ -4,6 +4,7 @@ import { Briefcase, Building2, MapPin, Calendar } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import {
   getApplicationDatePrefix,
   getApplicationStatusMeta,
@@ -12,10 +13,10 @@ import {
 const WITHDRAWABLE = new Set(['SUBMITTED', 'VIEWED_BY_ORGANIZATION']);
 const CONTINUABLE_EXTERNAL_STATUSES = new Set(['EXTERNAL_REMIND_LATER']);
 
-const formatDate = (value) => {
+const formatDate = (value, language = 'en') => {
   if (!value) return '';
   try {
-    return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
+    return new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', year: 'numeric' })
       .format(new Date(value));
   } catch {
     return value;
@@ -23,7 +24,8 @@ const formatDate = (value) => {
 };
 
 const ApplicationStatusBadge = ({ statut }) => {
-  const config = getApplicationStatusMeta(statut, 'candidate');
+  const { t } = useLanguage();
+  const config = getApplicationStatusMeta(statut, 'candidate', t);
   return (
     <Badge variant="outline" className={config.className}>
       {config.label}
@@ -31,18 +33,21 @@ const ApplicationStatusBadge = ({ statut }) => {
   );
 };
 
-const WithdrawConfirmDialog = ({ title, onConfirm, onCancel, isSubmitting }) => (
+const WithdrawConfirmDialog = ({ title, onConfirm, onCancel, isSubmitting }) => {
+  const { t } = useLanguage();
+
+  return (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
     <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" role="dialog" aria-modal="true">
       <h2 className="text-base font-semibold text-neutral-950">
-        Cancel your application?
+        {t('dashboard.cancelTitle')}
       </h2>
       <p className="mt-2 text-sm leading-6 text-neutral-600">
-        You will no longer be considered for &quot;{title}&quot;. This action cannot be undone.
+        {t('dashboard.cancelBody', { title })}
       </p>
       <div className="mt-5 flex justify-end gap-3">
         <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={isSubmitting}>
-          Keep application
+          {t('dashboard.keepApplication')}
         </Button>
         <Button
           type="button"
@@ -51,19 +56,21 @@ const WithdrawConfirmDialog = ({ title, onConfirm, onCancel, isSubmitting }) => 
           onClick={onConfirm}
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Cancelling...' : 'Yes, cancel it'}
+          {isSubmitting ? t('dashboard.cancelling') : t('dashboard.yesCancel')}
         </Button>
       </div>
     </div>
   </div>
-);
+  );
+};
 
 const ApplicationCard = ({ application, onWithdraw }) => {
+  const { t, language } = useLanguage();
   const [confirming, setConfirming] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawError, setWithdrawError] = useState('');
 
-  const datePrefix = getApplicationDatePrefix(application.statut, 'candidate');
+  const datePrefix = getApplicationDatePrefix(application.statut, 'candidate', t);
 
   const handleConfirm = async () => {
     try {
@@ -72,7 +79,7 @@ const ApplicationCard = ({ application, onWithdraw }) => {
       await onWithdraw(application.id);
       setConfirming(false);
     } catch {
-      setWithdrawError('Unable to cancel your application. Please try again.');
+      setWithdrawError(t('dashboard.unableCancel'));
     } finally {
       setWithdrawing(false);
     }
@@ -117,7 +124,7 @@ const ApplicationCard = ({ application, onWithdraw }) => {
                 {application.submitted_at && (
                   <span className="flex items-center gap-1">
                     <Calendar className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    {datePrefix} {formatDate(application.submitted_at)}
+                    {datePrefix} {formatDate(application.submitted_at, language)}
                   </span>
                 )}
               </div>
@@ -127,12 +134,12 @@ const ApplicationCard = ({ application, onWithdraw }) => {
             </div>
             <div className="flex shrink-0 gap-2">
               <Button asChild size="sm">
-                <Link to={`/opportunities/${application.opportunity_id}`}>View</Link>
+                <Link to={`/opportunities/${application.opportunity_id}`}>{t('dashboard.view')}</Link>
               </Button>
               {CONTINUABLE_EXTERNAL_STATUSES.has(application.statut) && (
                 <Button asChild variant="outline" size="sm">
                   <Link to={`/opportunities/${application.opportunity_id}?continueApplication=1`}>
-                    Continue application
+                    {t('dashboard.continueApplication')}
                   </Link>
                 </Button>
               )}
@@ -142,7 +149,7 @@ const ApplicationCard = ({ application, onWithdraw }) => {
                   size="sm"
                   onClick={() => setConfirming(true)}
                 >
-                  Cancel application
+                  {t('dashboard.cancelApplication')}
                 </Button>
               )}
             </div>
@@ -154,11 +161,13 @@ const ApplicationCard = ({ application, onWithdraw }) => {
 };
 
 const ApplicationsList = ({ applications, isLoading, error, onWithdraw }) => {
+  const { t } = useLanguage();
+
   if (isLoading) {
     return (
       <Card>
         <CardContent className="py-12 text-center text-sm text-neutral-500">
-          Loading your applications...
+          {t('dashboard.loadingApplications')}
         </CardContent>
       </Card>
     );
@@ -179,9 +188,9 @@ const ApplicationsList = ({ applications, isLoading, error, onWithdraw }) => {
       <Card>
         <CardContent className="py-12 text-center">
           <Briefcase className="w-12 h-12 text-neutral-300 mx-auto mb-4" aria-hidden="true" />
-          <p className="text-neutral-600 mb-4">No applications yet</p>
+          <p className="text-neutral-600 mb-4">{t('dashboard.noApplications')}</p>
           <Button asChild>
-            <Link to="/opportunities">Start Applying</Link>
+            <Link to="/opportunities">{t('dashboard.startApplying')}</Link>
           </Button>
         </CardContent>
       </Card>

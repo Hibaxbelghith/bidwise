@@ -1,21 +1,22 @@
-import { FileText, TrendingUp, Users, CheckCircle } from 'lucide-react';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const StatisticsOverview = ({ stats }) => {
+  const { t } = useLanguage();
   const cards = [
     {
-      label: 'Published Opportunities',
+      label: t('organization.publishedOpportunities'),
       value: stats.totalOpportunities,
     },
     {
-      label: 'Active Opportunities',
+      label: t('organization.activeOpportunities'),
       value: stats.activeOpportunities,
     },
     {
-      label: 'Total Applications',
+      label: t('organization.totalApplications'),
       value: stats.totalApplications,
     },
     {
-      label: 'New Applications',
+      label: t('organization.newApplications'),
       value: stats.newApplications,
     },
   ];

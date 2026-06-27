@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button.jsx';
 import { Input } from '../../../../components/ui/input.jsx';
 import { Label } from '../../../../components/ui/label.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import {
   submitOrganizationApplication,
   uploadApplicationCoverLetter,
@@ -22,22 +23,25 @@ const getResumeName = (resume) => (
   || 'Profile resume'
 );
 
-const getApiMessage = (error, fallback) => {
+const getApiMessage = (error, fallback, t) => {
   const data = error?.response?.data;
-  if (error?.response?.status === 409) return 'You have already applied for this opportunity.';
-  if (data?.cv_id?.[0]) return 'Please select a resume before submitting.';
+  if (error?.response?.status === 409) return t('opportunities.detail.alreadyApplied');
+  if (data?.cv_id?.[0]) return t('opportunities.detail.selectResumeBeforeSubmit');
   if (data?.contact_email?.[0]) return data.contact_email[0];
   if (data?.contact_phone?.[0]) return data.contact_phone[0];
   if (data?.cover_letter_url?.[0]) return data.cover_letter_url[0];
   return data?.detail || fallback;
 };
 
-const validateFile = (file, extensions, label) => {
-  if (!file) return `Choose a ${label.toLowerCase()} first.`;
+const validateFile = (file, extensions, label, t) => {
+  if (!file) return t('opportunities.detail.chooseFileFirst', { label: label.toLowerCase() });
   if (!extensions.includes(getFileExtension(file))) {
-    return `${label} must be ${extensions.map((item) => item.toUpperCase()).join(' or ')}.`;
+    return t('opportunities.detail.fileMustBe', {
+      label,
+      extensions: extensions.map((item) => item.toUpperCase()).join(' or '),
+    });
   }
-  if (file.size > MAX_FILE_SIZE) return `${label} must be 5 MB or smaller.`;
+  if (file.size > MAX_FILE_SIZE) return t('opportunities.detail.fileMaxSize', { label });
   return '';
 };
 
@@ -66,6 +70,7 @@ const OpportunityApplicationDialog = ({
   onSubmitted,
   onUserRefresh,
 }) => {
+  const { t } = useLanguage();
   const resumeInputRef = useRef(null);
   const coverLetterInputRef = useRef(null);
   const profileResume = user?.profil?.active_resume || null;
@@ -93,7 +98,7 @@ const OpportunityApplicationDialog = ({
   const handleResumeUpload = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    const validationError = validateFile(file, RESUME_EXTENSIONS, 'Resume');
+    const validationError = validateFile(file, RESUME_EXTENSIONS, t('opportunities.detail.resume'), t);
     if (validationError) {
       setError(validationError);
       return;
@@ -108,7 +113,7 @@ const OpportunityApplicationDialog = ({
       setShowResumeUpload(false);
       await onUserRefresh?.();
     } catch (uploadError) {
-      setError(getApiMessage(uploadError, 'Unable to upload your resume.'));
+      setError(getApiMessage(uploadError, t('opportunities.detail.unableUploadResume'), t));
     } finally {
       setUploadingResume(false);
     }
@@ -117,7 +122,7 @@ const OpportunityApplicationDialog = ({
   const handleCoverLetterUpload = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    const validationError = validateFile(file, COVER_LETTER_EXTENSIONS, 'Cover letter');
+    const validationError = validateFile(file, COVER_LETTER_EXTENSIONS, t('opportunities.detail.coverLetter'), t);
     if (validationError) {
       setError(validationError);
       return;
@@ -129,7 +134,7 @@ const OpportunityApplicationDialog = ({
       const result = await uploadApplicationCoverLetter(file);
       setCoverLetter({ name: result.name || file.name, url: result.url });
     } catch (uploadError) {
-      setError(getApiMessage(uploadError, 'Unable to upload the cover letter.'));
+      setError(getApiMessage(uploadError, t('opportunities.detail.unableUploadCoverLetter'), t));
     } finally {
       setUploadingCoverLetter(false);
     }
@@ -138,11 +143,11 @@ const OpportunityApplicationDialog = ({
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!resume?.id) {
-      setError('Please select a resume before submitting.');
+      setError(t('opportunities.detail.selectResumeBeforeSubmit'));
       return;
     }
     if (!contactEmail.trim()) {
-      setError('Email is required.');
+      setError(t('opportunities.detail.emailRequired'));
       return;
     }
 
@@ -157,7 +162,7 @@ const OpportunityApplicationDialog = ({
       });
       onSubmitted(result);
     } catch (submitError) {
-      setError(getApiMessage(submitError, 'Unable to submit your application.'));
+      setError(getApiMessage(submitError, t('opportunities.detail.unableSubmitApplication'), t));
     } finally {
       setSubmitting(false);
     }
@@ -183,7 +188,7 @@ const OpportunityApplicationDialog = ({
                 </Dialog.Title>
                 <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
                   <Building2 className="h-3.5 w-3.5" />
-                  <span>{organizationLabel || opportunity.organization_name || 'Organization'}</span>
+                  <span>{organizationLabel || opportunity.organization_name || t('opportunities.detail.organization')}</span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-400">
                   {location && (
@@ -195,7 +200,7 @@ const OpportunityApplicationDialog = ({
                   {deadline && (
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      Deadline: {deadline}
+                      {t('opportunities.detail.deadlineLabel', { date: deadline })}
                     </span>
                   )}
                 </div>
@@ -216,8 +221,8 @@ const OpportunityApplicationDialog = ({
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Resume */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">Resume *</Label>
-                <p className="text-xs text-gray-400">PDF, DOCX, DOC, RTF or TXT, up to 5 MB.</p>
+                <Label className="text-sm font-medium text-gray-700">{t('opportunities.detail.resumeRequired')}</Label>
+                <p className="text-xs text-gray-400">{t('opportunities.detail.resumeFormats')}</p>
 
                 {resume?.id && !showResumeUpload ? (
                   <div className="space-y-2">
@@ -228,7 +233,7 @@ const OpportunityApplicationDialog = ({
                       onClick={() => setShowResumeUpload(true)}
                       disabled={isBusy}
                     >
-                      Use a different resume
+                      {t('opportunities.detail.useDifferentResume')}
                     </button>
                   </div>
                 ) : (
@@ -242,7 +247,7 @@ const OpportunityApplicationDialog = ({
                       className="w-full"
                     >
                       {uploadingResume ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                      {uploadingResume ? 'Uploading...' : 'Upload resume'}
+                      {uploadingResume ? t('profile.saving') : t('opportunities.detail.uploadResume')}
                     </Button>
                     {profileResume && showResumeUpload && (
                       <button
@@ -250,7 +255,7 @@ const OpportunityApplicationDialog = ({
                         className="text-xs text-blue-600 hover:underline"
                         onClick={() => { setResume(profileResume); setShowResumeUpload(false); }}
                       >
-                        Use profile resume
+                        {t('opportunities.detail.useProfileResume')}
                       </button>
                     )}
                   </div>
@@ -267,7 +272,7 @@ const OpportunityApplicationDialog = ({
               {/* Contact */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email *</Label>
+                  <Label htmlFor="email" className="text-sm font-medium text-gray-700">{t('opportunities.detail.emailRequiredLabel')}</Label>
                   <Input
                     id="email"
                     type="email"
@@ -278,7 +283,7 @@ const OpportunityApplicationDialog = ({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="phone" className="text-sm font-medium text-gray-700">Phone</Label>
+                  <Label htmlFor="phone" className="text-sm font-medium text-gray-700">{t('opportunities.detail.phone')}</Label>
                   <Input
                     id="phone"
                     type="tel"
@@ -293,8 +298,8 @@ const OpportunityApplicationDialog = ({
 
               {/* Cover Letter */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">Cover letter</Label>
-                <p className="text-xs text-gray-400">Optional PDF or DOCX, up to 5 MB.</p>
+                <Label className="text-sm font-medium text-gray-700">{t('opportunities.detail.coverLetter')}</Label>
+                <p className="text-xs text-gray-400">{t('opportunities.detail.coverLetterFormats')}</p>
                 {coverLetter ? (
                   <FileRow name={coverLetter.name} onRemove={() => setCoverLetter(null)} />
                 ) : (
@@ -307,7 +312,7 @@ const OpportunityApplicationDialog = ({
                     className="w-full"
                   >
                     {uploadingCoverLetter ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                    {uploadingCoverLetter ? 'Uploading...' : 'Attach cover letter'}
+                    {uploadingCoverLetter ? t('profile.saving') : t('opportunities.detail.attachCoverLetter')}
                   </Button>
                 )}
                 <input
@@ -335,7 +340,7 @@ const OpportunityApplicationDialog = ({
                   disabled={isBusy}
                   className="flex-1"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   type="submit"
@@ -343,7 +348,7 @@ const OpportunityApplicationDialog = ({
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {submitting ? 'Submitting...' : 'Submit'}
+                  {submitting ? t('opportunities.detail.submitting') : t('opportunities.detail.submit')}
                 </Button>
               </div>
             </form>

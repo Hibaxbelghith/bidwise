@@ -5,16 +5,18 @@ import AdminUsersFilters from './AdminUsersFilters.jsx';
 import AdminUsersPagination from './AdminUsersPagination.jsx';
 import AdminUsersTable from './AdminUsersTable.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 import { useAdminUsers } from '../hooks/useAdminUsers.js';
 import { PAGE_SIZE_OPTIONS, useAdminUsersFilters } from '../hooks/useAdminUsersFilters.js';
 
 const TABS = [
-  { value: 'users', label: 'Users list' },
-  { value: 'audit', label: 'Audit log' },
+  { value: 'users', labelKey: 'admin.usersList' },
+  { value: 'audit', labelKey: 'admin.actionHistory' },
 ];
 
 const AdminUsersPage = () => {
   const { user: currentAdminUser } = useAuth();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('users');
   const filters = useAdminUsersFilters();
   const {
@@ -39,10 +41,10 @@ const AdminUsersPage = () => {
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6">
           <h1 id="admin-users-heading" className="text-3xl font-bold text-neutral-900">
-            User management
+            {t('admin.userManagement')}
           </h1>
           <p className="mt-2 text-sm text-neutral-600">
-            Manage BidWise accounts, admin privileges, suspensions, and audit traceability.
+            {t('admin.userManagementDescription')}
           </p>
         </div>
 
@@ -59,7 +61,7 @@ const AdminUsersPage = () => {
                   : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-950',
               ].join(' ')}
             >
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           ))}
         </div>

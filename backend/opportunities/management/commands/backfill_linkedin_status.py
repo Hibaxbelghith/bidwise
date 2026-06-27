@@ -67,6 +67,14 @@ class Command(BaseCommand):
             action="store_true",
             help="Apply updates. Without this flag, runs in dry-run mode.",
         )
+        parser.add_argument(
+            "--reactivate-open",
+            action="store_true",
+            help=(
+                "Reactivate expired LinkedIn opportunities when the detail page is reachable, "
+                "does not contain a closed-applications signal, and has no past deadline."
+            ),
+        )
 
     def handle(self, *args, **options):
         source_name = str(options.get("source") or "LinkedIn").strip()
@@ -74,6 +82,7 @@ class Command(BaseCommand):
         explicit_ids = options.get("ids") or []
         all_statuses = bool(options.get("all_statuses"))
         apply_changes = bool(options.get("apply"))
+        reactivate_open = bool(options.get("reactivate_open"))
 
         queryset = (
             Opportunite.objects.select_related("source")
@@ -99,6 +108,7 @@ class Command(BaseCommand):
             "fetch_error": 0,
             "closed_applications_expired": 0,
             "source_unavailable_expired": 0,
+            "reactivated_open": 0,
             "save_error": 0,
         }
 
@@ -113,6 +123,7 @@ class Command(BaseCommand):
 
             reason = ""
             saw_success = False
+            saw_open = False
             unavailable_status_code = None
             fetch_failed = False
 
@@ -149,11 +160,39 @@ class Command(BaseCommand):
                 if detail_data.get("status") == StatutOpportunite.EXPIREE:
                     reason = "linkedin_closed_applications"
                     break
+                saw_open = True
 
             if not reason and not saw_success and unavailable_status_code:
                 reason = f"source_http_{unavailable_status_code}"
             elif not reason and not saw_success and fetch_failed:
                 stats["fetch_error"] += 1
+                continue
+
+            if (
+                reactivate_open
+                and saw_open
+                and opportunity.statut == StatutOpportunite.EXPIREE
+                and (not opportunity.date_limite or opportunity.date_limite >= timezone.localdate())
+            ):
+                extra_data = dict(opportunity.extra_data or {})
+                expiration = dict(extra_data.get("expiration") or {})
+                if expiration:
+                    expiration["reactivated_on"] = timezone.localdate().isoformat()
+                    expiration["reactivation_reason"] = "linkedin_detail_page_open"
+                    extra_data["expiration"] = expiration
+                else:
+                    extra_data["expiration"] = {
+                        "reactivated_on": timezone.localdate().isoformat(),
+                        "reactivation_reason": "linkedin_detail_page_open",
+                        "source": "LinkedIn",
+                    }
+                opportunity.extra_data = extra_data
+                opportunity.statut = StatutOpportunite.ACTIVE
+                if apply_changes:
+                    opportunity.date_modification = timezone.now()
+                    opportunity.save(update_fields=["statut", "extra_data", "date_modification"])
+                stats["updated"] += 1
+                stats["reactivated_open"] += 1
                 continue
 
             if not reason:
@@ -201,6 +240,7 @@ class Command(BaseCommand):
                 f"no_change={stats['no_change']}, fetch_error={stats['fetch_error']}, "
                 f"closed_applications_expired={stats['closed_applications_expired']}, "
                 f"source_unavailable_expired={stats['source_unavailable_expired']}, "
+                f"reactivated_open={stats['reactivated_open']}, "
                 f"save_error={stats['save_error']})"
             )
         )

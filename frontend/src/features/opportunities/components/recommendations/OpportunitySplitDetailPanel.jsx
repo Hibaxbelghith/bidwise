@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Sparkles } from 'lucide-react';
 
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import { DETAIL_SIMILAR_OPPORTUNITIES_LIMIT } from '../../constants/opportunityDetail.js';
 import {
   confirmProfileResume,
@@ -10,8 +11,10 @@ import {
   generateResumeMatchAnalysis,
   getResumeMatch,
   getSimilarOpportunities,
+  registerExternalApplicationClick,
   uploadProfileResume,
 } from '../../services/opportunitiesService.js';
+import { upsertPendingExternalApplication } from '../../utils/externalApplicationTracking.js';
 import { validateResumeFile } from '../../../profile/profileValidation.js';
 import { useOpportunityAssistantChat } from '../../hooks/useOpportunityAssistantChat.js';
 import OpportunityDescriptionSection from '../detail/OpportunityDescriptionSection.jsx';
@@ -60,6 +63,7 @@ const waitForResumeMatchReady = async (opportunityId, expectedResumeId = null) =
 };
 
 const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
+  const { t } = useLanguage();
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [showAllSkills, setShowAllSkills] = useState(false);
   const [similarOpportunities, setSimilarOpportunities] = useState([]);
@@ -77,6 +81,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const [resumeMatchActionLoading, setResumeMatchActionLoading] = useState('');
   const [resumeMatchActionError, setResumeMatchActionError] = useState('');
   const [resumeUploadState, setResumeUploadState] = useState({ status: 'idle', resume: null, error: '' });
+  const [isApplyingExternally, setIsApplyingExternally] = useState(false);
   const scrollContainerRef = useRef(null);
   const resumeMatchRequestIdRef = useRef(0);
   const opportunityIdRef = useRef(opportunity?.id);
@@ -99,6 +104,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
     setResumeMatchActionLoading('');
     setResumeMatchActionError('');
     setResumeUploadState({ status: 'idle', resume: null, error: '' });
+    setIsApplyingExternally(false);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
     }
@@ -165,10 +171,38 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
   const visibleAdditionalInfoItems = viewModel.additionalInfoItems.filter((item) =>
     VISIBLE_ADDITIONAL_INFO_LABELS.has(item.label),
   );
+  const primaryActionLabel = viewModel.isProject
+    ? t('opportunities.detail.seeOnSource')
+    : t('opportunities.detail.apply');
 
-  const handleApply = () => {
-    if (!viewModel.sourceUrl) return;
-    window.open(viewModel.sourceUrl, '_blank', 'noopener,noreferrer');
+  const handleApply = async () => {
+    if (
+      !isUserAuthenticated
+      || !opportunity?.id
+      || !viewModel.sourceUrl
+      || isApplyingExternally
+    ) {
+      return;
+    }
+
+    setIsApplyingExternally(true);
+    try {
+      const result = await registerExternalApplicationClick(opportunity.id);
+      upsertPendingExternalApplication({
+        applicationId: result.application_id,
+        opportunityId: opportunity.id,
+        title: viewModel.title,
+        organizationLabel: viewModel.organizationLabel,
+        sourceUrl: viewModel.sourceUrl,
+        clickedAt: Date.now(),
+        remindAfter: Date.now() + 2 * 1000,
+      });
+    } catch (error) {
+      console.log('Unable to save external application tracking', error);
+    } finally {
+      window.open(viewModel.sourceUrl, '_blank', 'noopener,noreferrer');
+      setIsApplyingExternally(false);
+    }
   };
 
   const runResumeMatchAiAnalysis = async (
@@ -455,8 +489,13 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
               <p className="mt-2 text-sm text-neutral-600">{viewModel.displayLocationLabel}</p>
             </div>
             {viewModel.sourceUrl ? (
-              <Button type="button" onClick={handleApply} className="shrink-0">
-                {viewModel.primaryActionLabel}
+              <Button
+                type="button"
+                onClick={handleApply}
+                disabled={!isUserAuthenticated || isApplyingExternally}
+                className="shrink-0"
+              >
+                {isApplyingExternally ? t('opportunities.detail.openingApplication') : primaryActionLabel}
                 <ExternalLink className="h-4 w-4" />
               </Button>
             ) : null}
@@ -481,10 +520,10 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
           {!viewModel.isProject ? (
             <section className="rounded-md border border-emerald-100 bg-emerald-50 p-5">
               <h3 className="text-xl font-semibold tracking-normal text-emerald-950">
-                Is your resume a good match?
+                {t('opportunities.detail.resumeMatchTitle')}
               </h3>
               <p className="mt-2 text-sm leading-6 text-emerald-900">
-                Use AI to find out how well the skills on your resume fit this job description.
+                {t('opportunities.detail.resumeMatchBody')}
               </p>
               <Button
                 type="button"
@@ -492,7 +531,7 @@ const OpportunitySplitDetailPanel = ({ opportunity, isUserAuthenticated }) => {
                 onClick={handleResumeMatch}
               >
                 <Sparkles className="h-4 w-4" />
-                Get insights
+                {t('opportunities.detail.getInsights')}
               </Button>
             </section>
           ) : null}

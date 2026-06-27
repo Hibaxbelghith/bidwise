@@ -2,10 +2,50 @@ import { memo } from 'react';
 import { BriefcaseBusiness, CalendarDays, ClipboardList, Globe2, MapPin, Sparkles } from 'lucide-react';
 
 import { Badge } from '../../../../components/ui/badge.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import OpportunityCompanyAvatar from '../OpportunityCompanyAvatar.jsx';
 import RecommendationMatchBadge from './RecommendationMatchBadge.jsx';
 import { buildRecommendationViewModel } from '../../utils/recommendationUtils.js';
 import { buildOpportunityBrowseCardViewModel } from '../../viewModels/opportunityList.vm.js';
+
+const translateRelativeDate = (label, t) => {
+  const text = String(label || '').trim();
+  if (!text) return '';
+  if (text === 'just now') return t('opportunities.justNow');
+
+  const match = text.match(/^(\d+)\s+(minute|hour|day|month|year)s?\s+ago$/i);
+  if (!match) return text;
+
+  const count = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const key = `${unit}${count === 1 ? 'Ago' : 'sAgo'}`;
+  return t(`opportunities.${key}`, { count });
+};
+
+const translateExperienceLabel = (label, t) => {
+  const text = String(label || '').trim();
+  if (!text) return '';
+  if (text === 'Entry level') return t('opportunities.entryLevel');
+
+  const rangeMatch = text.match(/^(\d+)-(\d+)\s+years$/i);
+  if (rangeMatch) {
+    return t('opportunities.yearsExperienceRange', {
+      min: rangeMatch[1],
+      max: rangeMatch[2],
+    });
+  }
+
+  const plusMatch = text.match(/^(\d+)\+\s+years$/i);
+  if (plusMatch) return t('opportunities.yearsExperiencePlus', { count: plusMatch[1] });
+
+  const upToMatch = text.match(/^Up to\s+(\d+)\s+years$/i);
+  if (upToMatch) return t('opportunities.upToYearsExperience', { count: upToMatch[1] });
+
+  const yearsMatch = text.match(/^(\d+)\s+years$/i);
+  if (yearsMatch) return t('opportunities.yearsExperience', { count: yearsMatch[1] });
+
+  return text;
+};
 
 const ForYouPreviewCard = memo(({
   opportunity,
@@ -13,10 +53,11 @@ const ForYouPreviewCard = memo(({
   isUserAuthenticated,
   onSelect,
 }) => {
+  const { t } = useLanguage();
   const viewModel = buildOpportunityBrowseCardViewModel(opportunity, isUserAuthenticated);
   const isProject = viewModel.isProject;
   const recommendation = opportunity?.recommendation || opportunity;
-  const recommendationVm = buildRecommendationViewModel(recommendation, { compact: true });
+  const recommendationVm = buildRecommendationViewModel(recommendation, { compact: true, t });
   const reasons = recommendationVm?.visibleReasons?.slice(0, 2) || [];
   const signalChips = recommendationVm?.signalChips?.slice(0, 3) || [];
   const skills = isProject ? [] : viewModel.skillsPreview.slice(0, 2);
@@ -72,12 +113,16 @@ const ForYouPreviewCard = memo(({
             {isProject && viewModel.deadlineDateLabel ? (
               <span className="inline-flex min-w-0 items-center gap-1">
                 <CalendarDays className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
-                <span className="truncate">Deadline {viewModel.deadlineDateLabel}</span>
+                <span className="truncate">{t('opportunities.deadlineRelative', { date: viewModel.deadlineDateLabel })}</span>
               </span>
             ) : viewModel.publishedAgoLabel ? (
               <span className="inline-flex min-w-0 items-center gap-1">
                 <CalendarDays className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true" />
-                <span className="truncate">Published {viewModel.publishedAgoLabel}</span>
+                <span className="truncate">
+                  {t('opportunities.publishedRelative', {
+                    time: translateRelativeDate(viewModel.publishedAgoLabel, t),
+                  })}
+                </span>
               </span>
             ) : null}
             {(isProject ? viewModel.projectRegionLabel : viewModel.locationLabel) ? (
@@ -98,7 +143,7 @@ const ForYouPreviewCard = memo(({
               </span>
             ) : null}
             {!isProject && viewModel.experienceLabel ? (
-              <span className="truncate">{viewModel.experienceLabel}</span>
+              <span className="truncate">{translateExperienceLabel(viewModel.experienceLabel, t)}</span>
             ) : null}
           </div>
 

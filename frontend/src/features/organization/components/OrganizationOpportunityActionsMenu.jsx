@@ -4,11 +4,13 @@ import { Link } from 'react-router-dom';
 
 import { Button } from '../../../components/ui/button.jsx';
 import { organizationOpportunityEditPath } from '../hooks/useOrganizationOpportunityEdit.js';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const MENU_ITEM_CLASS =
   'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950';
 
 const OrganizationOpportunityActionsMenu = ({ opportunity, editable }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [opensUpward, setOpensUpward] = useState(false);
   const menuRef = useRef(null);
@@ -49,8 +51,8 @@ const OrganizationOpportunityActionsMenu = ({ opportunity, editable }) => {
         type="button"
         variant="ghost"
         size="icon"
-        title="Opportunity actions"
-        aria-label={`Actions for ${opportunity.title}`}
+        title={t('organization.opportunityActions')}
+        aria-label={t('organization.actionsForOpportunity', { title: opportunity.title })}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={toggleMenu}
@@ -72,18 +74,18 @@ const OrganizationOpportunityActionsMenu = ({ opportunity, editable }) => {
             onClick={() => setIsOpen(false)}
           >
             <Eye className="h-4 w-4" aria-hidden="true" />
-            View details
+            {t('admin.viewDetails')}
           </Link>
 
           {editPath ? (
             <Link className={MENU_ITEM_CLASS} to={editPath} role="menuitem" onClick={() => setIsOpen(false)}>
               <Pencil className="h-4 w-4" aria-hidden="true" />
-              Edit
+              {t('organization.edit')}
             </Link>
           ) : (
             <span className={`${MENU_ITEM_CLASS} cursor-not-allowed opacity-50`}>
               <Pencil className="h-4 w-4" aria-hidden="true" />
-              Edit
+              {t('organization.edit')}
             </span>
           )}
 
@@ -95,12 +97,12 @@ const OrganizationOpportunityActionsMenu = ({ opportunity, editable }) => {
               onClick={() => setIsOpen(false)}
             >
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              View on BidWise
+              {t('organization.viewOnBidWise')}
             </Link>
           ) : (
-            <span className={`${MENU_ITEM_CLASS} cursor-not-allowed opacity-50`} title="Not publicly available">
+            <span className={`${MENU_ITEM_CLASS} cursor-not-allowed opacity-50`} title={t('organization.notPubliclyAvailable')}>
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              View on BidWise
+              {t('organization.viewOnBidWise')}
             </span>
           )}
         </div>

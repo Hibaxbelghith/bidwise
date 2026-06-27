@@ -4,10 +4,11 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
-import { Briefcase, Clock, Bookmark, Building2, MapPin, DollarSign, Calendar, TrendingUp } from 'lucide-react';
+import { Briefcase, Clock, Bookmark, Building2, MapPin, Calendar, TrendingUp } from 'lucide-react';
 import ApplicationsList from './components/ApplicationsList.jsx';
 import useMyApplications from './hooks/useMyApplications.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useLanguage } from '../../i18n/LanguageContext.jsx';
 import { getOpportunityById } from '../opportunities/services/opportunitiesService.js';
 import { buildOpportunityBrowseCardViewModel } from '../opportunities/viewModels/opportunityList.vm.js';
 import {
@@ -28,6 +29,7 @@ const isCallsForTenderOnlyProfile = (profile) => {
 
 const Dashboard = () => {
 	const { user } = useAuth();
+	const { t } = useLanguage();
 	const tenderOnly = isCallsForTenderOnlyProfile(user?.profil);
 	const { applications, isLoading, error, withdraw } = useMyApplications({ enabled: !tenderOnly });
 	const [savedOpportunities, setSavedOpportunities] = useState([]);
@@ -58,12 +60,12 @@ const Dashboard = () => {
 
 			setSavedOpportunities(opportunities);
 		} catch {
-			setSavedError('Unable to load saved opportunities.');
+			setSavedError(t('dashboard.unableLoadSaved'));
 			setSavedOpportunities([]);
 		} finally {
 			setSavedLoading(false);
 		}
-	}, []);
+	}, [t]);
 
 	useEffect(() => {
 		loadSavedOpportunities();
@@ -85,20 +87,21 @@ const Dashboard = () => {
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
 				{/* Header */}
 				<div className="mb-8">
-					<h1 id="dashboard-heading" className="text-3xl font-bold text-neutral-900 mb-2">My Dashboard</h1>
+					<h1 id="dashboard-heading" className="text-3xl font-bold text-neutral-900 mb-2">{t('dashboard.title')}</h1>
 					<p className="text-neutral-600">
 						{tenderOnly
-							? 'Keep your saved calls for tender in one place.'
-							: 'Track and manage your opportunities'}
+							? t('dashboard.tenderSubtitle')
+							: t('dashboard.subtitle')}
 					</p>
 				</div>
 
-				{/* Stats Cards */}
-				<div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" role="region" aria-label="Dashboard statistics">
-					<Card>
+				{/* Stats Cards - Pleine largeur avec 3 cartes */}
+				<div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8" role="region" aria-label={t('dashboard.statistics')}>
+					{/* Carte 1: Sauvegardés */}
+					<Card className="w-full">
 						<CardHeader className="pb-3">
 							<CardTitle className="text-sm font-medium text-neutral-600">
-								{tenderOnly ? 'Saved tenders' : 'Saved'}
+								{tenderOnly ? t('dashboard.savedTenders') : t('dashboard.saved')}
 							</CardTitle>
 						</CardHeader>
 						<CardContent>
@@ -109,44 +112,55 @@ const Dashboard = () => {
 						</CardContent>
 					</Card>
 
+					{/* Carte 2: Candidatures (uniquement si pas tenderOnly) */}
 					{!tenderOnly ? (
-						<>
-							<Card>
-								<CardHeader className="pb-3">
-									<CardTitle className="text-sm font-medium text-neutral-600">Applied</CardTitle>
-								</CardHeader>
-								<CardContent>
-									<div className="flex items-center justify-between">
-										<p className="text-3xl font-bold text-neutral-900">{appliedCount}</p>
-										<Briefcase className="w-8 h-8 text-blue-600" aria-hidden="true" />
-									</div>
-								</CardContent>
-							</Card>
+						<Card className="w-full">
+							<CardHeader className="pb-3">
+								<CardTitle className="text-sm font-medium text-neutral-600">{t('dashboard.applied')}</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<div className="flex items-center justify-between">
+									<p className="text-3xl font-bold text-neutral-900">{appliedCount}</p>
+									<Briefcase className="w-8 h-8 text-blue-600" aria-hidden="true" />
+								</div>
+							</CardContent>
+						</Card>
+					) : (
+						/* Si tenderOnly, on affiche une carte vide ou on étend la première */
+						<Card className="w-full opacity-0 invisible">
+							<CardHeader className="pb-3">
+								<CardTitle className="text-sm font-medium text-neutral-600">Placeholder</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<div className="flex items-center justify-between">
+									<p className="text-3xl font-bold text-neutral-900">0</p>
+								</div>
+							</CardContent>
+						</Card>
+					)}
 
-							<Card>
-								<CardHeader className="pb-3">
-									<CardTitle className="text-sm font-medium text-neutral-600">Profile Views</CardTitle>
-								</CardHeader>
-								<CardContent>
-									<div className="flex items-center justify-between">
-										<p className="text-3xl font-bold text-neutral-900">24</p>
-										<TrendingUp className="w-8 h-8 text-blue-600" aria-hidden="true" />
-									</div>
-								</CardContent>
-							</Card>
-						</>
+					{/* Carte 3: Vues du profil (uniquement si pas tenderOnly) */}
+					{!tenderOnly ? (
+						<Card className="w-full">
+							<CardHeader className="pb-3">
+								<CardTitle className="text-sm font-medium text-neutral-600">{t('dashboard.profileViews')}</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<div className="flex items-center justify-between">
+									<p className="text-3xl font-bold text-neutral-900">24</p>
+									<TrendingUp className="w-8 h-8 text-blue-600" aria-hidden="true" />
+								</div>
+							</CardContent>
+						</Card>
 					) : null}
 				</div>
 
-				{/* Main Content 
-				<PipelineMetrics />
-				*/}
-
+				{/* Main Content */}
 				<Tabs defaultValue="saved" className="space-y-6">
 					{!tenderOnly ? (
-						<TabsList aria-label="Opportunity categories">
-							<TabsTrigger value="saved">Saved Opportunities</TabsTrigger>
-							<TabsTrigger value="applied">Applications</TabsTrigger>
+						<TabsList aria-label={t('dashboard.categories')}>
+							<TabsTrigger value="saved">{t('dashboard.savedOpportunities')}</TabsTrigger>
+							<TabsTrigger value="applied">{t('dashboard.applications')}</TabsTrigger>
 						</TabsList>
 					) : null}
 
@@ -155,7 +169,7 @@ const Dashboard = () => {
 						{savedLoading ? (
 							<Card>
 								<CardContent className="py-12 text-center">
-									<p className="text-neutral-600">Loading saved opportunities...</p>
+									<p className="text-neutral-600">{t('dashboard.loadingSaved')}</p>
 								</CardContent>
 							</Card>
 						) : savedError ? (
@@ -163,7 +177,7 @@ const Dashboard = () => {
 								<CardContent className="py-12 text-center">
 									<p className="text-red-600 mb-4">{savedError}</p>
 									<Button type="button" variant="outline" onClick={loadSavedOpportunities}>
-										Try again
+										{t('dashboard.tryAgain')}
 									</Button>
 								</CardContent>
 							</Card>
@@ -172,11 +186,11 @@ const Dashboard = () => {
 								<CardContent className="py-12 text-center">
 									<Bookmark className="w-12 h-12 text-neutral-300 mx-auto mb-4" aria-hidden="true" />
 									<p className="text-neutral-600 mb-4">
-										{tenderOnly ? 'No saved calls for tender yet' : 'No saved opportunities yet'}
+										{tenderOnly ? t('dashboard.noSavedTenders') : t('dashboard.noSavedOpportunities')}
 									</p>
 									<Button asChild>
 										<Link to={tenderOnly ? '/opportunities?type=PROJET' : '/opportunities'}>
-											{tenderOnly ? 'Browse Calls for Tender' : 'Browse Opportunities'}
+											{tenderOnly ? t('dashboard.browseTenders') : t('dashboard.browseOpportunities')}
 										</Link>
 									</Button>
 								</CardContent>
@@ -214,7 +228,6 @@ const Dashboard = () => {
 													) : null}
 													{opportunity.viewModel.salaryLabel ? (
 														<span className="flex items-center gap-1">
-															<DollarSign className="w-4 h-4" />
 															{opportunity.viewModel.salaryLabel}
 														</span>
 													) : null}
@@ -228,20 +241,20 @@ const Dashboard = () => {
 												</div>
 												{opportunity.viewModel.deadlineDateLabel ? (
 													<p className="text-sm text-neutral-500">
-														Deadline: {opportunity.viewModel.deadlineDateLabel}
+														{t('dashboard.deadline', { date: opportunity.viewModel.deadlineDateLabel })}
 													</p>
 												) : null}
 											</div>
 											<div className="flex gap-2">
 												<Button asChild>
-													<Link to={`/opportunities/${opportunity.id}`}>View</Link>
+													<Link to={`/opportunities/${opportunity.id}`}>{t('dashboard.view')}</Link>
 												</Button>
 												<Button
 													type="button"
 													variant="outline"
 													onClick={() => handleRemoveSaved(opportunity.id)}
 												>
-													Remove
+													{t('dashboard.remove')}
 												</Button>
 											</div>
 										</div>

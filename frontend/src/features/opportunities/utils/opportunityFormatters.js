@@ -314,7 +314,7 @@ export const formatSimilarityScore = (rawScore) => {
   let label = 'Related';
 
   if (percentage >= 75) {
-    label = 'Strong match';
+    label = 'High similarity';
   }
 
   return {

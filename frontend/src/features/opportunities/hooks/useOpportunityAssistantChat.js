@@ -67,6 +67,9 @@ export const useOpportunityAssistantChat = (opportunityId, recommendation = null
           createMessage('assistant', answer, {
             answered: data?.answered !== false,
             source: data?.source || '',
+            action: data?.action || '',
+            provider: data?.provider || '',
+            model: data?.model || '',
           }),
         ]);
         return true;

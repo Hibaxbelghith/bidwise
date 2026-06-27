@@ -2,6 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Briefcase, Check, Clock3, ExternalLink, Loader2, X } from 'lucide-react';
 
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 
 const ExternalApplicationFollowUpDialog = ({
   open,
@@ -14,7 +15,10 @@ const ExternalApplicationFollowUpDialog = ({
   onConfirmApplied,
   onNotYet,
   onRemindLater,
-}) => (
+}) => {
+  const { t } = useLanguage();
+
+  return (
   <Dialog.Root open={open} onOpenChange={(nextOpen) => !isBusy && onOpenChange(nextOpen)}>
     <Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-[82] bg-black/40" />
@@ -23,7 +27,7 @@ const ExternalApplicationFollowUpDialog = ({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <Dialog.Title className="text-lg font-semibold text-neutral-950">
-                Did you apply?
+                {t('opportunities.detail.didYouApply')}
               </Dialog.Title>
               <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-3">
                 <p className="text-sm font-medium text-neutral-900">{opportunityTitle}</p>
@@ -49,7 +53,7 @@ const ExternalApplicationFollowUpDialog = ({
             <div className="flex items-start gap-3">
               <Briefcase className="mt-0.5 h-4 w-4 text-blue-600" />
               <p className="text-sm leading-6 text-neutral-700">
-                BidWise opened the employer page in a new tab. Tell us whether you completed the application so we can keep your dashboard up to date.
+                {t('opportunities.detail.externalFollowupBody')}
               </p>
             </div>
           </div>
@@ -68,7 +72,7 @@ const ExternalApplicationFollowUpDialog = ({
               className="h-11 bg-blue-600 hover:bg-blue-700"
             >
               {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              Yes, I applied
+              {t('opportunities.detail.yesApplied')}
             </Button>
 
             <Button
@@ -79,7 +83,7 @@ const ExternalApplicationFollowUpDialog = ({
               className="h-11"
             >
               <ExternalLink className="h-4 w-4" />
-              No, not yet
+              {t('opportunities.detail.notYet')}
             </Button>
 
             <Button
@@ -90,7 +94,7 @@ const ExternalApplicationFollowUpDialog = ({
               className="h-11"
             >
               <Clock3 className="h-4 w-4" />
-              Remind me later
+              {t('opportunities.detail.remindLater')}
             </Button>
           </div>
 
@@ -102,7 +106,7 @@ const ExternalApplicationFollowUpDialog = ({
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
               >
-                Reopen employer page
+                {t('opportunities.detail.reopenEmployerPage')}
                 <ExternalLink className="h-4 w-4" />
               </a>
             </div>
@@ -111,6 +115,7 @@ const ExternalApplicationFollowUpDialog = ({
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>
-);
+  );
+};
 
 export default ExternalApplicationFollowUpDialog;

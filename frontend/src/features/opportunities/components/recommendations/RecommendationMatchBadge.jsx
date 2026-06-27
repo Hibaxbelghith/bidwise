@@ -1,5 +1,6 @@
 import { Sparkles } from 'lucide-react';
 
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import { buildRecommendationViewModel } from '../../utils/recommendationUtils.js';
 
 const MatchRing = ({ percent, color }) => {
@@ -25,7 +26,8 @@ const MatchRing = ({ percent, color }) => {
 };
 
 const RecommendationMatchBadge = ({ recommendation, className = '', showConfidence = false }) => {
-  const viewModel = buildRecommendationViewModel(recommendation);
+  const { t } = useLanguage();
+  const viewModel = buildRecommendationViewModel(recommendation, { t });
   if (!viewModel) return null;
 
   return (

@@ -35,6 +35,7 @@ interface OpportunityCardProps {
   isUserAuthenticated: boolean;
   onPress: () => void;
   onRequireLogin: () => void;
+  onOpenAssistant?: () => void;
 }
 
 type MetaItemProps = {
@@ -66,6 +67,7 @@ export default function OpportunityCard({
   isUserAuthenticated,
   onPress,
   onRequireLogin,
+  onOpenAssistant,
 }: OpportunityCardProps) {
   const [isSaved, setIsSaved] = useState(false);
   const isProject = String(item.type_opportunite || '').trim().toUpperCase() === 'PROJET';
@@ -125,6 +127,15 @@ export default function OpportunityCard({
     if (!item.id) return;
     const nextValue = await toggleSavedOpportunity(item.id);
     setIsSaved(nextValue);
+  };
+
+  const handleAssistantPress = () => {
+    if (!isUserAuthenticated) {
+      onRequireLogin();
+      return;
+    }
+
+    onOpenAssistant?.();
   };
 
   if (isProject) {
@@ -249,6 +260,17 @@ export default function OpportunityCard({
           {publishedAgoLabel ? `Published ${publishedAgoLabel}` : `Published ${formatDate(item.date_publication)}`}
         </Text>
         <View style={styles.footerActions}>
+          {onOpenAssistant ? (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleAssistantPress}
+              style={[styles.aiButton, { borderColor, backgroundColor: `${tintColor}12` }]}
+            >
+              <Ionicons name="sparkles-outline" size={15} color={tintColor} />
+              <Text style={[styles.aiButtonText, { color: tintColor }]}>AI</Text>
+            </TouchableOpacity>
+          ) : null}
+
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => {
@@ -409,6 +431,19 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  aiButton: {
+    minHeight: 36,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aiButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   primaryCta: {
     minHeight: 36,

@@ -5,11 +5,11 @@ export const ORGANIZATION_DASHBOARD_PATH = '/organization/dashboard';
 export const ORGANIZATION_OPPORTUNITY_SUBMITTED_PATH = '/organization/post/submitted';
 
 export const ORGANIZATION_TYPES = [
-  { value: 'company', label: 'Company' },
-  { value: 'startup', label: 'Startup' },
-  { value: 'public', label: 'Public institution' },
-  { value: 'ngo', label: 'NGO' },
-  { value: 'other', label: 'Other' },
+  { value: 'company', label: 'Company', labelKey: 'organization.typeCompany' },
+  { value: 'startup', label: 'Startup', labelKey: 'organization.typeStartup' },
+  { value: 'public', label: 'Public institution', labelKey: 'organization.typePublic' },
+  { value: 'ngo', label: 'NGO', labelKey: 'organization.typeNgo' },
+  { value: 'other', label: 'Other', labelKey: 'organization.typeOther' },
 ];
 
 const ORGANIZATION_TYPE_VALUES = new Set(ORGANIZATION_TYPES.map((type) => type.value));
@@ -67,7 +67,8 @@ export const isOrganizationProfileComplete = (profile) => {
   );
 };
 
-export const validateOrganizationProfileForm = (values) => {
+export const validateOrganizationProfileForm = (values, t = null) => {
+  const text = (key, fallback) => (t ? t(key) : fallback);
   const errors = {};
   const organizationName = normalizeWhitespace(values.organization_name);
   const firstName = normalizeWhitespace(values.first_name);
@@ -77,43 +78,43 @@ export const validateOrganizationProfileForm = (values) => {
   const logo = normalizePublicUrl(values.logo);
 
   if (!organizationName) {
-    errors.organization_name = 'Enter your organization name';
+    errors.organization_name = text('organization.errorOrganizationNameRequired', 'Enter your organization name');
   } else if (organizationName.length > 180) {
-    errors.organization_name = 'Organization name is too long.';
+    errors.organization_name = text('organization.errorOrganizationNameLong', 'Organization name is too long.');
   }
 
   if (!firstName) {
-    errors.first_name = 'Enter your first name';
+    errors.first_name = text('organization.errorFirstNameRequired', 'Enter your first name');
   } else if (firstName.length > 100) {
-    errors.first_name = 'First name is too long.';
+    errors.first_name = text('organization.errorFirstNameLong', 'First name is too long.');
   }
 
   if (!lastName) {
-    errors.last_name = 'Enter your last name';
+    errors.last_name = text('organization.errorLastNameRequired', 'Enter your last name');
   } else if (lastName.length > 100) {
-    errors.last_name = 'Last name is too long.';
+    errors.last_name = text('organization.errorLastNameLong', 'Last name is too long.');
   }
 
   if (!phone) {
-    errors.phone = 'Enter your phone number';
+    errors.phone = text('organization.errorPhoneRequired', 'Enter your phone number');
   } else if (!TUNISIA_PHONE_PATTERN.test(phone)) {
-    errors.phone = 'Enter a valid Tunisian phone number.';
+    errors.phone = text('organization.errorPhoneInvalid', 'Enter a valid Tunisian phone number.');
   }
 
   if (website) {
     if (!isValidPublicUrl(website)) {
-      errors.website = 'Enter a valid website URL (e.g., https://www.example.com).';
+      errors.website = text('organization.errorWebsiteInvalid', 'Enter a valid website URL (e.g., https://www.example.com).');
     }
   }
 
   if (logo && !isValidPublicUrl(logo)) {
-    errors.logo = 'Enter a valid public logo URL (e.g., https://cdn.example.com/logo.png).';
+    errors.logo = text('organization.errorLogoInvalid', 'Enter a valid public logo URL (e.g., https://cdn.example.com/logo.png).');
   }
 
   if (!values.organization_type) {
-    errors.organization_type = 'Select your organization type';
+    errors.organization_type = text('organization.errorTypeRequired', 'Select your organization type');
   } else if (!ORGANIZATION_TYPE_VALUES.has(values.organization_type)) {
-    errors.organization_type = 'Select a valid organization type';
+    errors.organization_type = text('organization.errorTypeInvalid', 'Select a valid organization type');
   }
 
   return errors;

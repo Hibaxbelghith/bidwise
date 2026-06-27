@@ -420,6 +420,50 @@ export const askOpportunityAssistant = async (opportunityId, question, history =
   return normalizeObject(response.data);
 };
 
+export const downloadOptimizedAtsCv = async (opportunityId, optimizationMarkdown) => {
+  if (!opportunityId) {
+    throw new Error('Opportunity id is required');
+  }
+  const markdown = String(optimizationMarkdown || '').trim();
+  if (!markdown) {
+    throw new Error('Optimized CV content is required');
+  }
+
+  const response = await api.post(
+    `${OPPORTUNITIES_ENDPOINT}${opportunityId}/resume-match/export-ats-cv/`,
+    { optimization_markdown: markdown },
+    { responseType: 'blob' },
+  );
+  const disposition = response.headers?.['content-disposition'] || '';
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  return {
+    blob: response.data,
+    filename: match?.[1] || 'optimized_ats_cv.docx',
+  };
+};
+
+export const downloadCoverLetterDocx = async (opportunityId, coverLetterMarkdown) => {
+  if (!opportunityId) {
+    throw new Error('Opportunity id is required');
+  }
+  const markdown = String(coverLetterMarkdown || '').trim();
+  if (!markdown) {
+    throw new Error('Cover letter content is required');
+  }
+
+  const response = await api.post(
+    `${OPPORTUNITIES_ENDPOINT}${opportunityId}/resume-match/export-cover-letter/`,
+    { cover_letter_markdown: markdown },
+    { responseType: 'blob' },
+  );
+  const disposition = response.headers?.['content-disposition'] || '';
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  return {
+    blob: response.data,
+    filename: match?.[1] || 'cover_letter.docx',
+  };
+};
+
 export const uploadProfileResume = async (file, { activate = false } = {}) => {
   const formData = new FormData();
   formData.append('file', file);

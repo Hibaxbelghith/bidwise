@@ -3,13 +3,15 @@ import { Activity } from 'lucide-react';
 import MetricTile from './MetricTile.jsx';
 import StatusBadge from './StatusBadge.jsx';
 import { formatDateTime, formatNumber, getSystemStatus } from './dashboard.Utils.js';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 
 const SystemStatusPanel = ({ dashboard }) => {
+  const { t } = useLanguage();
   const system = getSystemStatus(dashboard);
   const pipelineStatus = dashboard?.pipeline?.status || 'healthy';
   const activeAlerts = dashboard?.monitoring?.alerts?.length || 0;
   const lastCompletedRun = formatDateTime(dashboard?.pipeline?.last_run);
-  const currentIssue = dashboard?.pipeline?.status_detail || 'No active issue';
+  const currentIssue = dashboard?.pipeline?.status_detail || t('admin.noActiveIssue');
   const detailMatchesCurrentIssue = String(system.detail || '').trim() === String(currentIssue || '').trim();
   const issueTextClass =
     pipelineStatus === 'failed'
@@ -35,14 +37,14 @@ const SystemStatusPanel = ({ dashboard }) => {
             <p className="mt-1 max-w-2xl text-sm text-neutral-600">{system.detail}</p>
             {!detailMatchesCurrentIssue ? (
               <p className={`mt-2 text-sm ${issueTextClass}`}>
-                <span className="font-medium text-neutral-700">Current issue:</span> {currentIssue}
+                <span className="font-medium text-neutral-700">{t('admin.currentIssue')}:</span> {currentIssue}
               </p>
             ) : null}
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[360px]">
-          <MetricTile label="Active alerts" value={formatNumber(activeAlerts)} tone={activeAlerts ? 'yellow' : 'green'} />
-          <MetricTile label="Last completed run" value={lastCompletedRun} />
+          <MetricTile label={t('admin.activeAlerts')} value={formatNumber(activeAlerts)} tone={activeAlerts ? 'yellow' : 'green'} />
+          <MetricTile label={t('admin.lastCompletedRun')} value={lastCompletedRun} />
         </div>
       </div>
     </div>

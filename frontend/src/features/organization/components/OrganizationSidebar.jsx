@@ -2,30 +2,30 @@ import { Link } from 'react-router-dom';
 import {
   BarChart3,
   BriefcaseBusiness,
-  CalendarDays,
   ChevronRight,
-  Folder,
   Plus,
-  Search,
   Users,
   X,
 } from 'lucide-react';
+import { useLanguage } from '../../../i18n/LanguageContext.jsx';
 
 const navItems = [
-  { label: 'Create', icon: Plus, href: '/organization/post', prominent: true, match: '/organization/post' },
-  { label: 'Jobs', icon: BriefcaseBusiness, href: '/organization/dashboard', match: '/organization/dashboard' },
-  { label: 'Applications', icon: Users, href: '/organization/applications', match: '/organization/applications' },
-  { label: 'Statistics', icon: BarChart3, href: '/organization/statistics', match: '/organization/statistics' }
+  { labelKey: 'organization.create', icon: Plus, href: '/organization/post', prominent: true, match: '/organization/post' },
+  { labelKey: 'organization.jobs', icon: BriefcaseBusiness, href: '/organization/dashboard', match: '/organization/dashboard' },
+  { labelKey: 'organization.applications', icon: Users, href: '/organization/applications', match: '/organization/applications' },
+  { labelKey: 'organization.statistics', icon: BarChart3, href: '/organization/statistics', match: '/organization/statistics' }
 ];
 
-const OrganizationSidebar = ({ activePath = '', isCollapsed = false, onToggleCollapse }) => (
+const OrganizationSidebar = ({ activePath = '', isCollapsed = false, onToggleCollapse }) => {
+  const { t } = useLanguage();
+  return (
   <aside className={`hidden bg-[#2d2d2d] text-white lg:flex lg:flex-col transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-72'}`}>
     <div className="flex h-14 items-center justify-between border-b border-white/10 px-5 text-sm">
-      {!isCollapsed && <span>Collapse</span>}
+      {!isCollapsed && <span>{t('organization.collapse')}</span>}
       <button
         onClick={onToggleCollapse}
         className="rounded-lg p-1.5 hover:bg-white/10 transition-colors"
-        aria-label="Toggle sidebar"
+        aria-label={t('organization.toggleSidebar')}
       >
         <X className="h-5 w-5" aria-hidden="true" />
       </button>
@@ -39,7 +39,7 @@ const OrganizationSidebar = ({ activePath = '', isCollapsed = false, onToggleCol
             <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
             {!isCollapsed && (
               <>
-                <span className="flex-1">{item.label}</span>
+                <span className="flex-1">{t(item.labelKey)}</span>
                 <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
               </>
             )}
@@ -54,20 +54,21 @@ const OrganizationSidebar = ({ activePath = '', isCollapsed = false, onToggleCol
 
         if (item.href) {
           return (
-            <Link key={item.label} to={item.href} className={className} title={isCollapsed ? item.label : ''}>
+            <Link key={item.labelKey} to={item.href} className={className} title={isCollapsed ? t(item.labelKey) : ''}>
               {content}
             </Link>
           );
         }
 
         return (
-          <button key={item.label} type="button" className={`${className} w-full`} title={isCollapsed ? item.label : ''}>
+          <button key={item.labelKey} type="button" className={`${className} w-full`} title={isCollapsed ? t(item.labelKey) : ''}>
             {content}
           </button>
         );
       })}
     </nav>
   </aside>
-);
+  );
+};
 
 export default OrganizationSidebar;

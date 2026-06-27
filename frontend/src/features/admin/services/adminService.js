@@ -7,10 +7,11 @@ export const getDashboard = ({ view } = {}) => {
   return adminApi.get('/admin/dashboard/', { params });
 };
 
-export const getOpportunities = ({ page, search, source, ordering, signal } = {}) => {
+export const getOpportunities = ({ page, search, source, status, ordering, signal } = {}) => {
   const params = { page };
   if (search) params.search = search;
   if (source) params.source = Number(source);
+  if (status) params.status = status;
   if (ordering) params.ordering = ordering;
 
   return adminApi.get('/admin/opportunities/', {

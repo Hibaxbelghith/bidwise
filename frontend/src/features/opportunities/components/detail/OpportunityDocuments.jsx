@@ -2,17 +2,20 @@ import { ExternalLink, FileText } from 'lucide-react';
 
 import { Badge } from '../../../../components/ui/badge.jsx';
 import { Button } from '../../../../components/ui/button.jsx';
+import { useLanguage } from '../../../../i18n/LanguageContext.jsx';
 import { formatProjectDocumentType } from '../../utils/opportunityFormatters.js';
 
 const OpportunityDocuments = ({ documents }) => {
+  const { t } = useLanguage();
+
   if (!documents || documents.length === 0) return null;
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-neutral-900">Documents</h2>
+        <h2 className="text-lg font-semibold text-neutral-900">{t('opportunities.detail.documents')}</h2>
         <Badge variant="outline">
-          {documents.length} document{documents.length > 1 ? 's' : ''}
+          {documents.length} {t(documents.length > 1 ? 'opportunities.card.documents' : 'opportunities.card.document')}
         </Badge>
       </div>
 
@@ -34,7 +37,7 @@ const OpportunityDocuments = ({ documents }) => {
 
             <Button asChild variant="outline" size="sm">
               <a href={document.url} target="_blank" rel="noopener noreferrer">
-                Open
+                {t('opportunities.detail.open')}
                 <ExternalLink className="h-4 w-4" />
               </a>
             </Button>

@@ -4,6 +4,9 @@ const CONFIDENCE_LABELS = {
   LOW: 'Limited profile data',
 };
 
+const createTranslator = (t) => (key, fallback, values) =>
+  typeof t === 'function' ? t(`opportunities.detail.${key}`, values) : fallback;
+
 const SCORE_LEVELS = {
   HIGH: 'HIGH',
   MEDIUM: 'MEDIUM',
@@ -58,26 +61,57 @@ const reasonPriority = (reason) => {
   return 90;
 };
 
-const humanizeReason = (reason) => {
+const humanizeReason = (reason, tx = createTranslator()) => {
   const text = normalizeText(reason);
   if (!text) return '';
-  if (text === 'Related job family signal detected') return 'Same job family as your profile';
-  if (text === 'Role alignment detected') return 'Target role aligned';
-  if (text === 'Title language overlaps your goals') return 'Title aligns with your goals';
-  if (text === 'Industry preference aligned') return 'Industry preference aligned';
-  if (text === 'Sector preference aligned') return 'Sector aligned with your profile';
-  if (text === 'Resume signal detected') return 'CV signal detected';
-  if (text === 'Semantic similarity is strong') return 'Strong profile similarity';
-  if (text === 'On-site preference') return 'On-site preference aligned';
+  if (text === 'Related job family signal detected') return tx('sameJobFamily', 'Same job family as your profile');
+  if (text === 'Role alignment detected') return tx('targetRoleAligned', 'Target role aligned');
+  if (text === 'Title language overlaps your goals') return tx('titleAlignsGoals', 'Title aligns with your goals');
+  if (text === 'Industry preference aligned') return tx('industryPreferenceAligned', 'Industry preference aligned');
+  if (text === 'Sector preference aligned') return tx('sectorAligned', 'Sector aligned with your profile');
+  if (text === 'Resume signal detected') return tx('cvSignalDetected', 'CV signal detected');
+  if (text === 'Semantic similarity is strong') return tx('strongProfileSimilarity', 'Strong profile similarity');
+  if (text === 'On-site preference') return tx('onSitePreferenceAligned', 'On-site preference aligned');
+  if (text === 'On-site preference aligned') return tx('onSitePreferenceAligned', 'On-site preference aligned');
+
+  const roleAlignedMatch = text.match(/^(.+?)\s+role aligned$/i);
+  if (roleAlignedMatch) {
+    return tx('roleValueAligned', `Role aligned: ${roleAlignedMatch[1]}`, {
+      value: roleAlignedMatch[1],
+    });
+  }
+
+  const contractAlignedMatch = text.match(/^(.+?)\s+contract aligned$/i);
+  if (contractAlignedMatch) {
+    return tx('contractValueAligned', `Contract aligned: ${contractAlignedMatch[1]}`, {
+      value: contractAlignedMatch[1],
+    });
+  }
+
+  const strongAlignmentMatch = text.match(/^strong\s+(.+?)\s+alignment$/i);
+  if (strongAlignmentMatch) {
+    return tx('strongValueAlignment', `Strong alignment: ${strongAlignmentMatch[1]}`, {
+      value: strongAlignmentMatch[1],
+    });
+  }
+
+  const skillSignalMatch = text.match(/^(\d+)\s+matching skill signals?$/i);
+  if (skillSignalMatch) {
+    const count = Number(skillSignalMatch[1]);
+    return count === 1
+      ? tx('oneMatchingSkillSignal', '1 matching skill signal')
+      : tx('matchingSkillSignals', `${count} matching skill signals`, { count });
+  }
+
   return text;
 };
 
-const prioritizeReasons = (items, limit) =>
-  dedupe(items.map(humanizeReason).filter(Boolean))
+const prioritizeReasons = (items, limit, tx) =>
+  dedupe(items.map((item) => humanizeReason(item, tx)).filter(Boolean))
     .sort((left, right) => reasonPriority(left) - reasonPriority(right))
     .slice(0, limit);
 
-const buildSignalChips = (recommendation = {}) => {
+const buildSignalChips = (recommendation = {}, tx = createTranslator()) => {
   const evidence = recommendation.evidence_summary || {};
   const rawReasons = normalizeArray(recommendation.reasons || recommendation.reason);
   const chips = [];
@@ -85,17 +119,17 @@ const buildSignalChips = (recommendation = {}) => {
     if (!chips.some((chip) => chip.key === key)) chips.push({ key, label, tone });
   };
 
-  if (evidence.role_match) add('role', 'Role', 'strong');
+  if (evidence.role_match) add('role', tx('role', 'Role'), 'strong');
   if (Number(evidence.skill_overlap) > 0 || Number(evidence.profile_skill_overlap) > 0) {
-    add('skills', 'Skill match', 'strong');
+    add('skills', tx('skillMatch', 'Skill match'), 'strong');
   }
-  if (evidence.llm_family_match) add('family', 'Job category', 'strong');
-  if (evidence.resume_signal) add('cv', 'CV', 'support');
+  if (evidence.llm_family_match) add('family', tx('jobCategory', 'Job category'), 'strong');
+  if (evidence.resume_signal) add('cv', tx('cv', 'CV'), 'support');
   if (rawReasons.some((reason) => /remote|hybrid|on-site|work preference/i.test(reason))) {
-    add('work_mode', 'Work mode', 'support');
+    add('work_mode', tx('workMode', 'Work mode'), 'support');
   }
-  if (rawReasons.some((reason) => /location/i.test(reason))) add('location', 'Location', 'support');
-  if (evidence.llm_family_mismatch) add('family_gap', 'Review category', 'gap');
+  if (rawReasons.some((reason) => /location/i.test(reason))) add('location', tx('location', 'Location'), 'support');
+  if (evidence.llm_family_mismatch) add('family_gap', tx('reviewCategory', 'Review category'), 'gap');
 
   return chips.slice(0, 6);
 };
@@ -188,15 +222,23 @@ const buildEvidenceReasons = (evidenceSummary = {}) => {
   return reasons;
 };
 
-const formatGapLabel = (gap) =>
-  normalizeText(gap)
+const formatGapLabel = (gap, tx = createTranslator()) => {
+  const text = normalizeText(gap);
+  if (text === 'Experience level below current profile') {
+    return tx('experienceLevelBelowProfile', 'Experience level below current profile');
+  }
+
+  return text
     .replace(/^missing\s+/i, '')
     .replace(/\s+experience$/i, '')
     .replace(/\s+skill$/i, '')
     .trim();
+};
 
 export const buildRecommendationViewModel = (recommendation, options = {}) => {
   if (!recommendation) return null;
+
+  const tx = createTranslator(options.t);
 
   const isTenderRecommendation =
     normalizeText(recommendation.recommendation_mode).toUpperCase() === 'TENDER_WATCH';
@@ -209,8 +251,17 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     normalizeText(recommendation.recommendation_mode).toUpperCase() === 'SPARSE_PROFILE' ||
     normalizeText(recommendation.profile_strength).toUpperCase() === 'LOW';
   const baseConfidenceLabel = isSparseProfile
-    ? 'Limited profile data'
-    : CONFIDENCE_LABELS[confidenceKey] || 'Confidence improving';
+    ? tx('limitedProfileData', 'Limited profile data')
+    : tx(
+        confidenceKey === 'HIGH'
+          ? 'highConfidence'
+          : confidenceKey === 'MEDIUM'
+            ? 'mediumConfidence'
+            : confidenceKey === 'LOW'
+              ? 'limitedProfileData'
+              : 'confidenceImproving',
+        CONFIDENCE_LABELS[confidenceKey] || 'Confidence improving',
+      );
   const bucket = normalizeText(recommendation.recommendation_bucket).toUpperCase();
   const isStrongBucket = bucket === 'STRONG_MATCH';
   const tone = getRecommendationTone(recommendation);
@@ -219,8 +270,9 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
   const visibleReasons = prioritizeReasons(
     [...rawReasons, ...evidenceReasons],
     options.reasonLimit || 4,
+    tx,
   );
-  const gaps = normalizeArray(recommendation.gaps).map(formatGapLabel).filter(Boolean);
+  const gaps = normalizeArray(recommendation.gaps).map((gap) => formatGapLabel(gap, tx)).filter(Boolean);
   const tenderScoreLabel = ['Strong priority', 'Watch closely', 'Low priority', 'General watch'].includes(scoreLabel)
     ? scoreLabel
     : '';
@@ -242,19 +294,19 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
           ? 'Worth a look'
           : scoreLabel;
   const confidenceLabel = isTenderRecommendation
-    ? fitLabel === 'Strong priority'
-      ? 'High confidence'
+      ? fitLabel === 'Strong priority'
+      ? tx('highConfidence', 'High confidence')
       : fitLabel === 'Watch closely'
-        ? 'Confidence improving'
+        ? tx('confidenceImproving', 'Confidence improving')
         : baseConfidenceLabel
     : baseConfidenceLabel;
   const scoreText =
     scorePercent && scorePercent > 0
       ? isTenderRecommendation
-        ? `${scorePercent}% priority`
-        : `${scorePercent}% match`
+        ? tx('priorityPercent', `${scorePercent}% priority`, { score: scorePercent })
+        : tx('matchPercent', `${scorePercent}% match`, { score: scorePercent })
       : scoreLabel;
-  const signalChips = buildSignalChips(recommendation);
+  const signalChips = buildSignalChips(recommendation, tx);
   const primaryReason = visibleReasons[0] || '';
   const bucketReason = normalizeText(recommendation.recommendation_bucket_reason).replace(/[.!?]+$/, '');
   const highScoreRelatedReason =
@@ -267,12 +319,12 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
       : `${fitLabel} based on your tender preferences.`
     : options.context === 'detail'
       ? isStrongBucket && scorePercent >= 70 && primaryReason
-        ? `Recommended to apply: ${primaryReason}.`
+        ? tx('recommendedToApplyWithReason', `Recommended to apply: ${primaryReason}.`, { reason: primaryReason })
         : scorePercent >= 60 && primaryReason
-          ? `Good fit, but review the details: ${primaryReason}.${highScoreRelatedReason ? ` ${highScoreRelatedReason}.` : ''}`
+          ? `${tx('goodFitWithReason', `Good fit, but review the details: ${primaryReason}.`, { reason: primaryReason })}${highScoreRelatedReason ? ` ${highScoreRelatedReason}.` : ''}`
           : primaryReason
-            ? `Worth reviewing before applying: ${primaryReason}.`
-            : `${fitLabel} based on your profile signals.`
+            ? tx('worthReviewingWithReason', `Worth reviewing before applying: ${primaryReason}.`, { reason: primaryReason })
+            : tx('fitBasedOnProfile', `${fitLabel} based on your profile signals.`, { fitLabel })
       : isStrongBucket && scorePercent >= 70 && primaryReason
         ? `${primaryReason}.`
         : scorePercent >= 60 && primaryReason
@@ -281,27 +333,27 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
             ? `Worth reviewing: ${primaryReason}.`
             : `${fitLabel} based on your profile signals.`;
   const panelTitle = isTenderRecommendation
-    ? 'Tender priority'
+    ? tx('tenderPriority', 'Tender priority')
     : options.context === 'detail'
-      ? 'Your fit'
-      : 'Recommendation match';
+      ? tx('yourFit', 'Your fit')
+      : tx('recommendationMatch', 'Recommendation match');
   const verdictLabel = isTenderRecommendation
     ? fitLabel
     : isStrongBucket && scorePercent >= 70
-      ? 'Recommended to apply'
+      ? tx('recommendedToApply', 'Recommended to apply')
       : scorePercent >= 60
-        ? 'Good fit'
+        ? tx('goodFit', 'Good fit')
         : scorePercent > 0
-          ? 'Worth reviewing'
+          ? tx('worthReviewing', 'Worth reviewing')
           : scoreLabel;
   const verdictDescription = isTenderRecommendation
-    ? 'This tender is ranked using your preferred regions, tender categories, and semantic similarity.'
+    ? tx('tenderRankedByPreferences', 'This tender is ranked using your preferred regions, tender categories, and semantic similarity.')
     : isStrongBucket && scorePercent >= 70
-      ? 'Your profile has strong evidence for this opportunity.'
+      ? tx('strongEvidence', 'Your profile has strong evidence for this opportunity.')
       : scorePercent >= 60
-        ? 'The opportunity is relevant, but review the gaps before applying.'
-        : 'Review the details carefully before deciding.';
-  const isRecommendedToApply = verdictLabel === 'Recommended to apply';
+        ? tx('relevantReviewGaps', 'The opportunity is relevant, but review the gaps before applying.')
+        : tx('reviewCarefully', 'Review the details carefully before deciding.');
+  const isRecommendedToApply = isStrongBucket && scorePercent >= 70;
 
   return {
     scorePercent,
@@ -315,12 +367,14 @@ export const buildRecommendationViewModel = (recommendation, options = {}) => {
     panelTitle,
     verdictLabel,
     verdictDescription,
-    reasonsTitle: isTenderRecommendation ? 'Why this priority' : 'Why this matches',
+    reasonsTitle: isTenderRecommendation
+      ? tx('whyThisPriority', 'Why this priority')
+      : tx('whyThisMatches', 'Why this matches'),
     reviewLabel: isTenderRecommendation
-      ? 'Review before action'
+      ? tx('reviewBeforeAction', 'Review before action')
       : isRecommendedToApply
-        ? 'Details to confirm'
-        : 'Review before applying',
+        ? tx('detailsToConfirm', 'Details to confirm')
+        : tx('reviewBeforeApplying', 'Review before applying'),
     gaps: dedupe(gaps).slice(0, options.gapLimit || 4),
     hasGaps: gaps.length > 0,
     tone,
